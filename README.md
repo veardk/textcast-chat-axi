@@ -309,7 +309,7 @@ For flows, architecture, state, or sequence diagrams, open the diagram playbook 
 
 ## Telemetry
 
-textcast-chat-axi sends no telemetry. The published bundle has no collector baked in, so the telemetry client stays a no-op unless both `LAVISH_AXI_UMAMI_HOST` and `LAVISH_AXI_UMAMI_WEBSITE_ID` are set explicitly. `LAVISH_AXI_TELEMETRY=0` (or `false` or `off`) forces it off regardless.
+textcast-chat-axi collects no telemetry and makes no analytics requests.
 
 ## Development
 
