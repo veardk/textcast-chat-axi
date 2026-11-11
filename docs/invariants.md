@@ -176,7 +176,6 @@ Agent-facing design guidance is single-sourced in `src/design-reference.js`: `DE
 `src/skill.js` renders the minimal installable Agent Skill, a stub pointing to the CLI commands for live guidance. It retains non-interactive `npx -y textcast-chat-axi ...` invocation and slash-command request handling, omits live session state, and includes Hermes Agent frontmatter metadata for categorization.
 The generated skill intentionally omits a `version` frontmatter field because release-please updates `package.json` without regenerating `skills/lavish/SKILL.md`.
 `skills/lavish/SKILL.md` is the only public Agent Skill shipped through npm.
-The repository-local `.agents/skills/lavish-design/SKILL.md` brand skill is internal and must keep `metadata.internal: true` so `npx skills add ... --list` and skills.sh hide it unless `INSTALL_INTERNAL_SKILLS=1` is set.
 The bare-arg form (`textcast-chat-axi some.html`) is normalized into `["open", "some.html"]` by `normalizeArgv`, which must let the SDK's `RESERVED_COMMANDS` (such as the built-in `update` self-updater) pass through untouched; otherwise the bare-arg rewrite turns `textcast-chat-axi update` into `["open", "update"]` and the inherited reserved command never reaches `runAxiCli`.
 
 ### Agent Plugins packaging
