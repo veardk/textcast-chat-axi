@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { on, once } from "node:events";
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { createServer, request as httpRequest } from "node:http";
+import { request as httpRequest } from "node:http";
 import { connect as netConnect } from "node:net";
 import { homedir, networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
@@ -21,7 +21,6 @@ import {
   createChromeHtml,
   createSdkJs,
   displayPathParts,
-  exportContentDisposition,
   extractArtifactHead,
   hasLiveReloadRootOptIn,
   hostnameFromHostHeader,
@@ -473,13 +472,6 @@ test("server serves chrome styles from a dedicated source file", async () => {
   assert.doesNotMatch(html, /<style>/);
 });
 
-test("export content disposition uses a safe fallback and encoded UTF-8 filename", () => {
-  assert.equal(
-    exportContentDisposition('/tmp/résumé "draft"\n.html'),
-    "attachment; filename=\"r_sum_ _draft__.export.html\"; filename*=UTF-8''r%C3%A9sum%C3%A9%20%22draft%22%0A.export.html",
-  );
-});
-
 test("artifact assets resolve within the artifact directory", async () => {
   const root = path.resolve("/tmp/lavish-artifact");
 
@@ -923,85 +915,6 @@ test("overflow menu offers reload, snapshot copy, and end session actions", asyn
   assert.match(html, /class="menu-item danger" id="end"[^<]*>.*End session/);
   assert.doesNotMatch(html, /End Session</);
   assert.match(js, /event\.key === "Escape"/);
-});
-
-test("overflow menu offers a standalone HTML export that downloads a portable file", async () => {
-  const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
-  const js = await chromeClientSource();
-
-  assert.match(html, /id="exportArtifact"[^<]*>.*Export standalone HTML/);
-  assert.match(js, /const exportArtifactButton/);
-  assert.match(js, /async function exportArtifact/);
-  assert.match(js, /fetch\("\/api\/" \+ key \+ "\/export"\)/);
-  assert.match(js, /link\.download = exportFileName\(\)/);
-  assert.match(js, /exportArtifactButton\.onclick = exportArtifact/);
-});
-
-test("overflow menu offers publishing an ht-ml.app link via a share dialog", async () => {
-  const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
-  const js = await chromeClientSource();
-  const css = await chromeCssSource();
-
-  assert.match(html, /id="shareArtifact"[^<]*>.*Publish link/);
-  assert.match(html, /id="shareDialog"/);
-  assert.match(
-    html,
-    /Publish to <a class="share-link" href="https:\/\/ht-ml\.app" target="_blank" rel="noopener noreferrer">ht-ml\.app<\/a>/,
-  );
-  assert.match(html, /third-party hosting service, not part of Lavish/);
-  assert.match(html, /id="sharePassword"/);
-  assert.match(html, /id="shareUpdateKey"/);
-  assert.match(html, /Without a password, the page is PUBLIC/);
-  assert.match(html, /With a password, the page is PRIVATE/);
-  assert.doesNotMatch(html, /Everything published is public/);
-  assert.doesNotMatch(html, /Get a public link/);
-  assert.match(css, /\.share-overlay/);
-  assert.match(css, /\.share-overlay\{[^}]*z-index:80;/);
-  assert.match(css, /\.share-card/);
-  assert.match(css, /\.share-link/);
-  assert.match(css, /box-shadow:var\(--shadow-floating\)/);
-  // The codebase has no global [hidden] rule, so display-setting overlays need explicit
-  // [hidden] rules or they show through before they should (e.g. the result block).
-  assert.match(css, /\.share-overlay\[hidden\]\{display:none;?\}/);
-  assert.match(css, /\.share-result\[hidden\]\{display:none;?\}/);
-  assert.match(js, /const shareArtifactButton/);
-  assert.match(js, /async function publishShare/);
-  assert.match(js, /fetch\("\/api\/" \+ key \+ "\/share"/);
-  // What the client DOES with data.url/data.update_key is asserted by driving a real publish in
-  // test/chrome-client-queue.test.js, including the retry-after-failure path; matching the
-  // assignment lines here only pinned one spelling of it.
-  assert.match(html, /id="shareGenerate"/);
-  assert.match(html, /id="sharePasswordResult"/);
-});
-
-test("the share dialog hands back the site id alongside the update key it tells the user to keep", async () => {
-  // The dialog's own copy points at `share --site <id> --update-key <key>`, so withholding the
-  // site id would leave guessing it out of the URL as the user's only route.
-  const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
-
-  assert.match(html, /id="shareSiteIdResult"[^>]*\shidden/);
-  assert.match(html, /id="shareSiteId" readonly/);
-  assert.match(html, /id="copyShareSiteId"/);
-  // A plain republish deliberately leaves the password alone, so the dialog must not offer that
-  // command as a way to lock a page - only --private sets one.
-  assert.match(
-    html,
-    /Republish this page&#39;s HTML with <code>textcast-chat-axi share &lt;file&gt; --site &lt;site id&gt; --update-key &lt;key&gt;<\/code>/,
-  );
-  assert.match(html, /add <code>--private<\/code> to also lock it/);
-  assert.doesNotMatch(html, /Republish or lock this page/);
-
-  // Order is part of the contract: URL, then the site id, then the secret.
-  const order = ['id="shareUrl"', 'id="shareSiteId"', 'id="shareUpdateKey"'].map((id) => html.indexOf(id));
-  assert.ok(
-    order.every((index) => index >= 0),
-    "every share result field must render",
-  );
-  assert.deepEqual(
-    order,
-    [...order].sort((a, b) => a - b),
-    "site id must sit between the URL and the update key",
-  );
 });
 
 test("clipboard copy falls back when navigator clipboard rejects", async () => {
@@ -2485,48 +2398,6 @@ test("/artifact serves same-tree assets for an HTML session", async () => {
   }
 });
 
-test("leftover non-HTML sessions are refused before any session.file content read", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const secret = path.join(dir, "secret.txt");
-  await writeFile(secret, "outside-secret\n");
-  await writeFile(path.join(dir, ".env"), "hidden-secret\n");
-  const absolute = await canonicalFile(secret);
-  const key = sessionKey(absolute);
-  await writeFile(
-    path.join(dir, "state.json"),
-    `${JSON.stringify({ sessions: { [key]: { key, file: absolute, url: "http://127.0.0.1/session/test", status: "open" } } }, null, 2)}\n`,
-  );
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const documentResponse = await fetch(`${base}/artifact/${key}/index.html`);
-    const sibling = await fetch(`${base}/artifact/${key}/.env`);
-    const exported = await fetch(`${base}/api/${key}/export`);
-    const shared = await fetch(`${base}/api/${key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: base },
-      body: JSON.stringify({}),
-    });
-    const mermaid = await fetch(`${base}/api/${key}/mermaid-sources`);
-    const chrome = await fetch(`${base}/session/${key}`);
-    assert.equal(documentResponse.status, 403);
-    assert.doesNotMatch(await documentResponse.text(), /outside-secret/);
-    assert.equal(sibling.status, 403);
-    assert.doesNotMatch(await sibling.text(), /hidden-secret/);
-    assert.equal(exported.status, 403);
-    assert.doesNotMatch(await exported.text(), /outside-secret/);
-    assert.equal(shared.status, 403);
-    assert.doesNotMatch(await shared.text(), /outside-secret/);
-    assert.equal(mermaid.status, 403);
-    assert.doesNotMatch(await mermaid.text(), /outside-secret/);
-    assert.equal(chrome.status, 403);
-    assert.doesNotMatch(await chrome.text(), /outside-secret/);
-  } finally {
-    await server.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 test("/whiteboard-assets refuses escaping symlinks and .. traversal but still serves its bundle", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
   const outside = await mkdtemp(path.join(tmpdir(), "lavish-outside-"));
@@ -3620,452 +3491,6 @@ test("design asset resolver only trusts exact packaged design asset paths", () =
   assert.equal(resolveDesignAssetPath("/design/tailwindcss-browser.js/extra"), null);
 });
 
-test("GET /api/:key/export inlines local assets and leaves remote references intact", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(
-    artifact,
-    `<!doctype html><html><head><link rel="stylesheet" href="local.css">` +
-      `<link rel="stylesheet" href="https://cdn.example/app.css"></head>` +
-      `<body><img src="pic.png"><h1>Hi</h1><script src="/sdk.js?key=stale"></script></body></html>`,
-  );
-  await writeFile(path.join(dir, "local.css"), ".btn{color:green}");
-  await writeFile(path.join(dir, "pic.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const exportRes = await fetch(`${base}/api/${session.key}/export`);
-    assert.equal(exportRes.status, 200);
-    assert.equal(
-      exportRes.headers.get("content-security-policy"),
-      "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads",
-    );
-    assert.match(exportRes.headers.get("content-disposition") || "", /attachment; filename="artifact\.export\.html"/);
-    const body = await exportRes.text();
-    // local stylesheet + image inlined
-    assert.match(body, /<style>\.btn\{color:green\}<\/style>/);
-    assert.match(body, /<img src="data:image\/png;base64,iVBORw==">/);
-    // injected SDK stripped
-    assert.doesNotMatch(body, /sdk\.js/);
-    // remote stylesheet left intact (not fetched/inlined)
-    assert.match(body, /<link rel="stylesheet" href="https:\/\/cdn\.example\/app\.css">/);
-  } finally {
-    await server.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("GET /api/:key/export sends a safe download filename header", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "résumé draft.html");
-  await writeFile(artifact, "<!doctype html><html><body><h1>Hi</h1></body></html>");
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const exportRes = await fetch(`${base}/api/${session.key}/export`);
-
-    assert.equal(exportRes.status, 200);
-    assert.equal(
-      exportRes.headers.get("content-disposition"),
-      "attachment; filename=\"r_sum_ draft.export.html\"; filename*=UTF-8''r%C3%A9sum%C3%A9%20draft.export.html",
-    );
-  } finally {
-    await server.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("GET /api/:key/export reports unresolved local asset warning count", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, '<!doctype html><html><body><img src="missing.png"></body></html>');
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const exportRes = await fetch(`${base}/api/${session.key}/export`);
-    const body = await exportRes.text();
-
-    assert.equal(exportRes.status, 200);
-    assert.equal(exportRes.headers.get("x-lavish-export-warning-count"), "1");
-    assert.equal(exportRes.headers.get("x-lavish-export-notice-count"), "0");
-    assert.equal(exportRes.headers.get("x-lavish-export-warnings"), null);
-    assert.match(body, /<img src="missing\.png">/);
-  } finally {
-    await server.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("GET /api/:key/export counts notices separately from unresolved assets", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(
-    artifact,
-    '<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="script-src \'self\'"></head><body><h1>Ship</h1></body></html>',
-  );
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const exportRes = await fetch(`${base}/api/${session.key}/export`);
-    const body = await exportRes.text();
-
-    assert.equal(exportRes.status, 200);
-    assert.equal(exportRes.headers.get("x-lavish-export-warning-count"), "0");
-    assert.equal(exportRes.headers.get("x-lavish-export-notice-count"), "1");
-    assert.match(body, /Content-Security-Policy/);
-  } finally {
-    await server.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("GET /api/:key/export returns 404 for an unknown session", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const res = await fetch(`http://127.0.0.1:${server.port}/api/does-not-exist/export`);
-    assert.equal(res.status, 404);
-  } finally {
-    await server.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share publishes the local-inlined artifact to ht-ml.app", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(
-    artifact,
-    '<!doctype html><html><head><link rel="stylesheet" href="local.css">' +
-      '<link rel="stylesheet" href="https://cdn.example/app.css"></head>' +
-      '<body><h1>Ship</h1><script src="/sdk.js?key=x"></script></body></html>',
-  );
-  await writeFile(path.join(dir, "local.css"), ".btn{color:red}");
-
-  const requests = [];
-  const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: base },
-      body: JSON.stringify({ password: "pw" }),
-    });
-    const body = await shareRes.json();
-
-    assert.equal(shareRes.status, 200);
-    assert.deepEqual(body, {
-      url: "https://abc123.ht-ml.app/",
-      site_id: "abc123",
-      update_key: "uk_secret",
-      status: "active",
-    });
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].method, "POST");
-    assert.equal(requests[0].url, "/v1/sites");
-    // local stylesheet inlined, SDK stripped, remote stylesheet left intact (never fetched)
-    assert.match(requests[0].body.html_content, /<style>\.btn\{color:red\}<\/style>/);
-    assert.doesNotMatch(requests[0].body.html_content, /sdk\.js/);
-    assert.match(requests[0].body.html_content, /<link rel="stylesheet" href="https:\/\/cdn\.example\/app\.css">/);
-    assert.equal(requests[0].body.password, "pw");
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share generates a password on request and hands it back once", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, "<!doctype html><html><body><h1>Ship</h1></body></html>");
-
-  const requests = [];
-  const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: base },
-      body: JSON.stringify({ generate_password: true }),
-    });
-    const body = await shareRes.json();
-
-    assert.equal(shareRes.status, 200);
-    assert.match(body.password, /^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/);
-    assert.equal(requests[0].body.password, body.password, "the published page uses the password shown to the user");
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-async function startFailingHtmlApp(status) {
-  const server = createServer((req, res) => {
-    req.resume();
-    req.on("end", () => {
-      res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify({ detail: "host said no" }));
-    });
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-  const address = server.address();
-  return {
-    port: typeof address === "object" && address ? address.port : 0,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
-  };
-}
-
-async function publishThroughShareRoute(dir, status, body) {
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, "<!doctype html><html><body><h1>Ship</h1></body></html>");
-  const htmlApp = await startFailingHtmlApp(status);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: base },
-      body: JSON.stringify(body),
-    });
-    return { status: shareRes.status, body: await shareRes.json() };
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
-  }
-}
-
-test("POST /api/:key/share reports an indeterminate publish and keeps the password it minted", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  try {
-    // A 5xx can follow a POST the origin already committed. The password was minted for THIS
-    // request, so discarding it with the failed response would leave the page live behind a secret
-    // nobody was ever shown, at a URL nobody was told, with its update_key gone.
-    const generated = await publishThroughShareRoute(dir, 503, { generate_password: true });
-
-    assert.equal(generated.status, 502);
-    assert.equal(generated.body.outcome, "indeterminate");
-    assert.match(generated.body.password, /^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/);
-    assert.equal(generated.body.public, false, "a generated password means it is not public");
-
-    const plain = await publishThroughShareRoute(dir, 503, {});
-    assert.equal(plain.status, 502);
-    assert.equal(plain.body.outcome, "indeterminate");
-    assert.equal(plain.body.password, undefined, "nothing was minted, so nothing to hand back");
-    assert.equal(plain.body.public, true, "a default publish that landed is readable by anyone");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share reports an incomplete 200 as published, not as an unknown outcome", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, "<!doctype html><html><body><h1>Ship</h1></body></html>");
-
-  // The host answered 200, so the page landed. Classifying it as indeterminate contradicted the
-  // error text beside it AND dropped the url Lavish was holding for a page that is public by
-  // default and, without the update_key, unmanageable forever.
-  const requests = [];
-  const htmlApp = await startFakeHtmlApp(requests, { site_id: "abc123", url: "https://abc123.ht-ml.app/" });
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: base },
-      body: JSON.stringify({}),
-    });
-    const body = await shareRes.json();
-
-    assert.equal(body.outcome, "published-incomplete");
-    assert.equal(body.url, "https://abc123.ht-ml.app/", "the address the host did return must survive");
-    assert.equal(body.site_id, "abc123");
-    assert.equal(body.update_key, undefined, "none came back, so none is claimed");
-    assert.equal(body.public, true);
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share reports a host rejection as a plain failure with no password", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  try {
-    // The host answered, so nothing was published: a minted password gates nothing and relaying it
-    // would send the user chasing a page that does not exist.
-    const rejected = await publishThroughShareRoute(dir, 400, { generate_password: true });
-
-    assert.equal(rejected.status, 502);
-    assert.equal(rejected.body.outcome, "rejected");
-    assert.equal(rejected.body.password, undefined, "a rejected publish must never carry the password");
-    assert.equal(rejected.body.public, undefined);
-    assert.ok(rejected.body.error, "the host's reason must still reach the dialog");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share never echoes a password the user typed", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, "<!doctype html><html><body><h1>Ship</h1></body></html>");
-
-  const requests = [];
-  const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: base },
-      body: JSON.stringify({ password: "hunter2" }),
-    });
-    const body = await shareRes.json();
-
-    assert.equal(body.password, undefined);
-    assert.equal(requests[0].body.password, "hunter2");
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share returns unresolved local asset warnings", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, '<!doctype html><html><body><img src="missing.png"><h1>Ship</h1></body></html>');
-
-  const requests = [];
-  const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: base },
-      body: JSON.stringify({}),
-    });
-    const body = await shareRes.json();
-
-    assert.equal(shareRes.status, 200);
-    assert.equal(body.url, "https://abc123.ht-ml.app/");
-    assert.equal(body.warnings.length, 1);
-    assert.equal(body.unresolved_local_assets.length, 1);
-    assert.equal("notices" in body, false);
-    assert.equal(body.warnings[0].kind, "load-failed");
-    assert.equal(body.warnings[0].ref, "missing.png");
-    assert.match(body.warnings[0].reason || "", /ENOENT/);
-    assert.equal(requests.length, 1);
-    assert.match(requests[0].body.html_content, /<img src="missing\.png">/);
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 test("mutating routes reject a present foreign Origin while allowing same-origin and header-less callers", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
   const artifact = path.join(dir, "artifact.html");
@@ -4132,85 +3557,6 @@ test("mutating routes reject a present foreign Origin while allowing same-origin
     assert.equal(health.status, 200);
   } finally {
     await server.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share rejects cross-origin browser requests", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, "<!doctype html><title>x</title><h1>Private</h1>\n");
-
-  const requests = [];
-  const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: "https://attacker.example" },
-      body: JSON.stringify({}),
-    });
-    const body = await shareRes.json();
-
-    assert.equal(shareRes.status, 403);
-    // Present foreign Origin is rejected by the global mutating-route guard.
-    // The per-route isSameOriginRequest check still covers header-less callers
-    // (next test) with the share-specific error.
-    assert.deepEqual(body, { error: "cross-origin request rejected" });
-    assert.equal(requests.length, 0);
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("POST /api/:key/share rejects requests without provenance headers", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const artifact = path.join(dir, "artifact.html");
-  await writeFile(artifact, "<!doctype html><title>x</title><h1>Private</h1>\n");
-
-  const requests = [];
-  const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
-
-  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
-  try {
-    const base = `http://127.0.0.1:${server.port}`;
-    const sessionRes = await fetch(`${base}/api/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file: artifact }),
-    });
-    const session = await sessionRes.json();
-
-    const shareRes = await fetch(`${base}/api/${session.key}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    const body = await shareRes.json();
-
-    assert.equal(shareRes.status, 403);
-    assert.deepEqual(body, { error: "cross-origin share request rejected" });
-    assert.equal(requests.length, 0);
-  } finally {
-    await server.close();
-    await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -6497,46 +5843,6 @@ test("chrome client chat input sends on Enter and inserts newline on Shift+Enter
   assert.match(js, /sendQueued\(\)/);
 });
 
-async function startFakeHtmlApp(requests, responseBody = null) {
-  const body = responseBody ?? {
-    site_id: "abc123",
-    url: "https://abc123.ht-ml.app/",
-    update_key: "uk_secret",
-    status: "active",
-  };
-  const server = createServer((req, res) => {
-    let raw = "";
-    req.setEncoding("utf8");
-    req.on("data", (chunk) => {
-      raw += chunk;
-    });
-    req.on("end", () => {
-      requests.push({
-        method: req.method,
-        url: req.url,
-        headers: req.headers,
-        body: raw ? JSON.parse(raw) : null,
-      });
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(body));
-    });
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-  const address = server.address();
-  return {
-    port: typeof address === "object" && address ? address.port : 0,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
-  };
-}
-
-function restoreEnv(name, value) {
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
-}
-
 test("chrome falls back to a default favicon and title when none are provided", () => {
   const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
 
@@ -6848,6 +6154,38 @@ test("chat-sync stamps a note seen when a poll takes it, working when the artifa
     } finally {
       await stream.close();
     }
+  } finally {
+    await server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("leftover non-HTML sessions are refused before any session.file content read", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
+  const secret = path.join(dir, "secret.txt");
+  await writeFile(secret, "outside-secret\n");
+  await writeFile(path.join(dir, ".env"), "hidden-secret\n");
+  const absolute = await canonicalFile(secret);
+  const key = sessionKey(absolute);
+  await writeFile(
+    path.join(dir, "state.json"),
+    `${JSON.stringify({ sessions: { [key]: { key, file: absolute, url: "http://127.0.0.1/session/test", status: "open" } } }, null, 2)}\n`,
+  );
+  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
+  try {
+    const base = `http://127.0.0.1:${server.port}`;
+    const documentResponse = await fetch(`${base}/artifact/${key}/index.html`);
+    const sibling = await fetch(`${base}/artifact/${key}/.env`);
+    const mermaid = await fetch(`${base}/api/${key}/mermaid-sources`);
+    const chrome = await fetch(`${base}/session/${key}`);
+    assert.equal(documentResponse.status, 403);
+    assert.doesNotMatch(await documentResponse.text(), /outside-secret/);
+    assert.equal(sibling.status, 403);
+    assert.doesNotMatch(await sibling.text(), /hidden-secret/);
+    assert.equal(mermaid.status, 403);
+    assert.doesNotMatch(await mermaid.text(), /outside-secret/);
+    assert.equal(chrome.status, 403);
+    assert.doesNotMatch(await chrome.text(), /outside-secret/);
   } finally {
     await server.close();
     await rm(dir, { recursive: true, force: true });
