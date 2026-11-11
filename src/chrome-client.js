@@ -8,7 +8,6 @@ const queueStorageKey = "textcast-chat-axi:queued:" + key;
 const terminalStorageKey = "textcast-chat-axi:terminal:" + key;
 // Review-chrome state that must survive a browser refresh. Keyed per session so one review's
 // triage can never leak into another artifact's.
-const warningSelectionStorageKey = "textcast-chat-axi:warning-selection:" + key;
 // Unsent annotation-card text lives only in the sandboxed iframe, so a full page reload would
 // destroy it unless the chrome persists what the SDK reports. Keyed per session like the queue,
 // so a draft can never reappear over a different artifact.
@@ -146,15 +145,6 @@ const layoutGateCopy = /** @type {HTMLParagraphElement} */ (document.getElementB
 const layoutGateAction = /** @type {HTMLButtonElement} */ (document.getElementById("layoutGateAction"));
 const layoutGateBypass = /** @type {HTMLButtonElement} */ (document.getElementById("layoutGateBypass"));
 const layoutGateEscape = /** @type {any} */ (window).__lavishLayoutGateEscape;
-const warningsWrap = /** @type {HTMLDivElement} */ (document.getElementById("warningsWrap"));
-const warningsButton = /** @type {HTMLButtonElement} */ (document.getElementById("warningsButton"));
-const warningsCount = /** @type {HTMLSpanElement} */ (document.getElementById("warningsCount"));
-const warningsDrawer = /** @type {HTMLDivElement} */ (document.getElementById("warningsDrawer"));
-const warningsSummary = /** @type {HTMLParagraphElement} */ (document.getElementById("warningsSummary"));
-const warningsSelectAll = /** @type {HTMLInputElement} */ (document.getElementById("warningsSelectAll"));
-const warningsSelected = /** @type {HTMLSpanElement} */ (document.getElementById("warningsSelected"));
-const warningsList = /** @type {HTMLDivElement} */ (document.getElementById("warningsList"));
-const warningsQueueButton = /** @type {HTMLButtonElement} */ (document.getElementById("warningsQueueButton"));
 const revisionsWrap = /** @type {HTMLDivElement} */ (document.getElementById("revisionsWrap"));
 const revisionsButton = /** @type {HTMLButtonElement} */ (document.getElementById("revisionsButton"));
 const revisionsCount = /** @type {HTMLSpanElement} */ (document.getElementById("revisionsCount"));
@@ -171,7 +161,6 @@ let annotationOverridden = false;
 let annotationDefaultReceived = false;
 let ended = false;
 let agentPresence = "waiting";
-const layoutGateEnabled = sessionData.layoutGateEnabled !== false;
 const configuredLayoutGateMaxHoldMs = Number(sessionData.layoutGateMaxHoldMs);
 const layoutGateMaxHoldMs =
   Number.isFinite(configuredLayoutGateMaxHoldMs) && configuredLayoutGateMaxHoldMs > 0
@@ -194,7 +183,7 @@ let unreachableDismissed = false;
 let unrestorableDraftMiss = null;
 let retiredDrafts = loadRetiredDrafts();
 let layoutGateVisible = false;
-let layoutGateManuallyBypassed = !layoutGateEnabled;
+let layoutGateManuallyBypassed = false;
 let layoutGateFailureActive = false;
 // A failure only the user can retire. The artifact-load card clears itself once a load succeeds;
 // the server-replacement card must not, because the page is still running the pre-upgrade client
@@ -203,11 +192,6 @@ let layoutGateFailureSticky = false;
 let layoutGateCycle = 0;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let layoutGateTimer;
-// The warning inbox is server-owned review state. The chrome renders it and posts triage
-// actions; it never decides on its own that a warning went away.
-let layoutWarnings = Array.isArray(sessionData.initialLayoutWarnings) ? sessionData.initialLayoutWarnings : [];
-const selectedWarningIds = new Set(loadJsonState(warningSelectionStorageKey, []));
-let warningsDrawerOpen = false;
 /** @typedef {{ done: Promise<boolean>, finish: (succeeded: boolean) => void }} FeedbackPreparation */
 /** @typedef {{ prompts: any[], inFlight: boolean, order: number }} TerminalSubmission */
 /** @type {Map<string, { action: "copy" | "submit", prompts?: any[], chatAtRequest?: any[], endAfter?: boolean, terminal?: TerminalSubmission | null, acknowledgement?: object, order?: number, timeout?: ReturnType<typeof setTimeout> }>} */
@@ -293,8 +277,6 @@ let artifactLoadRequestSequence = Number(sessionData.initialArtifactLoadSequence
 let chromeLoadToken = String(sessionData.chromeLoadToken || "");
 artifactLoadToken = String(sessionData.initialArtifactLoadToken || "");
 let artifactSpokeToken = "";
-let artifactMessageSequence = 0;
-let layoutDiagnosticSequence = 0;
 let artifactLoadRecoveryAttempt = 0;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let artifactLoadRecoveryTimer;
@@ -493,11 +475,6 @@ function promptAnchor(prompt) {
   const target = prompt?.target && typeof prompt.target === "object" ? prompt.target : null;
   const selector = boundAnchorText(prompt?.selector, ANCHOR_SELECTOR_MAX);
   const withSelector = (anchor) => (selector ? { ...anchor, selector } : anchor);
-  if (tag === "layout-warnings") {
-    const count = Array.isArray(target?.warnings) ? target.warnings.length : 0;
-    const excerpt = count > 0 ? count + (count === 1 ? " issue" : " issues") : prompt.text;
-    return { kind: "layout", label: "layout", excerpt: boundAnchorText(excerpt, ANCHOR_EXCERPT_MAX) };
-  }
   const type = String(target?.type || "");
   if (type === "text-range") {
     return withSelector({
@@ -675,7 +652,6 @@ function updateSendState() {
   chatInput.disabled = ended || terminalReserved;
   chatAttachButton.disabled = ended || terminalReserved;
   endButton.disabled = ended || terminalReserved;
-  if (warningsQueueButton) updateWarningSelectionState();
 }
 
 function attachmentCount(prompt) {
@@ -1663,24 +1639,6 @@ function promptQueueKey(prompt) {
   return prompt && typeof prompt[internalQueueKeyField] === "string" ? prompt[internalQueueKeyField].trim() : "";
 }
 
-function beginFeedbackPreparation() {
-  if (ended || terminalSubmission) return null;
-  /** @type {(succeeded: boolean) => void} */
-  let finishPromise = () => {};
-  const done = new Promise((resolve) => {
-    finishPromise = resolve;
-  });
-  const preparation = {
-    done,
-    finish(succeeded) {
-      if (!feedbackPreparations.delete(preparation)) return;
-      finishPromise(succeeded);
-    },
-  };
-  feedbackPreparations.add(preparation);
-  return preparation;
-}
-
 function enqueuePrompt(rawPrompt, /** @type {FeedbackPreparation | null} */ preparation = null) {
   if ((preparation && !feedbackPreparations.has(preparation)) || (terminalSubmission && !preparation)) return false;
   // The sandboxed iframe is untrusted: never accept a caller-supplied settlement identity.
@@ -2190,13 +2148,6 @@ async function submitQueuedOnce(submission, preserveFailureState = false) {
         markSessionEnded();
         return false;
       }
-      if (Array.isArray(data?.warnings)) setLayoutWarnings(data.warnings);
-      showQueuedSendFailure(
-        "Could not send because the layout issue selection changed. Your feedback is still queued. Review the current issues, then click Send to Agent to retry.",
-        { kind: "submission", operation: submission },
-      );
-      if (submission.terminal) releaseTerminalSubmission(submission.terminal);
-      return;
     }
     // C4: the server persisted nothing (atomic reject) - the queue below is left
     // intact because the splice only runs on success. Surface exactly what failed
@@ -2275,30 +2226,16 @@ function settleAcknowledgementGuidance(submission, preserveFailureState) {
   clearPersistentSendFailure();
 }
 
-function normalizeLayoutFindings(value) {
-  return Array.isArray(value)
-    ? value.filter((item) => item && typeof item === "object" && String(item.severity || "").toLowerCase() === "error")
-    : [];
-}
-
 function clearLayoutGateTimer() {
   layoutGateEscape?.cancel?.();
   if (layoutGateTimer) clearTimeout(layoutGateTimer);
   layoutGateTimer = undefined;
 }
 
-function setLayoutGateCard(state) {
+function setLayoutGateCard() {
   if (!layoutGateTitle || !layoutGateCopy) return;
-
-  if (state === "held") {
-    layoutGateTitle.innerHTML = "Fixing a layout issue...";
-    layoutGateCopy.textContent =
-      "The browser found inaccessible or unusable content. Your agent has been notified and this will reveal after the next clean reload.";
-    return;
-  }
-
-  layoutGateTitle.innerHTML = "Checking layout.<br>One moment.";
-  layoutGateCopy.textContent = "Lavish is waiting for fonts and final geometry before revealing this artifact.";
+  layoutGateTitle.textContent = "Opening the page.";
+  layoutGateCopy.textContent = "One moment while the page loads.";
 }
 
 function setLayoutGateActive(active) {
@@ -2425,19 +2362,17 @@ function armLayoutGateTimer() {
 
 function startLayoutGateCycle() {
   clearLayoutGateFailure();
-  if (!layoutGateEnabled || layoutGateManuallyBypassed || ended) return;
+  if (layoutGateManuallyBypassed || ended) return;
 
   layoutGateCycle += 1;
   setLayoutGateActive(true);
   // A sticky failure owns the card copy, but never the reveal. Do not repaint it as a checking
   // card, and do arm a fresh timer for reloads that happen while the sticky card is present.
-  if (!layoutGateFailureSticky) setLayoutGateCard("checking");
+  if (!layoutGateFailureSticky) setLayoutGateCard();
   armLayoutGateTimer();
 }
 
-// The gate only waits for fonts and final geometry now. It never holds the artifact hostage
-// pending an agent repair: findings are the user's to triage, so a completed pass always reveals
-// and hands the result to the passive inbox.
+// The cover lifts as soon as the artifact's SDK reports that the document is ready.
 function handleLayoutGatePass() {
   if (ended || !layoutGateVisible) return;
   revealLayoutGate();
@@ -2445,36 +2380,9 @@ function handleLayoutGatePass() {
 
 function initializeLayoutGate() {
   if (layoutGateEscape?.isManuallyBypassed?.()) layoutGateManuallyBypassed = true;
-  if (!layoutGateEnabled) {
-    setLayoutGateActive(false);
-    return;
-  }
-
   if (layoutGateAction) layoutGateAction.onclick = () => forceRevealLayoutGate("manual");
   if (layoutGateBypass) layoutGateBypass.onclick = () => forceRevealLayoutGate("manual");
   startLayoutGateCycle();
-}
-
-// ---------------------------------------------------------------------------
-// Passive layout-warning inbox
-// ---------------------------------------------------------------------------
-
-async function submitLayoutDiagnostics(pass) {
-  const response = await fetch("/api/" + key + "/layout-diagnostics", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      complete: pass?.complete !== false,
-      target_presence_complete: pass?.targetPresenceComplete === true,
-      artifact_revision: Number(pass?.artifactRevision) || 0,
-      artifact_load_token: String(pass?.artifactLoadToken || artifactLoadToken),
-      artifact_pass_sequence: Number(pass?.artifactPassSequence) || 0,
-      viewport_width: Number(pass?.viewportWidth) || 0,
-      findings: normalizeLayoutFindings(pass?.findings),
-    }),
-  });
-  if (!response.ok) throw new Error("failed to submit layout diagnostics");
-  return response.json();
 }
 
 async function reportArtifactFailures(failures, loadToken = artifactLoadToken) {
@@ -2489,7 +2397,7 @@ async function reportArtifactFailures(failures, loadToken = artifactLoadToken) {
 // The narrow fatal probe. A healthy artifact boots its SDK and starts talking within seconds; if
 // nothing ever arrives we ask the server whether the document is servable at all. Probing only on
 // silence keeps the normal path to a single artifact request, and a non-OK answer is the one
-// signal that separates "the review is unusable" from "the review has layout problems".
+// signal that the review is unusable.
 function armArtifactAvailabilityProbe(loadToken = artifactLoadToken) {
   clearTimeout(artifactSilenceTimer);
   artifactSilenceTimer = setTimeout(() => {
@@ -2527,230 +2435,6 @@ async function probeArtifactAvailability(loadToken) {
   }
 }
 
-function activeWarnings() {
-  return layoutWarnings.filter((warning) => warning && warning.active);
-}
-
-function pendingLayoutWarningIds() {
-  const ids = new Set();
-  for (const prompt of queued) {
-    if (prompt?.tag !== "layout-warnings" || prompt.target?.type !== "layout-warnings") continue;
-    for (const warning of Array.isArray(prompt.target.warnings) ? prompt.target.warnings : []) {
-      if (warning?.id) ids.add(String(warning.id));
-    }
-  }
-  return ids;
-}
-
-function setLayoutWarnings(next) {
-  layoutWarnings = Array.isArray(next) ? next : [];
-  // Selections only ever reference warnings the user may still act on.
-  const pending = pendingLayoutWarningIds();
-  const selectable = new Set(
-    layoutWarnings.filter((warning) => warning.selectable && !pending.has(warning.id)).map((warning) => warning.id),
-  );
-  for (const id of [...selectedWarningIds]) {
-    if (!selectable.has(id)) selectedWarningIds.delete(id);
-  }
-  persistWarningSelection();
-  renderWarnings();
-}
-
-function persistWarningSelection() {
-  saveJsonState(warningSelectionStorageKey, [...selectedWarningIds]);
-}
-
-function warningRelativeTime(value) {
-  const at = Date.parse(String(value || ""));
-  if (!Number.isFinite(at)) return "";
-  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
-  if (seconds < 45) return "just now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return minutes + "m ago";
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return hours + "h ago";
-  return Math.round(hours / 24) + "d ago";
-}
-
-function createWarningChip(text, extraClass) {
-  const chip = document.createElement("span");
-  chip.className = "warning-chip" + (extraClass ? " " + extraClass : "");
-  chip.textContent = text;
-  return chip;
-}
-
-function createWarningRow(warning) {
-  const row = document.createElement("div");
-  row.className = "warning-row" + (warning.outstanding ? " is-outstanding" : "");
-  row.dataset.warningId = warning.id;
-  const pending = pendingLayoutWarningIds().has(warning.id);
-  const selectable = warning.selectable && !pending;
-  const unavailableLabel = pending ? "is queued to send" : "is already queued for a fix";
-  const statusLabel = pending ? "Queued for send" : warning.status_label;
-
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.className = "warning-select";
-  checkbox.checked = selectable && selectedWarningIds.has(warning.id);
-  checkbox.disabled = !selectable;
-  checkbox.setAttribute(
-    "aria-label",
-    selectable
-      ? "Select " + warning.title + " on " + warning.viewport_label
-      : warning.title + " on " + warning.viewport_label + " " + unavailableLabel,
-  );
-  checkbox.addEventListener("change", () => {
-    if (checkbox.checked) selectedWarningIds.add(warning.id);
-    else selectedWarningIds.delete(warning.id);
-    persistWarningSelection();
-    updateWarningSelectionState();
-  });
-  row.appendChild(checkbox);
-
-  const body = document.createElement("div");
-  body.className = "warning-body";
-
-  const title = document.createElement("div");
-  title.className = "warning-title";
-  title.textContent = warning.title;
-  body.appendChild(title);
-
-  const explanation = document.createElement("p");
-  explanation.className = "warning-explanation";
-  explanation.textContent = warning.explanation;
-  body.appendChild(explanation);
-
-  const meta = document.createElement("div");
-  meta.className = "warning-meta";
-  meta.appendChild(createWarningChip("Severe", "severity"));
-  meta.appendChild(createWarningChip(statusLabel, "status-" + warning.status));
-  meta.appendChild(createWarningChip(warning.viewport_label + " · " + warning.viewport_width + "px"));
-  const seen = warningRelativeTime(warning.last_seen_at);
-  if (seen) meta.appendChild(createWarningChip("Seen " + seen));
-  body.appendChild(meta);
-
-  const target = document.createElement("code");
-  target.className = "warning-target";
-  target.textContent = warning.selector || "(whole page)";
-  body.appendChild(target);
-
-  const actions = document.createElement("div");
-  actions.className = "warning-actions";
-  if (warning.selector) {
-    const reveal = document.createElement("button");
-    reveal.type = "button";
-    reveal.className = "warning-action";
-    reveal.textContent = "Reveal";
-    reveal.setAttribute("aria-label", "Reveal " + warning.title + " in the artifact");
-    reveal.addEventListener("click", () => revealWarning(warning));
-    actions.appendChild(reveal);
-  }
-  const dismiss = document.createElement("button");
-  dismiss.type = "button";
-  dismiss.className = "warning-action";
-  dismiss.textContent = "Dismiss";
-  dismiss.disabled = !selectable;
-  dismiss.setAttribute(
-    "aria-label",
-    selectable
-      ? "Dismiss " + warning.title + " for this artifact revision"
-      : warning.title + " cannot be dismissed while " + (pending ? "queued to send" : "a fix is queued"),
-  );
-  dismiss.addEventListener("click", () => dismissWarning(warning.id));
-  actions.appendChild(dismiss);
-  body.appendChild(actions);
-
-  row.appendChild(body);
-  return row;
-}
-
-function renderWarnings() {
-  if (!warningsWrap) return;
-  const pending = pendingLayoutWarningIds();
-  let selectionChanged = false;
-  for (const id of [...selectedWarningIds]) {
-    if (pending.has(id)) {
-      selectedWarningIds.delete(id);
-      selectionChanged = true;
-    }
-  }
-  if (selectionChanged) persistWarningSelection();
-  const active = activeWarnings();
-  const count = active.length;
-
-  warningsWrap.hidden = count === 0 || ended;
-  if (warningsWrap.hidden && warningsDrawerOpen) setWarningsDrawerOpen(false);
-  warningsCount.textContent = String(count);
-  warningsButton.setAttribute(
-    "aria-label",
-    count === 1 ? "1 unresolved layout issue" : count + " unresolved layout issues",
-  );
-
-  const outstanding = active.filter((warning) => warning.outstanding).length;
-  warningsSummary.textContent =
-    (count === 1 ? "1 unresolved issue" : count + " unresolved issues") +
-    (outstanding > 0 ? " · " + outstanding + " already queued for a fix" : "");
-
-  warningsList.replaceChildren();
-  if (count === 0) {
-    const empty = document.createElement("p");
-    empty.className = "warnings-empty";
-    empty.textContent = "No unresolved layout issues.";
-    warningsList.appendChild(empty);
-  } else {
-    for (const warning of active) warningsList.appendChild(createWarningRow(warning));
-  }
-  updateWarningSelectionState();
-}
-
-function updateWarningSelectionState() {
-  const pending = pendingLayoutWarningIds();
-  const selectable = activeWarnings().filter((warning) => warning.selectable && !pending.has(warning.id));
-  const selectedCount = selectable.filter((warning) => selectedWarningIds.has(warning.id)).length;
-  warningsSelectAll.disabled = selectable.length === 0;
-  // Default selection is never "everything": Select all is an explicit action.
-  warningsSelectAll.checked = selectable.length > 0 && selectedCount === selectable.length;
-  warningsSelectAll.indeterminate = selectedCount > 0 && selectedCount < selectable.length;
-  warningsSelected.textContent = selectedCount === 0 ? "None selected" : selectedCount + " selected";
-  warningsQueueButton.disabled = selectedCount === 0 || ended || terminalSubmission !== null;
-}
-
-function toggleSelectAllWarnings() {
-  const pending = pendingLayoutWarningIds();
-  const selectable = activeWarnings().filter((warning) => warning.selectable && !pending.has(warning.id));
-  const shouldSelect = warningsSelectAll.checked;
-  for (const warning of selectable) {
-    if (shouldSelect) selectedWarningIds.add(warning.id);
-    else selectedWarningIds.delete(warning.id);
-  }
-  persistWarningSelection();
-  renderWarnings();
-}
-
-function setWarningsDrawerOpen(open) {
-  warningsDrawerOpen = open && !ended;
-  warningsDrawer.hidden = !warningsDrawerOpen;
-  warningsButton.setAttribute("aria-expanded", String(warningsDrawerOpen));
-  if (warningsDrawerOpen) {
-    closeMenus();
-    warningsSelectAll.focus();
-  }
-}
-
-function toggleWarningsDrawer() {
-  setWarningsDrawerOpen(warningsDrawer.hidden);
-}
-
-function closeWarningsDrawer({ restoreFocus = false } = {}) {
-  if (!warningsDrawerOpen) return;
-  setWarningsDrawerOpen(false);
-  if (restoreFocus) warningsButton.focus();
-}
-
-function revealWarning(warning) {
-  postToFrame({ type: "lavish:revealElement", selector: warning.selector });
-}
-
 // ---------------------------------------------------------------------------
 // Revision legend
 //
@@ -2758,8 +2442,8 @@ function revealWarning(warning) {
 // `data-lavish-revisions` registry plus `data-lavish-revision` marks); the SDK
 // reads it and posts it here. The legend lives entirely in the chrome, so the
 // served artifact still matches the file on disk - Lavish never paints the
-// change indicator into the page. Reveal borrows the same transient marker the
-// layout-issues drawer uses, and only when the reader asks for it.
+// change indicator into the page. Reveal uses the SDK's transient marker, and
+// only when the reader asks for it.
 
 // The payload crosses postMessage from a sandboxed frame rendering author
 // content, so it is untrusted here whatever built it. These bound what is
@@ -3010,86 +2694,6 @@ function revealNextRevisionMark(id) {
   renderRevisionLegend();
 }
 
-async function dismissWarning(id) {
-  try {
-    const response = await fetch("/api/" + key + "/layout-warnings/dismiss", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    if (!response.ok) throw new Error("failed to dismiss layout warning");
-    const data = await response.json();
-    if (Array.isArray(data.warnings)) setLayoutWarnings(data.warnings);
-  } catch {
-    // Leave the warning in place - a failed dismissal must never look like a resolution.
-  }
-}
-
-// One queued batch = one ordinary queued prompt. The CLI cannot tell it apart from any other
-// feedback, which is exactly the point: no parallel agent protocol.
-async function queueSelectedWarningFixes() {
-  const preparation = beginFeedbackPreparation();
-  if (!preparation) return;
-  const ids = [...selectedWarningIds];
-  if (ids.length === 0) {
-    preparation.finish(true);
-    return;
-  }
-  warningsQueueButton.disabled = true;
-  let succeeded = false;
-  try {
-    const response = await fetch("/api/" + key + "/layout-warnings/queue", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
-    if (!response.ok) throw new Error("failed to queue layout warning fixes");
-    const data = await response.json();
-    if (data.prompt) {
-      if (
-        !enqueuePrompt(
-          {
-            uid: "",
-            prompt: data.prompt.prompt,
-            selector: "",
-            tag: "layout-warnings",
-            text: data.prompt.text,
-            target: data.prompt.target,
-          },
-          preparation,
-        )
-      )
-        throw new Error("failed to retain layout warning fixes");
-    }
-    selectedWarningIds.clear();
-    persistWarningSelection();
-    if (Array.isArray(data.warnings)) setLayoutWarnings(data.warnings);
-    closeWarningsDrawer({ restoreFocus: true });
-    clearPreparationFailure("layout-warnings");
-    succeeded = true;
-  } catch {
-    showPersistentSendFailure(
-      "Could not prepare the selected layout fixes. Review the current issues and try again.",
-      false,
-      { kind: "preparation", operation: preparation, preparationType: "layout-warnings" },
-    );
-    updateWarningSelectionState();
-  } finally {
-    preparation.finish(succeeded);
-  }
-}
-
-async function refreshLayoutWarnings() {
-  try {
-    const response = await fetch("/api/" + key + "/layout-warnings");
-    if (!response.ok) return;
-    const data = await response.json();
-    if (Array.isArray(data.warnings)) setLayoutWarnings(data.warnings);
-  } catch {
-    // Keep whatever the chrome already has; never clear on a failed refresh.
-  }
-}
-
 async function endSession(terminal = null) {
   if (ended || (terminalSubmission && terminal !== terminalSubmission)) return;
   const response = await fetch("/api/" + key + "/end", { method: "POST" });
@@ -3106,8 +2710,6 @@ function markSessionEnded() {
   persistTerminalReservation(false);
   cancelArtifactLoadRecovery();
   closeMenus();
-  closeWarningsDrawer();
-  renderWarnings();
   closeRevisionsDrawer();
   renderRevisionLegend();
   annotationSwitch.disabled = true;
@@ -3487,45 +3089,15 @@ window.addEventListener("message", (event) => {
   const msg = event.data || {};
   const messageToken = String(msg.artifact_load_token || "");
   if (messageToken !== artifactLoadToken) {
-    // A pass can be stamped by the load that just lost a token race. Ask the current artifact
-    // document to run the audit again instead of consuming the only pass for this cycle.
-    if (msg.type === "lavish:layoutDiagnostics") postToFrame({ type: "lavish:requestLayoutDiagnostics" });
+    // A ready report can be stamped by the load that just lost a token race. Ask the current
+    // artifact document to report again instead of consuming the only report for this cycle.
+    if (msg.type === "lavish:ready") postToFrame({ type: "lavish:requestReady" });
     return;
   }
-  const messageSequence = ++artifactMessageSequence;
   artifactSpokeToken = messageToken;
   clearTimeout(artifactSilenceTimer);
-  if (msg.type === "lavish:layoutDiagnostics") {
-    const diagnosticSequence = ++layoutDiagnosticSequence;
-    const complete = msg.complete !== false;
-    // The gate is visual, so the client-side settled pass is the release signal. Reporting the
-    // pass is deliberately fire-and-forget: a server restart or a diagnostics 4xx/5xx must not
-    // hold a rendered artifact hostage to a network round-trip.
-    if (complete) handleLayoutGatePass();
-    submitLayoutDiagnostics({
-      complete,
-      targetPresenceComplete: msg.target_presence_complete === true,
-      artifactRevision: msg.artifact_revision,
-      artifactLoadToken: msg.artifact_load_token,
-      artifactPassSequence: msg.artifact_pass_sequence,
-      viewportWidth: msg.viewport_width,
-      findings: msg.findings,
-    })
-      .then((result) => {
-        if (messageToken !== artifactLoadToken || diagnosticSequence !== layoutDiagnosticSequence) return;
-        if (Array.isArray(result?.warnings)) setLayoutWarnings(result.warnings);
-        if (result?.status === "stale") {
-          if (messageSequence === artifactMessageSequence) armArtifactAvailabilityProbe(messageToken);
-          return;
-        }
-      })
-      .catch(() => {
-        // A failed report is still a completed client-side pass. Keep this fallback explicit so a
-        // future change cannot accidentally make the network request the gate's release path.
-        if (complete && messageToken === artifactLoadToken && diagnosticSequence === layoutDiagnosticSequence) {
-          handleLayoutGatePass();
-        }
-      });
+  if (msg.type === "lavish:ready") {
+    handleLayoutGatePass();
     return;
   }
   // The artifact spoke, so it rendered and ran its SDK - there is nothing fatal to probe for.
@@ -3711,17 +3283,12 @@ annotationSwitch.onclick = toggleAnnotationMode;
 sendButton.onclick = () => sendQueued(false);
 sendAndEndButton.onclick = () => sendQueued(true);
 moreButton.onclick = () => {
-  closeWarningsDrawer();
   closeRevisionsDrawer();
   toggleMenu(moreButton, moreMenu);
 };
-warningsButton.onclick = toggleWarningsDrawer;
 revisionsButton.onclick = () => {
-  closeWarningsDrawer();
   setRevisionsDrawerOpen(revisionsDrawer.hidden);
 };
-warningsSelectAll.onchange = toggleSelectAllWarnings;
-warningsQueueButton.onclick = queueSelectedWarningFixes;
 chatAttachButton.onclick = () => chatAttachInput.click();
 chatAttachInput.addEventListener("change", () => {
   chatAttachmentController.addFiles(chatAttachInput.files);
@@ -3833,15 +3400,10 @@ if (outdatedDismissButton) {
 document.addEventListener("mousedown", (event) => {
   const target = /** @type {Node} */ (event.target);
   if (!moreMenu.hidden && !moreWrap.contains(target)) setMenuOpen(moreButton, moreMenu, false);
-  if (warningsDrawerOpen && !warningsWrap.contains(target)) closeWarningsDrawer();
   if (revisionsDrawerOpen && !revisionsWrap.contains(target)) closeRevisionsDrawer();
 });
 // A non-modal popover closes when focus leaves it, so keyboard users are never stranded inside a
 // panel they cannot see the end of.
-warningsWrap.addEventListener("focusout", (event) => {
-  const next = /** @type {Node | null} */ (event.relatedTarget);
-  if (warningsDrawerOpen && next && !warningsWrap.contains(next)) closeWarningsDrawer();
-});
 revisionsWrap.addEventListener("focusout", (event) => {
   const next = /** @type {Node | null} */ (event.relatedTarget);
   if (revisionsDrawerOpen && next && !revisionsWrap.contains(next)) closeRevisionsDrawer();
@@ -3850,8 +3412,6 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (revisionsDrawerOpen) {
       closeRevisionsDrawer({ restoreFocus: true });
-    } else if (warningsDrawerOpen) {
-      closeWarningsDrawer({ restoreFocus: true });
     } else if (!moreMenu.hidden) {
       closeMenus();
     } else if (sheetOpen && isMobileSheet()) {
@@ -3897,7 +3457,6 @@ function connectLiveEvents() {
       unreachableBannerOwned = false;
       setChromeOutdated(false);
     }
-    refreshLayoutWarnings();
   });
   socket.addEventListener("message", (message) => {
     try {
@@ -3947,7 +3506,6 @@ events.set("chat-sync", (data) => {
   syncChat(data.chat || [], data.chat_revision);
 });
 events.set("agent-presence", (data) => setAgentPresence(data.mode === "external-listener" ? "external" : data.state));
-events.set("layout-warnings", (data) => setLayoutWarnings(data.warnings || []));
 events.set("ended", () => markSessionEnded());
 connectLiveEvents();
 
@@ -3956,8 +3514,6 @@ applyPanelCollapsed();
 settleQueuedFromTranscript(initialChat, false);
 render();
 setChromeOutdated(false);
-setWarningsDrawerOpen(false);
-renderWarnings();
 initialChat.forEach((item) => addChat(item));
 retiredDrafts.forEach((text) => renderRetiredDraft(text));
 setAgentPresence("waiting");

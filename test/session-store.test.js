@@ -26,11 +26,10 @@ async function beginArtifactLoad(store, key) {
   return load;
 }
 
-function diagnosticPayload(load, sequence, body = {}) {
+function loadPayload(load, body = {}) {
   return {
     artifact_load_token: load.artifact_load_token,
     artifact_revision: load.artifact_revision,
-    artifact_pass_sequence: sequence,
     ...body,
   };
 }
@@ -101,47 +100,7 @@ test("queued text selection prompts preserve range anchors", async () => {
   }
 });
 
-test("a diagnostic pass records warnings passively and never becomes agent feedback", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const load = await beginArtifactLoad(store, session.key);
-    const result = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(load, 1, {
-        complete: true,
-        viewport_width: 720,
-        findings: [
-          {
-            selector: "html",
-            kind: "page-horizontal-overflow",
-            overflowPx: 24.5,
-            viewportWidth: 720,
-            severity: "error",
-          },
-        ],
-      }),
-    );
-
-    assert.equal(result.changed, true);
-    assert.equal(result.warnings.length, 1);
-    assert.equal(result.warnings[0].status, "open");
-    assert.equal(result.warnings[0].active, true);
-    assert.equal(result.warnings[0].selectable, true);
-    // The whole point of the passive inbox: detection alone must not make poll return.
-    const feedback = await store.takeFeedback(session.key);
-    assert.equal(feedback.status, "waiting");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("a newer begun load invalidates an older diagnostic atomically", async () => {
+test("a newer begun load invalidates an older artifact failure atomically", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
   try {
     const stateFile = path.join(dir, "state.json");
@@ -158,19 +117,15 @@ test("a newer begun load invalidates an older diagnostic atomically", async () =
         requestSequence: newerContext.artifact_load_sequence + 1,
         handoffToken: newerContext.chrome_load_token,
       }),
-      store.recordLayoutDiagnostics(
+      store.recordArtifactFailures(
         session.key,
-        diagnosticPayload(load, 1, {
-          complete: true,
-          viewport_width: 1440,
-          findings: [{ selector: "html", kind: "page-horizontal-overflow", overflowPx: 24, severity: "error" }],
-        }),
+        loadPayload(load, { failures: [{ kind: "artifact-asset-unavailable", detail: "stale asset" }] }),
       ),
     ]);
 
     const updated = await store.findByKey(session.key);
     assert.equal(updated.artifact_revision, 2);
-    assert.equal(updated.layout_warnings.length, 0);
+    assert.deepEqual(updated.artifact_failures || [], []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -342,14 +297,7 @@ test("a partially stored artifact load is no load at all", async () => {
   // Every field of the epoch is a fence some later begin is judged against, so a record missing
   // one cannot be honored in part: restoring the token while defaulting `handoff_token` away
   // would leave a load that answers 200 and an owner whose next begin is told `no-handoff`.
-  const fields = [
-    "artifact_load_token",
-    "artifact_revision",
-    "last_pass_sequence",
-    "request_id",
-    "request_sequence",
-    "handoff_token",
-  ];
+  const fields = ["artifact_load_token", "artifact_revision", "request_id", "request_sequence", "handoff_token"];
   for (const missing of fields) {
     const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
     try {
@@ -397,7 +345,6 @@ test("a partially stored artifact load is no load at all", async () => {
 
 test("a stored artifact load with a malformed fence is no load at all", async () => {
   const corruptions = [
-    { last_pass_sequence: "soon" },
     { request_sequence: -1 },
     { request_id: 7 },
     { artifact_revision: "one" },
@@ -492,335 +439,6 @@ test("typed handoff outcomes separate superseded and no-handoff begins", async (
   }
 });
 
-test("non-severe observations never enter the inbox", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const load = await beginArtifactLoad(store, session.key);
-    const result = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(load, 1, {
-        complete: true,
-        viewport_width: 720,
-        findings: [
-          {
-            selector: ".accent",
-            kind: "element-parent-overflow",
-            overflowPx: 20,
-            viewportWidth: 720,
-            severity: "warning",
-          },
-          { selector: ".unproven", kind: "clipped-text", overflowPx: 200, viewportWidth: 720 },
-        ],
-      }),
-    );
-
-    assert.equal(result.warnings.length, 0);
-    assert.equal((await store.takeFeedback(session.key)).status, "waiting");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("queueing a warning produces one ordinary prompt and leaves the warning unresolved", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const load = await beginArtifactLoad(store, session.key);
-    const recorded = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(load, 1, {
-        complete: true,
-        viewport_width: 1440,
-        findings: [
-          { selector: "button", kind: "clipped-control", axis: "horizontal", overflowPx: 20, severity: "error" },
-          { selector: "p", kind: "clipped-text", axis: "vertical", overflowPx: 27, severity: "error" },
-        ],
-      }),
-    );
-    const [first, second] = recorded.warnings;
-
-    const queued = await store.prepareLayoutWarningFixes(session.key, [first.id]);
-    assert.equal(queued.queued.length, 1);
-    assert.match(queued.prompt.prompt, /Fix this layout issue/);
-    assert.equal(queued.prompt.target.type, "layout-warnings");
-    assert.equal(queued.prompt.target.warnings[0].id, first.id);
-
-    const prepared = queued.warnings.find((warning) => warning.id === first.id);
-    assert.equal(prepared.status, "open");
-    assert.equal(prepared.selectable, true);
-    assert.equal(queued.warnings.find((warning) => warning.id === second.id).status, "open");
-    await store.queuePrompts(session.key, { prompts: [{ ...queued.prompt, uid: "", tag: "layout-warnings" }] });
-    const after = (await store.listLayoutWarnings(session.key)).warnings.find((warning) => warning.id === first.id);
-    assert.equal(after.status, "queued");
-    assert.equal(after.active, true);
-    assert.equal(after.selectable, false);
-    assert.equal(after.outstanding, true);
-    const retry = await store.queuePrompts(session.key, {
-      prompts: [{ ...queued.prompt, uid: "", tag: "layout-warnings" }],
-    });
-    assert.equal(retry.conflict, undefined);
-    assert.equal(retry.prompts.length, 1);
-    const feedback = await store.takeFeedback(session.key);
-    assert.equal(feedback.status, "feedback");
-    assert.equal(feedback.prompts[0].tag, "layout-warnings");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("an acknowledged layout prompt retry bypasses a later recurring-warning conflict", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const firstLoad = await beginArtifactLoad(store, session.key);
-    const finding = { selector: "p", kind: "clipped-text", axis: "vertical", overflowPx: 27, severity: "error" };
-    const recorded = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(firstLoad, 1, { complete: true, viewport_width: 1440, findings: [finding] }),
-    );
-    const prepared = await store.prepareLayoutWarningFixes(session.key, [recorded.warnings[0].id]);
-    const prompt = {
-      ...prepared.prompt,
-      uid: "",
-      selector: "",
-      tag: "layout-warnings",
-      prompt_id: "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa",
-    };
-    await store.queuePrompts(session.key, { prompts: [prompt] });
-    assert.equal((await store.takeFeedback(session.key)).status, "feedback");
-
-    const secondLoad = await beginArtifactLoad(store, session.key);
-    const recurring = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(secondLoad, 1, { complete: true, viewport_width: 1440, findings: [finding] }),
-    );
-    assert.equal(recurring.warnings[0].status, "recurring");
-
-    const retry = await store.queuePrompts(session.key, { prompts: [prompt] });
-    assert.equal(retry.conflict, undefined);
-    assert.equal(retry.fresh_feedback, false);
-    assert.equal(retry.chat.length, 1);
-    assert.equal(retry.prompts.length, 0);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("a prepared layout prompt conflicts when its warning changes before sending", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const firstLoad = await beginArtifactLoad(store, session.key);
-    const recorded = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(firstLoad, 1, {
-        complete: true,
-        viewport_width: 1440,
-        findings: [{ selector: "p", kind: "clipped-text", axis: "vertical", overflowPx: 27, severity: "error" }],
-      }),
-    );
-    const prepared = await store.prepareLayoutWarningFixes(session.key, [recorded.warnings[0].id]);
-
-    const secondLoad = await beginArtifactLoad(store, session.key);
-    const resolved = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(secondLoad, 1, {
-        complete: true,
-        target_presence_complete: true,
-        viewport_width: 1440,
-        findings: [],
-      }),
-    );
-    assert.equal(resolved.warnings[0].status, "resolved");
-
-    const conflict = await store.queuePrompts(session.key, {
-      prompts: [{ ...prepared.prompt, uid: "", selector: "", tag: "layout-warnings" }],
-    });
-    assert.equal(conflict.conflict, true);
-    assert.deepEqual(conflict.warning_ids, [recorded.warnings[0].id]);
-    assert.equal((await store.takeFeedback(session.key)).status, "waiting");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("a stale diagnostic pass cannot mutate the current revision", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const firstLoad = await beginArtifactLoad(store, session.key);
-    const recorded = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(firstLoad, 1, {
-        complete: true,
-        viewport_width: 1440,
-        findings: [{ selector: "p", kind: "clipped-text", axis: "vertical", overflowPx: 27, severity: "error" }],
-      }),
-    );
-
-    const secondLoad = await beginArtifactLoad(store, session.key);
-    const stale = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(secondLoad, 1, {
-        artifact_load_token: firstLoad.artifact_load_token,
-        artifact_revision: firstLoad.artifact_revision,
-        complete: true,
-        viewport_width: 1440,
-        findings: [],
-      }),
-    );
-    assert.equal(stale.stale, true);
-    assert.equal(stale.warnings[0].status, "open");
-    assert.equal(stale.warnings[0].last_seen_revision, 1);
-    assert.equal(recorded.warnings[0].id, stale.warnings[0].id);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("a queued layout-warnings prompt is normalized like ordinary feedback", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    await store.queuePrompts(session.key, {
-      prompts: [
-        {
-          uid: "",
-          prompt: "Fix these layout issues",
-          selector: "",
-          tag: "layout-warnings",
-          text: "Layout issues: 1 selected",
-          target: {
-            type: "layout-warnings",
-            warnings: [{ id: "abc", rule: "clipped-text", selector: "p", axis: "vertical", overflow_px: 27 }],
-          },
-        },
-      ],
-    });
-
-    const result = feedbackResult(await store.takeFeedback(session.key));
-    assert.equal(result.prompts.length, 1);
-    assert.equal(result.prompts[0].tag, "layout-warnings");
-    assert.equal(result.prompts[0].target.warnings[0].id, "abc");
-    assert.equal("artifact_failures" in result, false);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("the inbox survives reopening the same artifact", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const load = await beginArtifactLoad(store, session.key);
-    await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(load, 1, {
-        complete: true,
-        viewport_width: 720,
-        findings: [{ selector: "html", kind: "page-horizontal-overflow", overflowPx: 24, severity: "error" }],
-      }),
-    );
-
-    const reopened = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-
-    assert.equal(reopened.status, "open");
-    assert.equal(reopened.layout_warnings.length, 1);
-    assert.equal((await store.listLayoutWarnings(session.key)).warnings[0].status, "open");
-    assert.equal((await store.takeFeedback(session.key)).status, "waiting");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("dismissing a warning lasts only for the current artifact revision", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const firstLoad = await beginArtifactLoad(store, session.key);
-    const finding = { selector: "html", kind: "page-horizontal-overflow", overflowPx: 40, severity: "error" };
-    const recorded = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(firstLoad, 1, {
-        complete: true,
-        viewport_width: 720,
-        findings: [finding],
-      }),
-    );
-    const id = recorded.warnings[0].id;
-
-    const dismissed = await store.dismissLayoutWarning(session.key, id);
-    assert.equal(dismissed.warnings[0].status, "dismissed");
-    assert.equal(dismissed.warnings[0].active, false);
-
-    // Same revision: still dismissed even though the pass keeps seeing it.
-    const sameRevision = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(firstLoad, 2, {
-        complete: true,
-        viewport_width: 720,
-        findings: [finding],
-      }),
-    );
-    assert.equal(sameRevision.warnings[0].status, "dismissed");
-
-    const secondLoad = await beginArtifactLoad(store, session.key);
-    const laterRevision = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(secondLoad, 1, {
-        complete: true,
-        viewport_width: 720,
-        findings: [finding],
-      }),
-    );
-    assert.equal(laterRevision.warnings[0].status, "open");
-    assert.equal(laterRevision.warnings[0].active, true);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 test("fatal artifact failures still reach the agent without user action", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
   try {
@@ -832,7 +450,7 @@ test("fatal artifact failures still reach the agent without user action", async 
     const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     const result = await store.recordArtifactFailures(session.key, {
-      ...diagnosticPayload(load, 1),
+      ...loadPayload(load),
       failures: [
         { kind: "artifact-asset-unavailable", detail: "<img> could not load /artifact/x/logo.png" },
         { kind: "not-a-real-kind", detail: "ignored" },
@@ -849,7 +467,7 @@ test("fatal artifact failures still reach the agent without user action", async 
   }
 });
 
-test("stale artifact failures and duplicate diagnostic sequences have no side effects", async () => {
+test("stale artifact failures have no side effects", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
   try {
     const stateFile = path.join(dir, "state.json");
@@ -858,30 +476,7 @@ test("stale artifact failures and duplicate diagnostic sequences have no side ef
 
     const store = new SessionStore(stateFile);
     const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    const load = await beginArtifactLoad(store, session.key);
-    const finding = { selector: "p", kind: "clipped-text", axis: "vertical", overflowPx: 20, severity: "error" };
-    const first = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(load, 1, {
-        complete: true,
-        target_presence_complete: true,
-        viewport_width: 1440,
-        findings: [finding],
-      }),
-    );
-    const duplicate = await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(load, 1, {
-        complete: true,
-        target_presence_complete: true,
-        viewport_width: 1440,
-        findings: [],
-      }),
-    );
-    assert.equal(first.changed, true);
-    assert.equal(duplicate.stale, true);
-    assert.equal(duplicate.warnings[0].status, "open");
-
+    await beginArtifactLoad(store, session.key);
     const staleFailure = await store.recordArtifactFailures(session.key, {
       failures: [{ kind: "artifact-asset-unavailable", detail: "missing token" }],
     });
@@ -1086,34 +681,6 @@ test("a Send & End that arrives after the session already ended is also rejected
     const taken = await store.takeFeedback(session.key);
     assert.equal(taken.status, "ended");
     assert.equal(taken.ended_by, "agent");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("late layout diagnostics do not reopen ended sessions or become feedback", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
-  try {
-    const stateFile = path.join(dir, "state.json");
-    const artifact = path.join(dir, "artifact.html");
-    await writeFile(artifact, "<h1>Hello</h1>");
-
-    const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
-    await store.endSession(session.key);
-    const load = await beginArtifactLoad(store, session.key);
-    await store.recordLayoutDiagnostics(
-      session.key,
-      diagnosticPayload(load, 1, {
-        complete: true,
-        viewport_width: 720,
-        findings: [{ selector: "html", kind: "page-horizontal-overflow", overflowPx: 24, severity: "error" }],
-      }),
-    );
-
-    const updated = await store.findByKey(session.key);
-    assert.equal(updated.status, "ended");
-    assert.equal((await store.takeFeedback(session.key)).status, "ended");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -1572,7 +1139,7 @@ test("restoring a taken batch preserves newer prompts, chat, and artifact failur
     const load = await beginArtifactLoad(store, session.key);
     const failure = { kind: "artifact-asset-unavailable", detail: "newer asset" };
     const recorded = await store.recordArtifactFailures(session.key, {
-      ...diagnosticPayload(load, 1),
+      ...loadPayload(load),
       failures: [failure],
     });
     assert.equal(recorded.changed, true);
@@ -1697,14 +1264,14 @@ test("restoring artifact failures dedupes against one re-reported in the disconn
   await withStore(async ({ store, session }) => {
     const load = await beginArtifactLoad(store, session.key);
     const failure = { kind: "artifact-asset-unavailable", detail: "missing.css" };
-    await store.recordArtifactFailures(session.key, { ...diagnosticPayload(load, 1), failures: [failure] });
+    await store.recordArtifactFailures(session.key, { ...loadPayload(load), failures: [failure] });
     const taken = feedbackResult(await store.takeFeedback(session.key));
     assert.equal(taken.artifact_failures?.length, 1);
 
     // The take cleared the list, so the SDK's re-report for the still-current load
     // records the identical failure again before the restore puts the taken one back.
     const recorded = await store.recordArtifactFailures(session.key, {
-      ...diagnosticPayload(load, 2),
+      ...loadPayload(load),
       failures: [failure],
     });
     assert.equal(recorded.changed, true);
@@ -1751,12 +1318,12 @@ for (const testCase of restoreRetentionCases) {
           kind: "artifact-asset-unavailable",
           detail: `asset-${offset + i}.css`,
         }));
-      await store.recordArtifactFailures(session.key, { ...diagnosticPayload(load, 1), failures: failures(0, 20) });
+      await store.recordArtifactFailures(session.key, { ...loadPayload(load), failures: failures(0, 20) });
       const taken = feedbackResult(await store.takeFeedback(session.key));
       assert.equal(taken.artifact_failures?.length, 20);
 
       await store.recordArtifactFailures(session.key, {
-        ...diagnosticPayload(load, 2),
+        ...loadPayload(load),
         failures: failures(100, testCase.windowCount),
       });
       const restored = await store.queuePrompts(

@@ -358,21 +358,6 @@ function buildTable(sdk) {
   return { evidence, badge };
 }
 
-test("a requested layout diagnostic publishes even when the result is unchanged", async () => {
-  const sdk = bootSdk({ runAnimationFrames: true });
-
-  await sdk.runAllTimers();
-  const first = sdk.posted.filter((message) => message.type === "lavish:layoutDiagnostics");
-  assert.equal(first.length, 1);
-
-  sdk.sendChromeMessage({ type: "lavish:requestLayoutDiagnostics" });
-  await sdk.runAllTimers();
-  const diagnostics = sdk.posted.filter((message) => message.type === "lavish:layoutDiagnostics");
-  assert.equal(diagnostics.length, 2);
-  assert.equal(diagnostics[1].artifact_pass_sequence, diagnostics[0].artifact_pass_sequence + 1);
-  assert.deepEqual(diagnostics[1].findings, diagnostics[0].findings);
-});
-
 test("the served SDK echoes the snapshot request id", () => {
   const sdk = bootSdk();
 

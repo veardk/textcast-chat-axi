@@ -9,16 +9,11 @@ import chokidar from "chokidar";
 import express from "express";
 
 import {
-  classifySevereTextOverflow,
-  classifyMaterialRectEscape,
   createArtifactSdk,
   deriveAttachmentNoticeState,
   deriveLavishQueueKey,
-  findStableLayoutFindings,
-  isMaterialPageOverflow,
   isModeToggleHotkeyEvent,
   isNativeInteractiveControl,
-  isNearTotalOcclusion,
   isTrustedAttachmentResult,
   attachmentSizeError,
   acceptedImageTypes,
@@ -27,11 +22,6 @@ import {
   planClipboardPaste,
   MODE_TOGGLE_HOTKEY_KEY,
 } from "./artifact-sdk.js";
-import {
-  activeLayoutWarningCount,
-  resolveDiagnosticViewportClasses,
-  serializeLayoutWarnings,
-} from "./layout-warnings.js";
 import * as artifactRevisions from "./artifact-revisions.js";
 import { serializeChat, serializeChatAckIds, serializeChatSync } from "./chat-messages.js";
 import { formatServerLogLine, serverStdioIsTimestamped } from "./server-log.js";
@@ -100,11 +90,8 @@ const ATTACHMENT_SWEEP_INTERVAL_MS = 60 * 60_000;
 const SHUTDOWN_REASONS = new Set(["upgrade", "local-build", "stop"]);
 const AGENT_LISTENER_LABEL = "agent-listener";
 
-// Live-reload coalescing. A normal save is one reload after a short debounce. While a queued
-// layout-warning batch is outstanding, the agent is applying several related edits, so widen the
-// window: the user asked for one group of fixes and should get one artifact refresh for it.
+// Live-reload coalescing: a save is one reload after a short debounce.
 export const RELOAD_DEBOUNCE_MS = 100;
-export const BATCH_RELOAD_DEBOUNCE_MS = 900;
 
 // The attachment upload carries raw image bytes, not JSON, so it bypasses both
 // JSON body parsers and is read straight from the request stream by the route.
@@ -265,8 +252,6 @@ export async function serve({
   const browserDisconnectTimers = new Map();
   const browserDisconnectPending = new Set();
   // Sessions with at least one warning the user queued that has not been re-checked yet.
-  const outstandingRepairBatches = new Set();
-  const diagnosticViewportClasses = resolveDiagnosticViewportClasses();
   const verbose = debug || env.LAVISH_AXI_DEBUG === "1";
   // The detached server's stderr is appended to server.log across restarts, where an untimestamped
   // line cannot be dated or correlated with an outage. An injected logger formats its own lines.
@@ -311,7 +296,6 @@ export async function serve({
   events.on("agent-presence", (key, state) =>
     broadcastLiveEvent("agent-presence", key, presenceEventData(key, state, activePolls, deliveredFeedback)),
   );
-  events.on("layout-warnings", (key, warnings) => broadcastLiveEvent("layout-warnings", key, { warnings }));
   events.on("ended", (key, endedBy) => broadcastLiveEvent("ended", key, { ended_by: endedBy || null }));
 
   function hasLiveEventClient(key) {
@@ -733,18 +717,16 @@ export async function serve({
         });
         return;
       }
-      const url = shouldDisableLayoutGateOpen(req.body || {}) ? appendNoGateParam(sessionUrl) : sessionUrl;
       const session = await store.upsertSession(file, sessionUrl);
       if (existing?.status === "ended") {
         clearFeedbackDelivery(key, activePolls, deliveredFeedback, events);
       }
       logEvent?.(`session opened key=${key} file=${file}`);
-      await syncOutstandingRepairs(key);
-      await watchSession(session, watchers, events, logEvent, reloadDebounceMs);
+      await watchSession(session, watchers, events, logEvent);
       res.json({
         key,
         file,
-        url,
+        url: sessionUrl,
         status: "opened",
         ...networkWarningField(),
       });
@@ -1045,9 +1027,6 @@ export async function serve({
         return;
       }
       const shouldEndSession = Boolean(req.body?.endSession || req.body?.end_session);
-      const hasLayoutWarningPrompt = Array.isArray(req.body?.prompts)
-        ? req.body.prompts.some((prompt) => prompt?.tag === "layout-warnings")
-        : false;
       const result = await store.queuePrompts(req.params.key, req.body || {}, {
         resolveAttachment: (sessionKeyValue, id) => resolveAttachment(attachmentStateRoot, sessionKeyValue, id),
         maxPerPrompt: attachmentConfig.maxPerPrompt,
@@ -1077,23 +1056,9 @@ export async function serve({
         return;
       }
       const session = result;
-      if (session.conflict) {
-        res.status(409).json({
-          status: "conflict",
-          error: "a layout warning changed before it was sent; review the warning again",
-          warning_ids: session.warning_ids,
-          warnings: session.warnings,
-        });
-        return;
-      }
       const freshFeedback = session.fresh_feedback === true;
       if (shouldEndSession) clearFeedbackDelivery(req.params.key, activePolls, deliveredFeedback, events);
-      let publishedSession = session;
-      if (hasLayoutWarningPrompt) {
-        await syncOutstandingRepairs(req.params.key);
-        publishedSession = (await store.findByKey(req.params.key)) || session;
-        events.emit("layout-warnings", req.params.key, serializeLayoutWarnings(publishedSession.layout_warnings));
-      }
+      const publishedSession = session;
       if (shouldEndSession) events.emit("ended", req.params.key, publishedSession.ended_by);
       else if (freshFeedback) events.emit("feedback", req.params.key, publishedSession.ended_by);
       // The accepted batch is part of the conversation now: answer with the transcript so the
@@ -1106,77 +1071,6 @@ export async function serve({
         ...serializeChatSync(publishedSession),
       });
       if (shouldEndSession) await shutdownIfNoLiveSessions();
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Passive detection. A diagnostic pass updates the warning inbox and notifies open browser
-  // chromes - it never emits "feedback", so it can never make `textcast-chat-axi poll` return and can
-  // never wake an agent. Only the user's explicit "Queue selected fixes" does that, through the
-  // ordinary prompt queue.
-  app.post("/api/:key/layout-diagnostics", async (req, res, next) => {
-    try {
-      const result = await store.recordLayoutDiagnostics(req.params.key, req.body || {}, {
-        viewportClasses: diagnosticViewportClasses,
-      });
-      if (!result) {
-        res.status(404).json({ error: "session not found" });
-        return;
-      }
-      const activeCount = activeLayoutWarningCount(result.session.layout_warnings);
-      if (!result.stale) {
-        await syncOutstandingRepairs(req.params.key);
-        if (result.changed) events.emit("layout-warnings", req.params.key, result.warnings);
-      }
-      res.json({ status: result.stale ? "stale" : "recorded", active_count: activeCount, warnings: result.warnings });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get("/api/:key/layout-warnings", async (req, res, next) => {
-    try {
-      const result = await store.listLayoutWarnings(req.params.key);
-      if (!result) {
-        res.status(404).json({ error: "session not found" });
-        return;
-      }
-      res.json({ warnings: result.warnings, revision: result.revision });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Prepare the user's selected warnings. The prompt commits the repair request through
-  // /api/:key/prompts with the rest of the ordinary feedback queue.
-  app.post("/api/:key/layout-warnings/queue", async (req, res, next) => {
-    try {
-      const result = await store.prepareLayoutWarningFixes(req.params.key, req.body?.ids);
-      if (!result) {
-        res.status(404).json({ error: "session not found" });
-        return;
-      }
-      res.json({
-        status: result.queued.length > 0 ? "prepared" : "unchanged",
-        queued_count: result.queued.length,
-        prompt: result.prompt,
-        warnings: result.warnings,
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post("/api/:key/layout-warnings/dismiss", async (req, res, next) => {
-    try {
-      const result = await store.dismissLayoutWarning(req.params.key, req.body?.id);
-      if (!result) {
-        res.status(404).json({ error: "session not found" });
-        return;
-      }
-      if (result.changed) events.emit("layout-warnings", req.params.key, result.warnings);
-      res.json({ status: result.changed ? "dismissed" : "unchanged", warnings: result.warnings });
     } catch (error) {
       next(error);
     }
@@ -1256,7 +1150,7 @@ export async function serve({
       }
       const session = chromeLoad.session;
       if (refuseNonHtmlArtifact(session, res)) return;
-      await watchSession(session, watchers, events, logEvent, reloadDebounceMs);
+      await watchSession(session, watchers, events, logEvent);
       const artifactHtml = await readFile(session.file, "utf8").catch(() => "");
       const { faviconTag, title } = extractArtifactHead(artifactHtml);
       // Nothing legitimately frames the review chrome - it is the top-level
@@ -1268,7 +1162,6 @@ export async function serve({
       res.setHeader("content-security-policy", "frame-ancestors 'none'");
       res.type("html").send(
         createChromeHtml(session, {
-          layoutGateEnabled: shouldEnableLayoutGate(req.query || {}),
           faviconTag,
           title: title ? `${title} · Lavish` : "Lavish Editor",
           artifactRevision: chromeLoad.artifact_revision,
@@ -1919,24 +1812,6 @@ export async function serve({
     }
   }
 
-  // A queued repair batch is outstanding until a diagnostic pass re-checks it. While it is, the
-  // agent's related saves coalesce into one artifact refresh for that group.
-  async function syncOutstandingRepairs(key) {
-    try {
-      if (await store.hasOutstandingLayoutRepairs(key)) {
-        outstandingRepairBatches.add(key);
-      } else {
-        outstandingRepairBatches.delete(key);
-      }
-    } catch {
-      // Best effort - the normal debounce still applies.
-    }
-  }
-
-  function reloadDebounceMs(key) {
-    return outstandingRepairBatches.has(key) ? BATCH_RELOAD_DEBOUNCE_MS : RELOAD_DEBOUNCE_MS;
-  }
-
   // Reference-aware attachment cleanup: reap files that are both past their TTL
   // and unreferenced, plus the optional disk-cap backstop. Runs once at startup
   // and then on a fixed interval; skipped entirely when neither a TTL nor a disk
@@ -2256,10 +2131,7 @@ export async function resolveArtifactAsset(root, assetPath) {
   return real;
 }
 
-/**
- * @param {(key: string) => number} reloadDebounceMs
- */
-async function watchSession(session, watchers, events, logEvent, reloadDebounceMs = () => RELOAD_DEBOUNCE_MS) {
+async function watchSession(session, watchers, events, logEvent) {
   if (watchers.has(session.key)) {
     return;
   }
@@ -2273,7 +2145,7 @@ async function watchSession(session, watchers, events, logEvent, reloadDebounceM
   watcher.on("all", (event, file) => {
     logEvent?.(`watch event=${event} session=${session.key} file=${file ?? ""}`);
     clearTimeout(timer);
-    timer = setTimeout(() => events.emit("reload", session.key), reloadDebounceMs(session.key));
+    timer = setTimeout(() => events.emit("reload", session.key), RELOAD_DEBOUNCE_MS);
   });
   watcher.on("error", (error) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -2408,12 +2280,6 @@ const chromeIcons = {
     '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
     15,
   ),
-  warning: chromeIcon(
-    '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
-    16,
-  ),
-  reveal: chromeIcon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>', 13),
-  dismiss: chromeIcon('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', 13),
   // The desktop conversation-panel toggle: a window with its right-hand column marked off.
   sidebar: chromeIcon('<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="15" y1="4" x2="15" y2="20"/>'),
   // The mobile conversation sheet's only chevron: CSS rotates it when the sheet is open.
@@ -2431,45 +2297,6 @@ export function displayPathParts(file, home = homedir()) {
       : normalizedFile;
   const tailStart = display.lastIndexOf("/") + 1;
   return { head: display.slice(0, tailStart), tail: display.slice(tailStart) };
-}
-
-export function shouldEnableLayoutGate(query = {}) {
-  const noGate = query["no-gate"] ?? query.noGate ?? query.no_gate;
-  if (isTruthyFlag(noGate)) return false;
-
-  const gate = query.gate ?? query.layoutGate ?? query.layout_gate;
-  if (isFalseyFlag(gate)) return false;
-
-  return true;
-}
-
-function shouldDisableLayoutGateOpen(body = {}) {
-  const noGate = body["no-gate"] ?? body.noGate ?? body.no_gate;
-  if (isTruthyFlag(noGate)) return true;
-
-  const gate = body.gate ?? body.layoutGate ?? body.layout_gate;
-  return isFalseyFlag(gate);
-}
-
-function appendNoGateParam(url) {
-  const parsed = new URL(url);
-  parsed.searchParams.set("no-gate", "1");
-  return parsed.toString();
-}
-
-function isTruthyFlag(value) {
-  const normalized = normalizeFlagValue(value);
-  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
-}
-
-function isFalseyFlag(value) {
-  const normalized = normalizeFlagValue(value);
-  return normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off";
-}
-
-function normalizeFlagValue(value) {
-  if (Array.isArray(value)) return normalizeFlagValue(value[0]);
-  return value === undefined || value === null ? "" : String(value).trim().toLowerCase();
 }
 
 const LAVISH_DEFAULT_FAVICON =
@@ -2572,7 +2399,6 @@ if(c)c.textContent=outcome==="no-answer"?"Lavish did not answer the check, so th
 export function createChromeHtml(
   session,
   {
-    layoutGateEnabled = true,
     faviconTag = LAVISH_DEFAULT_FAVICON,
     title = "Lavish Editor",
     artifactRevision = 0,
@@ -2597,14 +2423,10 @@ export function createChromeHtml(
     initialChatAckIds: serializeChatAckIds(session.chat_ack_ids),
     initialChatRevision:
       Number.isSafeInteger(session.chat_revision) && session.chat_revision >= 0 ? session.chat_revision : 0,
-    // Bootstrapping the inbox from the server is what makes it survive a browser refresh or a
-    // reconnect: the chrome never owns warning state, it only renders it.
-    initialLayoutWarnings: serializeLayoutWarnings(session.layout_warnings),
     initialArtifactRevision: artifactRevision,
     initialArtifactLoadToken: artifactLoadToken,
     initialArtifactLoadSequence: artifactLoadSequence,
     chromeLoadToken,
-    layoutGateEnabled,
     modeToggleHotkeyKey: MODE_TOGGLE_HOTKEY_KEY,
     attachmentMaxBytes,
     attachmentMaxCount,
@@ -2616,8 +2438,6 @@ export function createChromeHtml(
     revisionPalette: artifactRevisions.revisionPalette(),
   });
   const { head: pathHead, tail: pathTail } = displayPathParts(session.file);
-  const bodyClass = layoutGateEnabled ? "lavish layout-gate-active" : "lavish";
-  const layoutGateHidden = layoutGateEnabled ? "" : " hidden";
   const modeHotkeyUpper = MODE_TOGGLE_HOTKEY_KEY.toUpperCase();
   const modeToggleHint = `Toggle annotate/explore mode (⌘${modeHotkeyUpper} / Ctrl+${modeHotkeyUpper})`;
   return `<!doctype html>
@@ -2629,11 +2449,11 @@ export function createChromeHtml(
 ${faviconTag}
 <link rel="stylesheet" href="/chrome.css">
 </head>
-<body class="${bodyClass}">
-<div class="bar"><div class="brand"><span class="brand-mark">Lavish</span><span class="brand-support">Editor</span></div><div class="spacer" aria-hidden="true"></div><div class="warnings-wrap" id="warningsWrap" hidden><button class="warnings-button" id="warningsButton" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="warningsDrawer">${chromeIcons.warning}<span class="warnings-count" id="warningsCount">0</span></button><div class="menu warnings-drawer" id="warningsDrawer" role="dialog" aria-labelledby="warningsTitle" aria-describedby="warningsSummary" hidden><div class="warnings-head"><h2 class="warnings-title" id="warningsTitle">Layout issues</h2><p class="warnings-summary" id="warningsSummary"></p></div><div class="warnings-toolbar"><label class="warnings-selectall"><input type="checkbox" id="warningsSelectAll"><span>Select all</span></label><span class="warnings-selected" id="warningsSelected" role="status" aria-live="polite"></span></div><div class="warnings-list" id="warningsList"></div><div class="warnings-foot"><p class="warnings-note">Queueing sends a repair request with your next feedback. An issue is marked resolved only after a newer artifact load and a complete check at the same viewport no longer finds it.</p><button class="button" id="warningsQueueButton" type="button" disabled>Queue selected fixes</button></div></div></div><div class="revisions-wrap" id="revisionsWrap" hidden><button class="revisions-button" id="revisionsButton" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="revisionsDrawer"><span class="revisions-button-text">Revisions</span><span class="revisions-count" id="revisionsCount">0</span></button><div class="menu revisions-drawer" id="revisionsDrawer" role="dialog" aria-labelledby="revisionsTitle" aria-describedby="revisionsSummary" hidden><div class="revisions-head"><h2 class="revisions-title" id="revisionsTitle">Revisions</h2><p class="revisions-summary" id="revisionsSummary"></p></div><div class="revisions-list" id="revisionsList"></div><div class="revisions-foot"><p class="revisions-note">The agent declares these in the artifact itself. Reveal flashes the next block it marked for that revision; nothing about the page is restyled, so the saved file still looks the way it does here.</p></div></div></div><button class="annotate-switch" id="annotation" type="button" aria-pressed="true" title="${escapeHtml(modeToggleHint)}"><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span><span>Annotate</span></button><button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="panel" aria-expanded="true" aria-label="Hide conversation" title="Hide conversation">${chromeIcons.sidebar}<span class="sidebar-toggle-count" id="sidebarToggleCount" aria-hidden="true" hidden></span></button><div class="more-wrap" id="moreWrap"><button class="more-button" id="moreButton" type="button" title="More" aria-haspopup="menu" aria-expanded="false">${chromeIcons.more}</button><div class="menu more-menu" id="moreMenu" hidden><div class="menu-head"><div class="menu-label">Editing</div><button class="menu-file" id="copyPath" type="button" title="Copy path · ${escapeHtml(session.file)}">${chromeIcons.file}<span class="menu-file-text"><span class="path-head">${escapeHtml(pathHead)}</span><span class="path-tail">${escapeHtml(pathTail)}</span></span><span class="copy-hint" id="copyHint"><span class="icon-copy">${chromeIcons.copy}</span><span class="icon-check">${chromeIcons.check}</span><span id="copyHintText">Copy</span></span></button></div><div class="menu-rule"></div><button class="menu-item" id="reloadArtifact" type="button">${chromeIcons.refresh}<span>Reload artifact</span></button><div class="menu-rule"></div><button class="menu-item danger" id="end" type="button">${chromeIcons.exit}<span>End session</span></button></div></div></div>
+<body class="lavish layout-gate-active">
+<div class="bar"><div class="brand"><span class="brand-mark">Lavish</span><span class="brand-support">Editor</span></div><div class="spacer" aria-hidden="true"></div><div class="revisions-wrap" id="revisionsWrap" hidden><button class="revisions-button" id="revisionsButton" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="revisionsDrawer"><span class="revisions-button-text">Revisions</span><span class="revisions-count" id="revisionsCount">0</span></button><div class="menu revisions-drawer" id="revisionsDrawer" role="dialog" aria-labelledby="revisionsTitle" aria-describedby="revisionsSummary" hidden><div class="revisions-head"><h2 class="revisions-title" id="revisionsTitle">Revisions</h2><p class="revisions-summary" id="revisionsSummary"></p></div><div class="revisions-list" id="revisionsList"></div><div class="revisions-foot"><p class="revisions-note">The agent declares these in the artifact itself. Reveal flashes the next block it marked for that revision; nothing about the page is restyled, so the saved file still looks the way it does here.</p></div></div></div><button class="annotate-switch" id="annotation" type="button" aria-pressed="true" title="${escapeHtml(modeToggleHint)}"><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span><span>Annotate</span></button><button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="panel" aria-expanded="true" aria-label="Hide conversation" title="Hide conversation">${chromeIcons.sidebar}<span class="sidebar-toggle-count" id="sidebarToggleCount" aria-hidden="true" hidden></span></button><div class="more-wrap" id="moreWrap"><button class="more-button" id="moreButton" type="button" title="More" aria-haspopup="menu" aria-expanded="false">${chromeIcons.more}</button><div class="menu more-menu" id="moreMenu" hidden><div class="menu-head"><div class="menu-label">Editing</div><button class="menu-file" id="copyPath" type="button" title="Copy path · ${escapeHtml(session.file)}">${chromeIcons.file}<span class="menu-file-text"><span class="path-head">${escapeHtml(pathHead)}</span><span class="path-tail">${escapeHtml(pathTail)}</span></span><span class="copy-hint" id="copyHint"><span class="icon-copy">${chromeIcons.copy}</span><span class="icon-check">${chromeIcons.check}</span><span id="copyHintText">Copy</span></span></button></div><div class="menu-rule"></div><button class="menu-item" id="reloadArtifact" type="button">${chromeIcons.refresh}<span>Reload artifact</span></button><div class="menu-rule"></div><button class="menu-item danger" id="end" type="button">${chromeIcons.exit}<span>End session</span></button></div></div></div>
 <div class="layout"><div class="frame"><iframe id="artifact" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads" data-artifact-src="/artifact/${session.key}/index.html"></iframe></div><div class="panel-scrim" id="panelScrim"></div><aside class="panel" id="panel"><div class="panel-head" id="panelHead"><span class="panel-handle" aria-hidden="true"></span><div class="panel-head-row"><h2>Conversation</h2><span class="panel-summary" id="panelSummary" role="status" aria-live="polite"></span><button class="panel-toggle" id="panelToggle" type="button" aria-expanded="false" aria-controls="panel" aria-label="Show conversation">${chromeIcons.chevronUp}</button></div></div><div class="panel-scroll" id="panelScroll"><div class="chat" id="chatLog"></div><div class="chat chat-queued" id="queuedLog"></div></div><div class="composer" id="chatComposer"><div class="presence-banner handoff-banner" id="handoffBanner" hidden><span>This review is open in another Lavish tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.</span><button class="handoff-takeover" id="handoffTakeover" type="button">Take over here</button></div><div class="presence-banner handoff-banner" id="outdatedBanner" hidden><span id="outdatedText">The Lavish server this page was connected to is no longer running. Reloading will work once it is running again.</span><span class="outdated-actions"><button class="handoff-takeover" id="outdatedReload" type="button">Check and reload</button><button class="handoff-takeover" id="outdatedDismiss" type="button">Dismiss</button></span></div><div class="presence-banner" id="presenceBanner" hidden>Your agent is not listening. If this persists, ask your agent to poll for updates from Lavish.</div><textarea id="chatInput" placeholder="Write a message for the agent..."></textarea><div class="chat-attachments" id="chatAttachments"></div><div class="chat-attachment-toolbar"><button class="chat-attach" id="chatAttach" type="button">Attach images</button><input id="chatAttachInput" type="file" accept="${escapeHtml(acceptedMime.join(","))}" multiple hidden><span class="chat-attachment-notice" id="chatAttachmentNotice" role="status"></span></div><div class="send-hint" id="sendHint" hidden>Nothing queued in this tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.</div><div class="actions" id="sendActions"><button class="button button-danger" id="sendAndEnd" type="button">${chromeIcons.exit}<span>Send &amp; End</span></button><button class="button" id="send">Send to Agent</button></div></div></aside></div>
 
-<div class="ended-overlay layout-gate-overlay" id="layoutGateOverlay"${layoutGateHidden}><div class="ended-card"><div class="ended-title" id="layoutGateTitle">Checking layout.<br>One moment.</div><p class="ended-copy" id="layoutGateCopy">Lavish is waiting for fonts and final geometry before revealing this artifact.</p><button class="button ended-action" id="layoutGateAction" type="button">Show anyway</button><button class="button ended-action layout-gate-bypass" id="layoutGateBypass" type="button" hidden>Show anyway</button></div></div>
+<div class="ended-overlay layout-gate-overlay" id="layoutGateOverlay"><div class="ended-card"><div class="ended-title" id="layoutGateTitle">Opening the page.</div><p class="ended-copy" id="layoutGateCopy">One moment while the page loads.</p><button class="button ended-action" id="layoutGateAction" type="button">Show anyway</button><button class="button ended-action layout-gate-bypass" id="layoutGateBypass" type="button" hidden>Show anyway</button></div></div>
 <div class="ended-overlay" id="endedOverlay" hidden><div class="ended-card"><div class="ended-title">Session ended.<br>Return to your agent to continue.</div><p class="ended-copy">${escapeHtml(session.file)}</p></div></div>
 
 <script id="lavish-session" type="application/json">${sessionJson}</script>
@@ -2697,11 +2517,6 @@ const deriveQueueKey=${deriveLavishQueueKey.toString()};
 const isNativeInteractiveControl=${isNativeInteractiveControl.toString()};
 const MODE_TOGGLE_HOTKEY_KEY=${JSON.stringify(MODE_TOGGLE_HOTKEY_KEY)};
 const isModeToggleHotkeyEvent=${isModeToggleHotkeyEvent.toString()};
-const classifySevereTextOverflow=${classifySevereTextOverflow.toString()};
-const classifyMaterialRectEscape=${classifyMaterialRectEscape.toString()};
-const isMaterialPageOverflow=${isMaterialPageOverflow.toString()};
-const findStableLayoutFindings=${findStableLayoutFindings.toString()};
-const isNearTotalOcclusion=${isNearTotalOcclusion.toString()};
 const attachmentSizeError=${attachmentSizeError.toString()};
 const classifyAttachmentBatch=${classifyAttachmentBatch.toString()};
 const partitionDroppedFiles=${partitionDroppedFiles.toString()};

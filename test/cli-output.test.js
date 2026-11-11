@@ -41,7 +41,6 @@ import {
   stopCommand,
   VERSION,
 } from "../src/cli.js";
-import { SELF_PAINT_WARNING } from "../src/self-paint.js";
 import { serve } from "../src/server.js";
 import { canonicalFile, sessionKey } from "../src/session-store.js";
 
@@ -94,28 +93,6 @@ test("home help names LAVISH_AXI_ALLOWED_HOSTS for the 403 forbidden host case",
 test("CLI version tracks package.json so release-please bumps reach the published binary", async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(VERSION, packageJson.version);
-});
-
-test("open output flags an artifact that never paints its own page surface", () => {
-  const warned = createOpenOutput({
-    file: "/tmp/artifact.html",
-    url: "http://localhost:4397/session/abc123",
-    status: "opened",
-    selfPaintWarning: SELF_PAINT_WARNING,
-  });
-
-  assert.equal(warned.self_paint_warning, SELF_PAINT_WARNING);
-  assert.match(warned.next_step, /^First fix the unpainted page surface flagged in self_paint_warning/);
-  assert.match(warned.next_step, /live-reloads the artifact automatically/);
-  assert.match(warned.next_step, /textcast-chat-axi poll \/tmp\/artifact\.html/, "the poll contract stays intact");
-
-  const clean = createOpenOutput({
-    file: "/tmp/artifact.html",
-    url: "http://localhost:4397/session/abc123",
-    status: "opened",
-  });
-  assert.equal("self_paint_warning" in clean, false);
-  assert.match(clean.next_step, /^Do not respond to the user just yet\./);
 });
 
 test("open output surfaces unavailable Tailscale phone access", () => {
@@ -233,8 +210,7 @@ test("open output keeps the user URL in session data and next_step focused on po
   assert.match(output.next_step, /keep waiting for more feedback/);
   assert.match(output.next_step, /textcast-chat-axi reply \/tmp\/artifact\.html --agent-reply/);
   assert.match(output.next_step, /without starting another long-poll/);
-  assert.match(output.next_step, /Layout issues inbox/);
-  assert.doesNotMatch(output.next_step, /layout_warnings/);
+  assert.doesNotMatch(output.next_step, /Layout issues|layout_warnings/);
   assert.match(output.next_step, /never kill it/);
   assertObservablePollWakePath(output.next_step);
   assert.doesNotMatch(output.next_step, /Codex/);
@@ -394,52 +370,6 @@ test("feedback next step is Codex-aware when requested", () => {
   assertObservablePollWakePath(output.next_step);
   assert.match(output.next_step, /Codex detected/);
   assert.match(output.next_step, /keep the poll attached to the active turn/);
-});
-
-test("detected layout warnings never appear in poll output", () => {
-  const output = createPollOutput({
-    file: "/tmp/report.html",
-    response: {
-      status: "feedback",
-      dom_snapshot: "",
-      prompts: [{ uid: "", prompt: "Tighten the header", selector: "h1", tag: "annotation", text: "Header" }],
-    },
-  });
-
-  assert.equal("layout_warnings" in output, false);
-  assert.equal("artifact_failures" in output, false);
-  assert.match(output.next_step, /Apply the requested changes/);
-  assert.match(output.next_step, /textcast-chat-axi poll \/tmp\/report\.html --agent-reply/);
-  assert.match(output.next_step, /continuing to wait for feedback/);
-  assert.match(output.next_step, /textcast-chat-axi reply \/tmp\/report\.html --agent-reply/);
-  assert.match(output.next_step, /without starting another long-poll/);
-});
-
-test("a queued layout-warnings batch reads as ordinary feedback with lifecycle guidance", () => {
-  const output = createPollOutput({
-    file: "/tmp/report.html",
-    response: {
-      status: "feedback",
-      dom_snapshot: "",
-      prompts: [
-        {
-          uid: "",
-          prompt: "Fix these 2 layout issues the browser detected in this artifact:\\n1. [w1] ...",
-          selector: "",
-          tag: "layout-warnings",
-          text: "Layout issues: 2 selected",
-          target: { type: "layout-warnings", warnings: [{ id: "w1" }, { id: "w2" }] },
-        },
-      ],
-    },
-  });
-
-  assert.equal("layout_warnings" in output, false, "no parallel protocol - it is just a prompt");
-  assert.equal(output.prompts[0].tag, "layout-warnings");
-  assert.match(output.next_step, /Layout issues inbox/);
-  assert.match(output.next_step, /in one pass before saving so the user's review refreshes once/);
-  assert.match(output.next_step, /Queueing is a repair request, not a resolution/);
-  assert.match(output.next_step, /newer artifact load and a complete check at the same viewport/);
 });
 
 test("a fatal artifact failure is the only thing that reaches the agent without user action", () => {
@@ -1303,7 +1233,7 @@ test("opening an artifact names that session as the one to reload across a versi
 test("html file arguments normalize to the hidden open command", () => {
   assert.deepEqual(normalizeArgv(["report.html"]), ["open", "report.html"]);
   assert.deepEqual(normalizeArgv(["--no-open", "report.html"]), ["open", "--no-open", "report.html"]);
-  assert.deepEqual(normalizeArgv(["--no-gate", "report.html"]), ["open", "--no-gate", "report.html"]);
+  assert.deepEqual(normalizeArgv(["--reopen", "report.html"]), ["open", "--reopen", "report.html"]);
   assert.deepEqual(normalizeArgv(["poll", "report.html"]), ["poll", "report.html"]);
   assert.deepEqual(normalizeArgv(["--help"]), ["--help"]);
 });
@@ -1311,11 +1241,11 @@ test("html file arguments normalize to the hidden open command", () => {
 test("open can resume a session without opening another browser window", () => {
   assert.equal(shouldOpenBrowser(["--no-open", "artifact.html"], {}), false);
   assert.equal(shouldOpenBrowser(["artifact.html", "--no-open"], {}), false);
-  assert.equal(shouldOpenBrowser(["--no-gate", "artifact.html"], {}), true);
+  assert.equal(shouldOpenBrowser(["--reopen", "artifact.html"], {}), true);
   assert.equal(shouldOpenBrowser(["artifact.html"], { LAVISH_AXI_NO_OPEN: "1" }), false);
   assert.equal(shouldOpenBrowser(["artifact.html"], {}), true);
   assert.match(getCommandHelp("open"), /--no-open/);
-  assert.match(getCommandHelp("open"), /--no-gate/);
+  assert.doesNotMatch(getCommandHelp("open"), /--no-gate/);
   assert.match(getCommandHelp("open"), /--reopen/);
 });
 

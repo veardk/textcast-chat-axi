@@ -19,7 +19,7 @@ const servedChromeIds = new Set(
 
 const SERVED_TAB_ICON = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>";
 
-/** @typedef {{ key: string, file: string, layoutGateEnabled?: boolean, layoutGateMaxHoldMs?: number, modeToggleHotkeyKey?: string, initialChat?: any[], initialChatAckIds?: string[], initialChatRevision?: number, initialLayoutWarnings?: any[], chromeLoadToken?: string, initialArtifactRevision?: number, initialArtifactLoadToken?: string, initialArtifactLoadSequence?: number, attachmentMaxBytes?: number, attachmentMaxCount?: number, attachmentAcceptedMime?: string[], initialEnded?: boolean, initialEndedBy?: string | null, revisionPalette?: { hex: string, borderStyle: string, pattern: string }[] }} HarnessSessionData */
+/** @typedef {{ key: string, file: string, layoutGateMaxHoldMs?: number, modeToggleHotkeyKey?: string, initialChat?: any[], initialChatAckIds?: string[], initialChatRevision?: number, initialLayoutWarnings?: any[], chromeLoadToken?: string, initialArtifactRevision?: number, initialArtifactLoadToken?: string, initialArtifactLoadSequence?: number, attachmentMaxBytes?: number, attachmentMaxCount?: number, attachmentAcceptedMime?: string[], initialEnded?: boolean, initialEndedBy?: string | null, revisionPalette?: { hex: string, borderStyle: string, pattern: string }[] }} HarnessSessionData */
 /** @type {HarnessSessionData} */
 const defaultSessionData = {
   key: "abc",
@@ -1189,50 +1189,6 @@ test("a later successful batch clears an earlier failure after delivering everyt
   assert.equal(chrome.element("sendHint").classList.contains("persistent"), false);
 });
 
-test("an older successful send preserves a newer terminal preparation failure", async () => {
-  let releaseFirstPost = () => {};
-  const firstPost = new Promise((resolve) => {
-    releaseFirstPost = () => resolve({ ok: true });
-  });
-  let failPreparation = () => {};
-  const preparation = new Promise((_, reject) => {
-    failPreparation = () => reject(new Error("preparation unavailable"));
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/prompts")) return firstPost;
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("chatInput").value = "Already sending";
-  chrome.element("send").click();
-  chrome.sendSnapshot("first snapshot");
-  await flushPromises();
-
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-  chrome.element("warningsQueueButton").click();
-  chrome.element("sendAndEnd").click();
-  failPreparation();
-  await flushPromises();
-
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-  releaseFirstPost();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-});
-
 test("Send & End falls back without a snapshot and preserves the atomic end intent", async () => {
   const posts = [];
   const chrome = await createChromeHarness({
@@ -1378,43 +1334,6 @@ test("Send & End locks the artifact without closing an open annotation draft bef
   assert.equal(chrome.frame.inert, false, "an actionable rejection restores the untouched artifact draft");
 });
 
-test("reload during terminal preparation cannot restore an incomplete terminal batch", async () => {
-  const storage = new Map();
-  let finishPreparation = () => {};
-  const preparation = new Promise((resolve) => {
-    finishPreparation = () => resolve({ ok: true, json: async () => ({ warnings: [] }) });
-  });
-  const chrome = await createChromeHarness({
-    storage,
-    storedQueue: [{ uid: "", prompt: "Already queued", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  chrome.element("warningsQueueButton").click();
-  chrome.element("sendAndEnd").click();
-
-  assert.equal(
-    storage.has("textcast-chat-axi:terminal:abc"),
-    false,
-    "a terminal reservation is not durable until all in-flight preparation joins the batch",
-  );
-  const reloaded = await createChromeHarness({ storage });
-  assert.equal(reloaded.element("send").disabled, false);
-  assert.equal(reloaded.element("sendAndEnd").disabled, false);
-  assert.equal(reloaded.element("chatInput").disabled, false);
-
-  finishPreparation();
-});
-
 test("reload restores a completed terminal reservation after its prompt was delivered elsewhere", async () => {
   const storage = new Map();
   let finishOrdinarySend = () => {};
@@ -1471,43 +1390,6 @@ test("reload restores a completed terminal reservation after its prompt was deli
   assert.deepEqual(reloadedRequests, [{ url: "/api/abc/end", body: null }]);
   assert.equal(storage.has("textcast-chat-axi:terminal:abc"), false);
   assert.equal(reloaded.element("sendAndEnd").disabled, true);
-});
-
-test("a recoverable terminal layout conflict restores ordinary review controls", async () => {
-  const prompt = {
-    uid: "",
-    prompt: "Fix the stale layout issue",
-    selector: "",
-    tag: "layout-warnings",
-    text: "Layout issue: 1 selected",
-    target: { type: "layout-warnings", artifact_revision: 1, warnings: [{ id: "w1" }] },
-  };
-  const chrome = await createChromeHarness({
-    storedQueue: [prompt],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/prompts")) {
-        return {
-          ok: false,
-          status: 409,
-          json: async () => ({ warnings: [warningPayload({ status: "recurring", status_label: "Still present" })] }),
-        };
-      }
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("");
-  await flushPromises();
-
-  assert.deepEqual(publicQueued(chrome), [prompt]);
-  assert.equal(chrome.element("send").disabled, false);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.equal(chrome.element("annotation").disabled, false);
-  assert.equal(chrome.element("chatInput").disabled, false);
-  assert.equal(chrome.element("end").disabled, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /layout issue selection changed/i);
 });
 
 test("an actionable terminal attachment rejection restores editable review controls", async () => {
@@ -2710,787 +2592,6 @@ test("the composer consumes a copied file's filename text instead of pasting it"
   assert.equal(event.defaultPrevented, true, "the filename text is a placeholder, not a caption");
 });
 
-function warningPayload(overrides = {}) {
-  return {
-    id: "w1",
-    fingerprint: "w1",
-    rule: "page-horizontal-overflow",
-    severity: "error",
-    status: "open",
-    status_label: "Open",
-    title: "Page scrolls sideways",
-    explanation: "The page is 18px wider than the 720px viewport, so content sits off-screen.",
-    selector: "html",
-    component: "html",
-    axis: "horizontal",
-    overflow_px: 18,
-    viewport_class: "compact",
-    viewport_label: "Tablet / compact",
-    viewport_width: 720,
-    first_seen_at: new Date().toISOString(),
-    last_seen_at: new Date().toISOString(),
-    last_seen_revision: 1,
-    queued_at: "",
-    queue_attempts: 0,
-    active: true,
-    selectable: true,
-    outstanding: false,
-    history: [],
-    ...overrides,
-  };
-}
-
-function diagnosticsHarness(warningsByCall) {
-  const posts = [];
-  let call = 0;
-  return {
-    posts,
-    fetchImpl: async (url, init) => {
-      const body = init && init.body ? JSON.parse(init.body) : null;
-      posts.push({ url, body, method: init?.method || "GET" });
-      const warnings = warningsByCall[Math.min(call, warningsByCall.length - 1)] || [];
-      call += 1;
-      return { ok: true, json: async () => ({ warnings, prompt: null }) };
-    },
-  };
-}
-
-test("chrome client posts a completed diagnostic pass and never queues feedback from it", async () => {
-  const { posts, fetchImpl } = diagnosticsHarness([[warningPayload()]]);
-  const chrome = await createChromeHarness({ fetchImpl });
-
-  chrome.sendFrameMessage({
-    type: "lavish:layoutDiagnostics",
-    artifact_revision: 7,
-    complete: true,
-    target_presence_complete: true,
-    viewport_width: 720,
-    findings: [{ selector: "html", kind: "page-horizontal-overflow", overflowPx: 18, severity: "error" }],
-  });
-  await flushPromises();
-
-  const diagnostics = posts.filter((post) => post.url === "/api/abc/layout-diagnostics");
-  assert.equal(diagnostics.length, 1);
-  assert.equal(diagnostics[0].body.artifact_revision, 7);
-  assert.equal(diagnostics[0].body.complete, true);
-  assert.equal(diagnostics[0].body.target_presence_complete, true);
-  assert.equal(diagnostics[0].body.viewport_width, 720);
-  assert.equal(diagnostics[0].body.findings.length, 1);
-  // Detection must never touch the prompt queue.
-  assert.equal(
-    posts.some((post) => post.url === "/api/abc/prompts"),
-    false,
-  );
-  assert.deepEqual(chrome.queued(), []);
-});
-
-test("a failed diagnostic pass reports its incompleteness rather than an empty result", async () => {
-  const { posts, fetchImpl } = diagnosticsHarness([[warningPayload({ status: "unverified" })]]);
-  const chrome = await createChromeHarness({ fetchImpl });
-
-  chrome.sendFrameMessage({ type: "lavish:layoutDiagnostics", complete: false, viewport_width: 720, findings: [] });
-  await flushPromises();
-
-  assert.equal(posts[0].body.complete, false);
-  assert.equal(chrome.element("warningsWrap").hidden, false);
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-});
-
-test("warning-only observations are discarded before they reach the server", async () => {
-  const { posts, fetchImpl } = diagnosticsHarness([[]]);
-  await createChromeHarness({ fetchImpl });
-
-  const chrome = await createChromeHarness({ fetchImpl });
-  chrome.sendFrameMessage({
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    viewport_width: 720,
-    findings: [
-      { selector: ".card", kind: "clipped-text", overflowPx: 2, severity: "warning" },
-      { selector: ".unproven", kind: "clipped-text", overflowPx: 200 },
-    ],
-  });
-  await flushPromises();
-
-  assert.deepEqual(posts.at(-1).body.findings, []);
-});
-
-test("the warning button hides at zero and shows a deduplicated unresolved count", async () => {
-  const chrome = await createChromeHarness();
-
-  assert.equal(chrome.element("warningsWrap").hidden, true, "no button without unresolved work");
-
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload(), warningPayload({ id: "w2", selector: "p" })] }),
-  });
-
-  assert.equal(chrome.element("warningsWrap").hidden, false);
-  assert.equal(chrome.element("warningsCount").textContent, "2");
-  assert.equal(chrome.element("warningsButton")["aria-label"], "2 unresolved layout issues");
-  assert.equal(chrome.warningRows().length, 2);
-
-  // The same warnings arriving again must not inflate anything.
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload(), warningPayload({ id: "w2", selector: "p" })] }),
-  });
-  assert.equal(chrome.element("warningsCount").textContent, "2");
-  assert.equal(chrome.warningRows().length, 2);
-});
-
-test("resolved warnings drop out of the active count and hide the button", async () => {
-  const chrome = await createChromeHarness();
-  const source = chrome.eventSource().listeners.get("layout-warnings");
-
-  source({ data: JSON.stringify({ warnings: [warningPayload()] }) });
-  assert.equal(chrome.element("warningsWrap").hidden, false);
-
-  source({
-    data: JSON.stringify({ warnings: [warningPayload({ status: "resolved", active: false, selectable: false })] }),
-  });
-  assert.equal(chrome.element("warningsWrap").hidden, true);
-  assert.equal(chrome.element("warningsCount").textContent, "0");
-});
-
-test("nothing is selected by default and Select all is an explicit action", async () => {
-  const chrome = await createChromeHarness();
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload(), warningPayload({ id: "w2" })] }),
-  });
-
-  assert.equal(chrome.element("warningsSelectAll").checked, false);
-  assert.equal(chrome.element("warningsSelected").textContent, "None selected");
-  assert.equal(chrome.element("warningsQueueButton").disabled, true);
-  for (const row of chrome.warningRows()) {
-    assert.equal(row.children[0].checked, false);
-  }
-
-  chrome.element("warningsSelectAll").checked = true;
-  chrome.element("warningsSelectAll").onchange();
-  assert.equal(chrome.element("warningsSelected").textContent, "2 selected");
-  assert.equal(chrome.element("warningsQueueButton").disabled, false);
-});
-
-test("warning fixes stay queueable while the agent is working", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init) => {
-      posts.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
-      return { ok: true, json: async () => ({ warnings: [warningPayload()], prompt: null }) };
-    },
-  });
-  chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "working" }) });
-  chrome.eventSource().listeners.get("layout-warnings")({ data: JSON.stringify({ warnings: [warningPayload()] }) });
-
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-  assert.equal(chrome.element("warningsQueueButton").disabled, false);
-
-  await chrome.element("warningsQueueButton").onclick();
-  assert.ok(posts.some((post) => post.url === "/api/abc/layout-warnings/queue"));
-});
-
-test("queueing a selected subset produces exactly one ordinary prompt with only those warnings", async () => {
-  const posts = [];
-  const queuedWarnings = [
-    warningPayload({ status: "queued", status_label: "Queued for fix", selectable: false, outstanding: true }),
-    warningPayload({ id: "w2", selector: "p" }),
-  ];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init) => {
-      posts.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
-      return {
-        ok: true,
-        json: async () => ({
-          status: "queued",
-          queued_count: 1,
-          warnings: queuedWarnings,
-          prompt: {
-            prompt: "Fix this layout issue the browser detected in this artifact:\n1. [w1] ...",
-            text: "Layout issue: 1 selected",
-            target: { type: "layout-warnings", warnings: [{ id: "w1", rule: "page-horizontal-overflow" }] },
-          },
-        }),
-      };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload(), warningPayload({ id: "w2", selector: "p" })] }),
-  });
-
-  const [first] = chrome.warningRows();
-  first.children[0].checked = true;
-  first.children[0].dispatch("change");
-  assert.equal(chrome.element("warningsSelected").textContent, "1 selected");
-
-  await chrome.element("warningsQueueButton").onclick();
-  await flushPromises();
-
-  const queueCall = posts.find((post) => post.url === "/api/abc/layout-warnings/queue");
-  assert.deepEqual(queueCall.body, { ids: ["w1"] });
-
-  const queued = chrome.queued();
-  assert.equal(queued.length, 1, "one ordinary queued prompt");
-  assert.equal(queued[0].tag, "layout-warnings");
-  assert.equal(queued[0].target.warnings.length, 1);
-  assert.equal(queued[0].target.warnings[0].id, "w1");
-
-  // Queueing does not clear the warning; it stays counted and becomes unselectable.
-  assert.equal(chrome.element("warningsCount").textContent, "2");
-  assert.equal(chrome.warningRows()[0].children[0].disabled, true);
-  assert.equal(chrome.warningRows()[0].children[1].children.at(-1).children.at(-1).disabled, true);
-  assert.equal(chrome.warningRows()[0].children[1].children[2].children[1].textContent, "Queued for send");
-  assert.equal(chrome.element("warningsSelected").textContent, "None selected");
-});
-
-test("Send & End waits for layout feedback preparation already in flight", async () => {
-  const posts = [];
-  let finishPreparation = () => {};
-  const preparation = new Promise((resolve) => {
-    finishPreparation = () =>
-      resolve({
-        ok: true,
-        json: async () => ({
-          warnings: [],
-          prompt: {
-            prompt: "Fix the selected layout issue",
-            text: "Layout issue: 1 selected",
-            target: { type: "layout-warnings", artifact_revision: 1, warnings: [{ id: "w1" }] },
-          },
-        }),
-      });
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  chrome.element("warningsQueueButton").click();
-  chrome.element("sendAndEnd").click();
-
-  assert.equal(
-    chrome.postedToFrame.some((message) => message.type === "lavish:requestSnapshot"),
-    false,
-  );
-  assert.equal(chrome.element("sendAndEnd").disabled, true);
-
-  finishPreparation();
-  await flushPromises();
-  await flushPromises();
-  chrome.sendSnapshot("layout snapshot");
-  await flushPromises();
-
-  const promptPost = posts.find((post) => String(post.url).endsWith("/prompts"));
-  assert.equal(promptPost.body.endSession, true);
-  assert.equal(promptPost.body.prompts.length, 1);
-  assert.equal(promptPost.body.prompts[0].tag, "layout-warnings");
-});
-
-test("a failed terminal layout preparation stays visible with an empty queue", async () => {
-  let failPreparation = () => {};
-  const preparation = new Promise((_, reject) => {
-    failPreparation = () => reject(new Error("preparation unavailable"));
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  chrome.element("warningsQueueButton").click();
-  chrome.element("sendAndEnd").click();
-  failPreparation();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-  assert.doesNotMatch(chrome.element("sendHint").textContent, /still queued/i);
-  assert.equal(chrome.element("send").disabled, false);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.equal(chrome.element("annotation").disabled, false);
-  assert.equal(chrome.element("end").disabled, false);
-});
-
-test("an empty Send preserves layout preparation failure guidance", async () => {
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/layout-warnings/queue")) return { ok: false, status: 500 };
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  await chrome.element("warningsQueueButton").onclick();
-  await flushPromises();
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-
-  chrome.element("send").click();
-  chrome.runTimers(2600);
-
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-  assert.doesNotMatch(chrome.element("sendHint").textContent, /write a message or annotate/i);
-});
-
-test("a terminal preparation timeout preserves another preparation type's failure", async () => {
-  let attempts = 0;
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (!String(url).endsWith("/layout-warnings/queue")) return { ok: true, json: async () => ({}) };
-      attempts += 1;
-      if (attempts === 1) return { ok: false, status: 500 };
-      return new Promise(() => {});
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  await chrome.element("warningsQueueButton").onclick();
-  await flushPromises();
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-
-  chrome.element("warningsQueueButton").click();
-  chrome.element("sendAndEnd").click();
-  chrome.runTimers(5000);
-  await flushPromises();
-
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-  assert.doesNotMatch(chrome.element("sendHint").textContent, /finish preparing all feedback/i);
-});
-
-test("an unrelated successful send preserves layout preparation failure guidance", async () => {
-  let failPreparation = () => {};
-  const preparation = new Promise((_, reject) => {
-    failPreparation = () => reject(new Error("preparation unavailable"));
-  });
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Queued separately", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  chrome.element("warningsQueueButton").click();
-  failPreparation();
-  await flushPromises();
-  await flushPromises();
-
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-  chrome.element("send").click();
-  chrome.sendSnapshot("");
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-});
-
-test("removing the final unrelated prompt preserves layout preparation failure guidance", async () => {
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Queued separately", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/layout-warnings/queue")) return { ok: false, status: 500 };
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  await chrome.element("warningsQueueButton").onclick();
-  await flushPromises();
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-
-  const [removeButton] = chrome.element("queuedLog").querySelectorAll(".queued-remove");
-  assert.ok(removeButton, "the queued prompt exposes its removal control");
-  removeButton.click({ stopPropagation() {} });
-
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-});
-
-test("an older failed send cannot overwrite a newer layout preparation failure", async () => {
-  let rejectSend = () => {};
-  const send = new Promise((_, reject) => {
-    rejectSend = () => reject(new Error("network unavailable"));
-  });
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Already sending", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/prompts")) return send;
-      if (String(url).endsWith("/layout-warnings/queue")) return { ok: false, status: 500 };
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("send").click();
-  chrome.sendSnapshot("older snapshot");
-  await flushPromises();
-
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-  await chrome.element("warningsQueueButton").onclick();
-  await flushPromises();
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-
-  rejectSend();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-  assert.doesNotMatch(chrome.element("sendHint").textContent, /click Send to Agent to retry/i);
-});
-
-test("a successful retry of the failed preparation clears its stale error", async () => {
-  let attempts = 0;
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (!String(url).endsWith("/layout-warnings/queue")) return { ok: true, json: async () => ({}) };
-      attempts += 1;
-      if (attempts === 1) return { ok: false, status: 500, json: async () => ({}) };
-      return {
-        ok: true,
-        json: async () => ({
-          warnings: [],
-          prompt: {
-            prompt: "Fix the selected layout issue",
-            text: "Layout issue: 1 selected",
-            target: { type: "layout-warnings", artifact_revision: 1, warnings: [{ id: "w1" }] },
-          },
-        }),
-      };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  await chrome.element("warningsQueueButton").onclick();
-  await flushPromises();
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-
-  await chrome.element("warningsQueueButton").onclick();
-  await flushPromises();
-
-  assert.equal(chrome.queued().length, 1);
-  assert.equal(chrome.element("sendHint").hidden, true);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), false);
-});
-
-test("a stalled unrelated send cannot overwrite layout preparation failure guidance", async () => {
-  let failPreparation = () => {};
-  const preparation = new Promise((_, reject) => {
-    failPreparation = () => reject(new Error("preparation unavailable"));
-  });
-  let finishSend = () => {};
-  const send = new Promise((resolve) => {
-    finishSend = () => resolve({ ok: true, json: async () => ({}) });
-  });
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Queued separately", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      if (String(url).endsWith("/prompts")) return send;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  chrome.element("warningsQueueButton").click();
-  failPreparation();
-  await flushPromises();
-  await flushPromises();
-
-  chrome.element("send").click();
-  chrome.sendSnapshot("");
-  await flushPromises();
-  chrome.runTimers(10_000);
-
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-  assert.doesNotMatch(chrome.element("sendHint").textContent, /still trying to send/i);
-
-  finishSend();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /could not prepare the selected layout fixes/i);
-});
-
-test("Send & End releases after a five-second feedback preparation timeout", async () => {
-  let finishPreparation = () => {};
-  const preparation = new Promise((resolve) => {
-    finishPreparation = () =>
-      resolve({
-        ok: true,
-        json: async () => ({
-          warnings: [],
-          prompt: {
-            prompt: "Late layout feedback",
-            text: "Layout issue: 1 selected",
-            target: { type: "layout-warnings", artifact_revision: 1, warnings: [{ id: "w1" }] },
-          },
-        }),
-      });
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-  chrome.element("chatInput").value = "Already queued";
-
-  chrome.element("warningsQueueButton").click();
-  chrome.element("sendAndEnd").click();
-  chrome.runTimers(5000);
-  await flushPromises();
-
-  assert.deepEqual(
-    chrome.queued().map((prompt) => prompt.prompt),
-    ["Already queued"],
-  );
-  assert.equal(chrome.element("send").disabled, false);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.equal(chrome.element("annotation").disabled, false);
-  assert.equal(chrome.element("end").disabled, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /within 5 seconds/i);
-  assert.equal(
-    chrome.postedToFrame.some((message) => message.type === "lavish:requestSnapshot"),
-    false,
-  );
-
-  finishPreparation();
-  await flushPromises();
-  await flushPromises();
-  assert.deepEqual(
-    chrome.queued().map((prompt) => prompt.prompt),
-    ["Already queued"],
-    "feedback that completed after the timeout is not claimed as queued",
-  );
-});
-
-test("a stale queued layout prompt remains available for user re-decision", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (url.endsWith("/layout-warnings/queue")) {
-        return {
-          ok: true,
-          json: async () => ({
-            queued_count: 1,
-            warnings: [warningPayload()],
-            prompt: {
-              prompt: "Fix this layout issue",
-              text: "Layout issue: 1 selected",
-              target: { type: "layout-warnings", artifact_revision: 1, warnings: [{ id: "w1" }] },
-            },
-          }),
-        };
-      }
-      if (url.endsWith("/prompts")) {
-        return {
-          ok: false,
-          status: 409,
-          json: async () => ({ warnings: [warningPayload({ status: "recurring", status_label: "Still present" })] }),
-        };
-      }
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-  await chrome.element("warningsQueueButton").onclick();
-  chrome.element("send").click();
-  chrome.sendSnapshot("");
-  await flushPromises();
-
-  assert.ok(posts.some((post) => post.url === "/api/abc/prompts"));
-  assert.equal(chrome.queued().length, 1);
-  assert.equal(chrome.warningRows()[0].children[1].children[2].children[1].textContent, "Queued for send");
-});
-
-test("dismissing a warning asks the server and never clears it locally on failure", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init) => {
-      posts.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
-      return { ok: false, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-
-  const [row] = chrome.warningRows();
-  const dismiss = row.children[1].children.at(-1).children.at(-1);
-  dismiss.dispatch("click");
-  await flushPromises();
-
-  assert.ok(posts.some((post) => post.url === "/api/abc/layout-warnings/dismiss" && post.body.id === "w1"));
-  assert.equal(chrome.element("warningsCount").textContent, "1", "a failed dismissal must not look like a resolution");
-});
-
-test("Reveal asks the artifact iframe to highlight the affected element", async () => {
-  const chrome = await createChromeHarness();
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload({ selector: "p#copy" })] }),
-  });
-
-  const [row] = chrome.warningRows();
-  const reveal = row.children[1].children.at(-1).children[0];
-  reveal.dispatch("click");
-
-  const revealMessage = chrome.postedToFrame.at(-1);
-  assert.equal(revealMessage.type, "lavish:revealElement");
-  assert.equal(revealMessage.selector, "p#copy");
-});
-
-test("the drawer manages focus and closes on Escape", async () => {
-  const chrome = await createChromeHarness();
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-
-  assert.equal(chrome.element("warningsDrawer").hidden, true);
-  chrome.element("warningsButton").click();
-  assert.equal(chrome.element("warningsDrawer").hidden, false);
-  assert.equal(chrome.element("warningsButton")["aria-expanded"], "true");
-  assert.equal(chrome.focusLog.at(-1), "warningsSelectAll", "focus moves into the drawer");
-
-  chrome.dispatchDocumentKeydown({ key: "Escape" });
-  assert.equal(chrome.element("warningsDrawer").hidden, true);
-  assert.equal(chrome.element("warningsButton")["aria-expanded"], "false");
-  assert.equal(chrome.focusLog.at(-1), "warningsButton", "focus returns to the trigger");
-});
-
-test("a click outside the drawer closes it", async () => {
-  const chrome = await createChromeHarness();
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  chrome.element("warningsButton").click();
-  assert.equal(chrome.element("warningsDrawer").hidden, false);
-
-  chrome.dispatchDocumentMousedown(chrome.element("chatInput"));
-  assert.equal(chrome.element("warningsDrawer").hidden, true);
-});
-
-test("warning state and selection survive a chrome reload of the same session", async () => {
-  const first = await createChromeHarness();
-  first.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload(), warningPayload({ id: "w2" })] }),
-  });
-  const [row] = first.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-  assert.equal(first.element("warningsSelected").textContent, "1 selected");
-
-  // A browser refresh re-bootstraps from the server, and the chrome's own selection is restored
-  // from per-session storage.
-  const reloaded = await createChromeHarness({
-    storage: first.storage,
-    sessionData: {
-      key: "abc",
-      file: "/tmp/artifact.html",
-      modeToggleHotkeyKey: "i",
-      initialLayoutWarnings: [warningPayload(), warningPayload({ id: "w2" })],
-    },
-  });
-  assert.equal(reloaded.element("warningsCount").textContent, "2");
-  assert.equal(reloaded.element("warningsSelected").textContent, "1 selected");
-});
-
-test("warning state does not leak across review sessions", async () => {
-  const first = await createChromeHarness();
-  first.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = first.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-
-  const other = await createChromeHarness({
-    storage: first.storage,
-    sessionData: { key: "zzz", file: "/tmp/other.html", modeToggleHotkeyKey: "i" },
-  });
-  assert.equal(other.element("warningsWrap").hidden, true);
-  assert.equal(other.element("warningsSelected").textContent, "None selected");
-});
-
 test("chrome client registers message listener before loading the artifact iframe", async () => {
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
 
@@ -3538,39 +2639,17 @@ test("a superseded first load still shows the embedded artifact", async () => {
   assert.equal(chrome.element("handoffBanner").hidden, false);
 });
 
-test("the layout gate reveals after a completed pass with no findings", async () => {
-  const { posts, fetchImpl } = diagnosticsHarness([[]]);
-  const chrome = await createChromeHarness({ fetchImpl });
+test("the layout gate reveals once the artifact reports ready", async () => {
+  const chrome = await createChromeHarness();
 
   assert.equal(chrome.element("layoutGateOverlay").hidden, false);
   assert.equal(chrome.element("body").classList.contains("layout-gate-active"), true);
 
-  chrome.sendFrameMessage({ type: "lavish:layoutDiagnostics", complete: true, viewport_width: 720, findings: [] });
+  chrome.sendFrameMessage({ type: "lavish:ready" });
   await flushPromises();
 
   assert.equal(chrome.element("layoutGateOverlay").hidden, true);
   assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-  assert.equal(posts[0].url, "/api/abc/layout-diagnostics");
-  assert.deepEqual(posts[0].body.findings, []);
-});
-
-// The gate used to hold the artifact hostage until an agent repaired the finding. Triage is the
-// user's now, so a completed pass always reveals and hands the result to the inbox.
-test("the layout gate reveals on severe findings and points at the inbox instead of holding", async () => {
-  const { fetchImpl } = diagnosticsHarness([[warningPayload()]]);
-  const chrome = await createChromeHarness({ fetchImpl });
-
-  chrome.sendFrameMessage({
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    viewport_width: 720,
-    findings: [{ selector: "html", kind: "page-horizontal-overflow", overflowPx: 18, severity: "error" }],
-  });
-  await flushPromises();
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true, "the user sees the artifact");
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-  assert.equal(chrome.element("warningsWrap").hidden, false);
 });
 
 test("layout gate timeout fails open when no result arrives", async () => {
@@ -3584,10 +2663,8 @@ test("layout gate timeout fails open when no result arrives", async () => {
   assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
 });
 
-test("layout gate re-arms on reload and still reveals on the next completed pass", async () => {
-  const { fetchImpl } = diagnosticsHarness([[], [warningPayload()]]);
+test("layout gate re-arms on reload and still reveals on the next ready report", async () => {
   const chrome = await createChromeHarness({
-    fetchImpl,
     sessionData: { key: "abc", file: "/tmp/artifact.html", layoutGateMaxHoldMs: 25 },
   });
 
@@ -3598,25 +2675,17 @@ test("layout gate re-arms on reload and still reveals on the next completed pass
   assert.equal(chrome.element("layoutGateOverlay").hidden, false);
   assert.equal(chrome.element("body").classList.contains("layout-gate-active"), true);
 
-  chrome.sendFrameMessage({
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    viewport_width: 720,
-    findings: [{ selector: "html", kind: "page-horizontal-overflow", overflowPx: 18, severity: "error" }],
-  });
+  chrome.sendFrameMessage({ type: "lavish:ready" });
   await flushPromises();
 
   assert.equal(chrome.element("layoutGateOverlay").hidden, true);
 });
 
-test("a stale prior-document diagnostic cannot reveal the new gate or clear its probe", async () => {
+test("a stale prior-document ready report cannot reveal the new gate or clear its probe", async () => {
   const posts = [];
   const chrome = await createChromeHarness({
     fetchImpl: async (url, init = {}) => {
       posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (url === "/api/abc/layout-diagnostics") {
-        return { ok: true, json: async () => ({ status: "stale", warnings: [] }) };
-      }
       return { ok: true, json: async () => ({}) };
     },
     sessionData: { key: "abc", file: "/tmp/artifact.html", layoutGateMaxHoldMs: 25 },
@@ -3629,27 +2698,17 @@ test("a stale prior-document diagnostic cannot reveal the new gate or clear its 
   await flushPromises();
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:layoutDiagnostics",
+    type: "lavish:ready",
     artifact_revision: 1,
-    complete: true,
-    viewport_width: 720,
-    findings: [],
   });
   await flushPromises();
 
-  assert.equal(
-    posts.some((post) => post.url === "/api/abc/layout-diagnostics"),
-    false,
-  );
   assert.equal(chrome.element("layoutGateOverlay").hidden, false);
   chrome.frame.dispatch("load");
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:layoutDiagnostics",
+    type: "lavish:ready",
     artifact_revision: 1,
-    complete: true,
-    viewport_width: 720,
-    findings: [],
   });
   await flushPromises();
   chrome.runTimers(8000);
@@ -3742,8 +2801,8 @@ test("a first begin-load that fails keeps retrying until the artifact loads", as
   await flushPromises();
   assert.equal(chrome.artifactBeginRequests.length, 4);
   assert.match(chrome.frame.src, /^\/artifact\/abc\/index\.html\?artifact_revision=\d+&artifact_load_token=/);
-  // Retries alone never raise the failure card: the gate is back on its ordinary checking copy.
-  assert.match(String(chrome.element("layoutGateTitle").innerHTML), /Checking layout/);
+  // Retries alone never raise the failure card: the gate is back on its ordinary loading copy.
+  assert.equal(chrome.element("layoutGateTitle").textContent, "Opening the page.");
 });
 
 test("a first begin-load that never recovers surfaces a reloadable failure instead of a blank frame", async () => {
@@ -3814,7 +2873,7 @@ test("a load that asks for the artifact again gets the whole recovery backoff ag
   await flushPromises();
   assert.equal(chrome.artifactBeginRequests.length, 19);
   assert.match(chrome.frame.src, /artifact_load_token=/);
-  assert.match(String(chrome.element("layoutGateTitle").innerHTML), /Checking layout/);
+  assert.equal(chrome.element("layoutGateTitle").textContent, "Opening the page.");
 });
 
 test("empty Send names this tab's queue without importing another window's answers", async () => {
@@ -3881,7 +2940,7 @@ test("a superseded reviewer is not retried in the background", async () => {
 test("a superseded first load names itself on the layout gate instead of holding the spinner", async () => {
   const chrome = await createChromeHarness({
     artifactSrc: "/artifact/abc/index.html",
-    sessionData: { ...defaultSessionData, chromeLoadToken: "old-handoff", layoutGateEnabled: true },
+    sessionData: { ...defaultSessionData, chromeLoadToken: "old-handoff" },
     beginLoadResponses: [{ ok: false, status: 409, json: async () => ({ status: "superseded" }) }],
   });
   await flushPromises();
@@ -3910,7 +2969,6 @@ test("a superseded reload keeps the artifact already on screen and leaves the ga
     sessionData: {
       ...defaultSessionData,
       chromeLoadToken: "old-handoff",
-      layoutGateEnabled: true,
       initialArtifactRevision: 4,
       initialArtifactLoadToken: "live-load",
     },
@@ -4116,13 +3174,11 @@ test("the not-running card survives a later successful artifact load", async () 
   assert.equal(chrome.element("layoutGateAction").textContent, "Check and reload");
   assert.equal(chrome.element("layoutGateOverlay").hidden, false);
 
-  // A completed diagnostic pass from the replacement server must release the visual gate even
+  // A ready report from the replacement server must release the visual gate even
   // while the sticky card copy remains in state. The card is not allowed to trap the artifact.
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    findings: [],
+    type: "lavish:ready",
   });
   assert.equal(chrome.element("layoutGateOverlay").hidden, true);
   assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
@@ -4161,19 +3217,17 @@ test("a sticky failure cannot outlive the layout gate timeout", async () => {
   assert.equal(chrome.element("layoutGateOverlay").hidden, true);
 });
 
-test("a no-gate sticky failure reveals by pass, manual bypass, or timeout", async () => {
+test("a sticky failure reveals by ready report, manual bypass, or timeout", async () => {
   async function createFailedChrome() {
     const chrome = await createChromeHarness({
       artifactSrc: "/artifact/abc/index.html",
       fakeClock: true,
-      sessionData: { ...defaultSessionData, layoutGateEnabled: false },
       fetchImpl: async (url) => {
         if (String(url) === "/health") throw new Error("connection refused");
         return { ok: true, json: async () => ({}) };
       },
     });
 
-    assert.equal(chrome.element("layoutGateOverlay").hidden, true);
     chrome.eventSource().listeners.get("chrome-reload")();
     await flushPromises();
     chrome.advanceClock(61000);
@@ -4189,9 +3243,7 @@ test("a no-gate sticky failure reveals by pass, manual bypass, or timeout", asyn
   const completed = await createFailedChrome();
   completed.sendFrameMessage({
     artifact_load_token: completed.artifactLoadToken(),
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    findings: [],
+    type: "lavish:ready",
   });
   assert.equal(completed.element("layoutGateOverlay").hidden, true);
 
@@ -4204,29 +3256,15 @@ test("a no-gate sticky failure reveals by pass, manual bypass, or timeout", asyn
   assert.equal(timedOut.element("layoutGateOverlay").hidden, true);
 });
 
-test("a diagnostics network failure does not hold the visual gate", async () => {
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (String(url).includes("/layout-diagnostics")) throw new Error("server replaced");
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.sendFrameMessage({ type: "lavish:layoutDiagnostics", complete: true, findings: [] });
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-});
-
-test("a layout pass lost to a token race requests a fresh pass", async () => {
+test("a ready report lost to a token race requests a fresh report", async () => {
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
   const oldToken = "stale-load-token";
 
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    findings: [],
+    type: "lavish:ready",
   });
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:requestLayoutDiagnostics");
+  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:requestReady");
 });
 
 function sendChromeOutdated(chrome, reason) {
@@ -4421,7 +3459,7 @@ test("a slow probe does not write its failure copy over a card that moved on", a
   chrome.eventSource().listeners.get("reload")();
   await flushPromises();
   await flushPromises();
-  assert.match(String(chrome.element("layoutGateTitle").innerHTML), /Checking layout/);
+  assert.equal(chrome.element("layoutGateTitle").textContent, "Opening the page.");
   const checkingCopy = chrome.element("layoutGateCopy").textContent;
 
   chrome.runTimers(4000);
@@ -4953,19 +3991,12 @@ test("a current load token accepts artifact messages before the frame load event
   chrome.frame.dispatch("load");
 });
 
-test("a pre-load diagnostic silences the probe even while its response is delayed", async () => {
+test("a pre-load ready report silences the artifact probe", async () => {
   const posts = [];
-  /** @type {(() => void) | undefined} */
-  let releaseDiagnostic;
   const chrome = await createChromeHarness({
     artifactSrc: "/artifact/abc/index.html",
     fetchImpl: (url, init = {}) => {
       posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (url === "/api/abc/layout-diagnostics") {
-        return new Promise((resolve) => {
-          releaseDiagnostic = () => resolve({ ok: true, json: async () => ({ warnings: [] }) });
-        });
-      }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     },
   });
@@ -4974,9 +4005,7 @@ test("a pre-load diagnostic silences the probe even while its response is delaye
   await flushPromises();
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    findings: [],
+    type: "lavish:ready",
   });
   await flushPromises();
   chrome.frame.dispatch("load");
@@ -4986,9 +4015,6 @@ test("a pre-load diagnostic silences the probe even while its response is delaye
     posts.some((post) => post.url.includes("/artifact/abc/index.html?") && post.url.includes("probe=1")),
     false,
   );
-  assert.ok(releaseDiagnostic);
-  releaseDiagnostic();
-  await flushPromises();
 });
 
 test("stale artifact messages are ignored until the current frame load", async () => {
@@ -5039,47 +4065,6 @@ test("stale artifact messages are ignored until the current frame load", async (
   assert.equal(posts.filter((post) => post.url === "/api/abc/artifact-failures").length, 1);
 });
 
-test("a delayed diagnostic response does not delay silencing the artifact probe", async () => {
-  const posts = [];
-  /** @type {(() => void) | undefined} */
-  let releaseDiagnostic;
-  const chrome = await createChromeHarness({
-    artifactSrc: "/artifact/abc/index.html",
-    fetchImpl: (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (url === "/api/abc/layout-diagnostics") {
-        return new Promise((resolve) => {
-          releaseDiagnostic = () => resolve({ ok: true, json: async () => ({ warnings: [] }) });
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
-    },
-  });
-
-  chrome.sendFrameMessage({
-    artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    viewport_width: 1440,
-    findings: [],
-  });
-  await flushPromises();
-  chrome.runTimers(8000);
-  await flushPromises();
-
-  assert.equal(
-    posts.some((post) => post.url.includes("/artifact/abc/index.html?") && post.url.includes("probe=1")),
-    false,
-  );
-  assert.ok(releaseDiagnostic);
-  releaseDiagnostic();
-  await flushPromises();
-  assert.equal(
-    posts.some((post) => post.url.includes("/artifact/abc/index.html?") && post.url.includes("probe=1")),
-    false,
-  );
-});
-
 test("a stale artifact probe cannot report failure after a reload", async () => {
   const posts = [];
   /** @type {(() => void) | undefined} */
@@ -5116,43 +4101,6 @@ test("a stale artifact probe cannot report failure after a reload", async () => 
   );
 });
 
-test("a delayed older diagnostic response cannot repaint the inbox", async () => {
-  const posts = [];
-  const releases = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (url !== "/api/abc/layout-diagnostics") return Promise.resolve({ ok: true, json: async () => ({}) });
-      const requestIndex = releases.length;
-      return new Promise((resolve) => {
-        releases.push(() =>
-          resolve({
-            ok: true,
-            json: async () => ({ warnings: [warningPayload({ id: requestIndex === 0 ? "old" : "new" })] }),
-          }),
-        );
-      });
-    },
-  });
-
-  chrome.sendFrameMessage({ type: "lavish:layoutDiagnostics", complete: true, findings: [] });
-  chrome.sendFrameMessage({ type: "lavish:layoutDiagnostics", complete: true, findings: [] });
-  releases[1]();
-  await flushPromises();
-  assert.deepEqual(
-    chrome.warningRows().map((row) => row.dataset.warningId),
-    ["new"],
-  );
-
-  releases[0]();
-  await flushPromises();
-  assert.deepEqual(
-    chrome.warningRows().map((row) => row.dataset.warningId),
-    ["new"],
-  );
-  assert.equal(posts.filter((post) => post.url === "/api/abc/layout-diagnostics").length, 2);
-});
-
 test("layout gate manual override reveals immediately", async () => {
   const chrome = await createChromeHarness();
 
@@ -5170,42 +4118,6 @@ test("layout gate manual override stays bypassed on reload", async () => {
 
   assert.equal(chrome.element("layoutGateOverlay").hidden, true);
   assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-});
-
-test("layout gate stays skipped when the session disables it", async () => {
-  const { fetchImpl } = diagnosticsHarness([[warningPayload()]]);
-  const chrome = await createChromeHarness({
-    fetchImpl,
-    sessionData: { key: "abc", file: "/tmp/artifact.html", layoutGateEnabled: false },
-  });
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-
-  chrome.sendFrameMessage({
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    viewport_width: 720,
-    findings: [{ selector: "html", kind: "page-horizontal-overflow", overflowPx: 18, severity: "error" }],
-  });
-  await flushPromises();
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("warningsWrap").hidden, false, "the inbox still surfaces the finding");
-});
-
-test("a zero-warning review keeps the top bar unchanged", async () => {
-  const { posts, fetchImpl } = diagnosticsHarness([[]]);
-  const chrome = await createChromeHarness({ fetchImpl });
-
-  chrome.sendFrameMessage({ type: "lavish:layoutDiagnostics", complete: true, viewport_width: 1440, findings: [] });
-  await flushPromises();
-
-  assert.equal(chrome.element("warningsWrap").hidden, true);
-  assert.equal(
-    posts.some((post) => post.url === "/api/abc/prompts"),
-    false,
-  );
 });
 
 test("chrome client strips the internal queue key before posting prompts", async () => {
@@ -5381,42 +4293,6 @@ test("chrome send and end with an empty composer nudges instead of ending", asyn
   assert.match(chrome.element("sendHint").textContent, /End session/);
   assert.equal(chrome.element("chatInput").focused, true);
   assert.equal(chrome.element("chatInput").disabled, false);
-});
-
-test("chrome send and end nudges toward End session when preparation leaves the queue empty", async () => {
-  const posts = [];
-  let finishPreparation = () => {};
-  const preparation = new Promise((resolve) => {
-    finishPreparation = () => resolve({ ok: true, json: async () => ({ warnings: [] }) });
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (String(url).endsWith("/layout-warnings/queue")) return preparation;
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  chrome.eventSource().listeners.get("layout-warnings")({
-    data: JSON.stringify({ warnings: [warningPayload()] }),
-  });
-  const [row] = chrome.warningRows();
-  row.children[0].checked = true;
-  row.children[0].dispatch("change");
-  chrome.element("sendHint").hidden = true;
-
-  chrome.element("warningsQueueButton").click();
-  chrome.element("sendAndEnd").click();
-  finishPreparation();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(
-    posts.some((post) => String(post.url).endsWith("/prompts")),
-    false,
-  );
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.match(chrome.element("sendHint").textContent, /End session/);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
 });
 
 test("an oversized terminal snapshot retries once without optional DOM context", async () => {
@@ -5771,7 +4647,7 @@ test("a silent artifact is probed for a fatal failure, and a talking one is not"
   assert.match(failure.body.failures[0].detail, /HTTP 404/);
 });
 
-test("an artifact that reports diagnostics is never probed as unavailable", async () => {
+test("an artifact that reports ready is never probed as unavailable", async () => {
   const posts = [];
   const chrome = await createChromeHarness({
     artifactSrc: "/artifact/abc/index.html",
@@ -5784,10 +4660,7 @@ test("an artifact that reports diagnostics is never probed as unavailable", asyn
   chrome.element("artifact").dispatch("load");
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:layoutDiagnostics",
-    complete: true,
-    viewport_width: 1440,
-    findings: [],
+    type: "lavish:ready",
   });
   await flushPromises();
   chrome.runTimers(8000);
@@ -8288,13 +7161,6 @@ test("the chrome's queued anchor agrees with the server's transcript anchor for 
         start: { selector: "main > p", path: [], offset: 0 },
         end: { selector: "main > p", path: [], offset: 14 },
       },
-    },
-    {
-      prompt: "note",
-      selector: "",
-      tag: "layout-warnings",
-      text: "2 layout issues",
-      target: { type: "layout-warnings", warnings: [{ id: "a" }, { id: "b" }] },
     },
     { prompt: "note", selector: "", tag: "message", text: "Freeform message" },
   ];

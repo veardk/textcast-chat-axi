@@ -2,18 +2,6 @@ import crypto from "node:crypto";
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import {
-  applyDiagnosticPass,
-  dismissLayoutWarning as dismissWarningRecord,
-  hasOutstandingRepairRequest,
-  isSelectableLayoutWarning,
-  layoutWarningPromptPayload,
-  markObsoleteViewportWarnings,
-  normalizeLayoutWarningsTarget,
-  normalizeStoredWarnings,
-  queueLayoutWarnings as queueWarningRecords,
-  serializeLayoutWarnings,
-} from "./layout-warnings.js";
 import { AsyncMutex } from "./async-mutex.js";
 import {
   boundStoredChat,
@@ -27,7 +15,6 @@ import {
   unstampDelivery,
 } from "./chat-messages.js";
 
-export const LAYOUT_WARNINGS_TARGET_TYPE = "layout-warnings";
 const MAX_ARTIFACT_FAILURES = 20;
 // How long a just-delivered attachment stays referenced after `takeFeedback`
 // hands its path to the agent. The sweeper's reference set is built from PENDING
@@ -131,9 +118,6 @@ export class SessionStore {
       status: existingStatus === "feedback" && existingPrompts.length === 0 ? "open" : existingStatus,
       pending_prompts: existing.pending_prompts || 0,
       prompts: existingPrompts,
-      // The warning inbox is durable review state, not deliverable feedback: reopening a session
-      // must never silently drop unresolved warnings the user has not triaged yet.
-      layout_warnings: normalizeStoredWarnings(existing.layout_warnings),
       artifact_revision: normalizeRevision(existing.artifact_revision),
       // The reviewer's open tab is holding this token, so reopening the artifact must not retire
       // it: only a newer `beginArtifactLoad` retires a load.
@@ -173,7 +157,7 @@ export class SessionStore {
   // resolver, unresolved attachments are dropped rather than trusted.
   async queuePrompts(key, payload, options = {}) {
     // The whole read -> resolve -> write path runs under the store's single lock so
-    // it is atomic against a concurrent poll's `takeFeedback` / `recordLayoutWarnings`
+    // it is atomic against a concurrent poll's `takeFeedback`
     // (E1) AND against the sweeper's reference snapshot + delete and upload finalize,
     // which the server runs under the same lock via `runExclusive` (D5).
     return this.lock.runExclusive(() => this.#queuePromptsLocked(key, payload, options));
@@ -189,8 +173,7 @@ export class SessionStore {
     const shouldEndSession = Boolean(payload.endSession || payload.end_session);
     // `options.restore` re-queues a batch `takeFeedback` already removed (a poll whose client
     // disconnected before its response was written). Those prompts were accepted once already, so
-    // restoring replays them verbatim: no layout-warning plan or conflict check to re-run and no
-    // chat messages to re-append. Restored prompts are prepended to newer prompts, while newer
+    // restoring replays them verbatim: no chat messages to re-append. Restored prompts are prepended to newer prompts, while newer
     // snapshots and failures are preserved. Attachments are still re-derived through the resolver,
     // because restore re-enters the same trust boundary.
     const restoring = options.restore === true;
@@ -255,52 +238,8 @@ export class SessionStore {
       };
     }
 
-    const revision = normalizeRevision(session.artifact_revision);
     const at = new Date().toISOString();
-    let warnings = normalizeStoredWarnings(session.layout_warnings);
-    let acceptedPrompts;
-    if (restoring) {
-      acceptedPrompts = normalizedPrompts;
-    } else {
-      const layoutPlans = [];
-      const conflicts = new Set();
-      for (const prompt of normalizedPrompts) {
-        const warningIds = layoutWarningPromptIds(prompt);
-        if (warningIds === null) {
-          layoutPlans.push({
-            prompt,
-            warningIds: null,
-            expectedRevision: null,
-            conflicts: [],
-            queueIds: [],
-            hadKnownWarning: false,
-          });
-          continue;
-        }
-        const plan = planLayoutWarningPrompt(warnings, prompt, revision);
-        for (const id of plan.conflicts) conflicts.add(id);
-        layoutPlans.push({ prompt, ...plan });
-      }
-      if (conflicts.size > 0) {
-        return {
-          conflict: true,
-          session,
-          warning_ids: [...conflicts],
-          warnings: serializeLayoutWarnings(warnings),
-        };
-      }
-      acceptedPrompts = [];
-      for (const plan of layoutPlans) {
-        if (plan.warningIds === null) {
-          acceptedPrompts.push(plan.prompt);
-          continue;
-        }
-        const result = queueWarningRecords(warnings, plan.queueIds, { revision, at });
-        warnings = result.warnings;
-        if (result.queued.length > 0 || !plan.hadKnownWarning) acceptedPrompts.push(plan.prompt);
-      }
-    }
-    session.layout_warnings = warnings;
+    const acceptedPrompts = normalizedPrompts;
     // Every accepted prompt with something to display joins the transcript, not only composer
     // messages: the notes a reviewer sends are the half of the conversation the panel used to
     // lose on send.
@@ -407,7 +346,6 @@ export class SessionStore {
       const load = {
         artifactRevision,
         artifactLoadToken,
-        lastPassSequence: 0,
         requestId: normalizedRequestId,
         requestSequence: normalizedRequestSequence,
         handoffToken: normalizedHandoffToken,
@@ -445,117 +383,9 @@ export class SessionStore {
     });
   }
 
-  // Fold one browser diagnostic pass into the passive warning inbox. This deliberately does NOT
-  // touch session status or queue feedback: detection alone must never wake an agent.
-  /**
-   * @param {{ viewportClasses?: string[] }} [options]
-   */
-  async recordLayoutDiagnostics(key, payload, options = {}) {
-    return this.runExclusive(async () => {
-      const viewportClasses = options.viewportClasses;
-      const state = await this.readState();
-      const session = state.sessions[key];
-      if (!session) {
-        return null;
-      }
-      const revision = normalizeRevision(session.artifact_revision);
-      const load = this.#activeArtifactLoad(session);
-      const artifactLoadToken = String(payload?.artifact_load_token || payload?.artifactLoadToken || "");
-      const reportedRevision = parseDiagnosticRevision(payload);
-      const passSequence = parsePassSequence(payload);
-      if (
-        !load ||
-        artifactLoadToken !== load.artifactLoadToken ||
-        !reportedRevision.present ||
-        reportedRevision.value !== load.artifactRevision ||
-        !passSequence.present ||
-        passSequence.value <= load.lastPassSequence
-      ) {
-        return {
-          session,
-          changed: false,
-          stale: true,
-          warnings: serializeLayoutWarnings(session.layout_warnings),
-        };
-      }
-      load.lastPassSequence = passSequence.value;
-      const at = new Date().toISOString();
-      const pass = applyDiagnosticPass(session.layout_warnings, {
-        complete: payload.complete !== false,
-        targetPresenceComplete: payload.target_presence_complete === true || payload.targetPresenceComplete === true,
-        viewportWidth: payload.viewport_width ?? payload.viewportWidth,
-        findings: payload.findings || payload.layout_warnings || payload.layoutWarnings || [],
-        revision,
-        at,
-      });
-      let warnings = pass.warnings;
-      let changed = pass.changed;
-      if (viewportClasses) {
-        const obsolete = markObsoleteViewportWarnings(warnings, viewportClasses, { at, revision });
-        warnings = obsolete.warnings;
-        changed = changed || obsolete.changed;
-      }
-      if (!changed) {
-        return { session, changed: false, warnings: serializeLayoutWarnings(warnings) };
-      }
-      session.layout_warnings = warnings;
-      // Ride along with a write this pass was already making. The pass fence is deliberately NOT
-      // worth a write of its own: a repeat pass that changes no warning must not rewrite
-      // state.json, and a fence restored one pass behind only re-admits a pass whose findings
-      // `applyDiagnosticPass` already treats as the same answer.
-      session.artifact_load = serializeArtifactLoad(load);
-      session.updated_at = at;
-      await this.writeState(state);
-      return { session, changed: true, warnings: serializeLayoutWarnings(warnings) };
-    });
-  }
-
-  // Prepare the user's explicit triage action. The ordinary prompt queue commits it when sent.
-  async prepareLayoutWarningFixes(key, ids) {
-    return this.runExclusive(async () => {
-      const state = await this.readState();
-      const session = state.sessions[key];
-      if (!session) {
-        return null;
-      }
-      const revision = normalizeRevision(session.artifact_revision);
-      const at = new Date().toISOString();
-      const result = queueWarningRecords(session.layout_warnings, ids, { revision, at });
-      if (!result.queued.length) {
-        return { session, queued: [], prompt: null, warnings: serializeLayoutWarnings(session.layout_warnings) };
-      }
-      return {
-        session,
-        queued: result.queued,
-        prompt: layoutWarningPromptPayload(result.queued),
-        warnings: serializeLayoutWarnings(session.layout_warnings),
-      };
-    });
-  }
-
-  async dismissLayoutWarning(key, id) {
-    return this.runExclusive(async () => {
-      const state = await this.readState();
-      const session = state.sessions[key];
-      if (!session) {
-        return null;
-      }
-      const revision = normalizeRevision(session.artifact_revision);
-      const result = dismissWarningRecord(session.layout_warnings, id, { revision });
-      if (!result.changed) {
-        return { session, changed: false, warnings: serializeLayoutWarnings(session.layout_warnings) };
-      }
-      session.layout_warnings = result.warnings;
-      session.updated_at = new Date().toISOString();
-      await this.writeState(state);
-      return { session, changed: true, warnings: serializeLayoutWarnings(result.warnings) };
-    });
-  }
-
   // The narrow fatal path: failures that make the review itself unusable (the artifact cannot be
-  // served, or one of its own local assets cannot be loaded). These are NOT layout findings and
-  // do not enter the passive inbox - they still reach the agent immediately, because there is no
-  // usable review for the user to triage from.
+  // served, or one of its own local assets cannot be loaded). They reach the agent immediately,
+  // because there is no usable review for the user to work from.
   async recordArtifactFailures(key, payload) {
     return this.runExclusive(async () => {
       const state = await this.readState();
@@ -565,7 +395,7 @@ export class SessionStore {
       }
       const load = this.#activeArtifactLoad(session);
       const artifactLoadToken = String(payload?.artifact_load_token || payload?.artifactLoadToken || "");
-      const reportedRevision = parseDiagnosticRevision(payload);
+      const reportedRevision = parseReportedRevision(payload);
       if (
         !load ||
         artifactLoadToken !== load.artifactLoadToken ||
@@ -588,27 +418,6 @@ export class SessionStore {
     });
   }
 
-  async listLayoutWarnings(key) {
-    return this.runExclusive(async () => {
-      const state = await this.readState();
-      const session = state.sessions[key];
-      if (!session) return null;
-      return {
-        warnings: serializeLayoutWarnings(session.layout_warnings),
-        revision: normalizeRevision(session.artifact_revision),
-      };
-    });
-  }
-
-  async hasOutstandingLayoutRepairs(key) {
-    return this.runExclusive(async () => {
-      const state = await this.readState();
-      const session = state.sessions[key];
-      if (!session) return false;
-      return normalizeStoredWarnings(session.layout_warnings).some(hasOutstandingRepairRequest);
-    });
-  }
-
   /** @returns {Promise<any>} */
   async takeFeedback(key) {
     return this.runExclusive(async () => {
@@ -620,8 +429,7 @@ export class SessionStore {
       // Prompts queued before the session ended (a browser send-and-end) must still reach the
       // agent, so deliver them before reporting the ended state; the next poll then sees ended.
       const prompts = session.prompts || [];
-      // Layout warnings stay passive until the user queues them. Only fatal artifact
-      // failures can reach the agent without explicit user action.
+      // Only fatal artifact failures can reach the agent without explicit user action.
       const artifactFailures = Array.isArray(session.artifact_failures) ? session.artifact_failures : [];
       const alreadyEnded = session.status === "ended";
       if (prompts.length === 0 && artifactFailures.length === 0) {
@@ -861,13 +669,6 @@ function agentFacingPrompt(prompt) {
   return rest;
 }
 
-function layoutWarningPromptIds(prompt) {
-  if (prompt?.tag !== "layout-warnings" || prompt.target?.type !== LAYOUT_WARNINGS_TARGET_TYPE) return null;
-  return Array.isArray(prompt.target.warnings)
-    ? prompt.target.warnings.map((warning) => String(warning?.id || "")).filter(Boolean)
-    : [];
-}
-
 // Client-supplied attachment refs are stripped to just the fields the client is
 // allowed to influence: the content-hash `id` and a display-only `name`. Path,
 // mime, size, and dimensions are never taken from the payload (see queuePrompts).
@@ -977,35 +778,6 @@ async function resolvePromptAttachments(refs, key, options = {}) {
   return { resolved, rejected };
 }
 
-function planLayoutWarningPrompt(warnings, prompt, revision) {
-  const warningIds = layoutWarningPromptIds(prompt);
-  const hasRevision = Object.hasOwn(prompt.target || {}, "artifact_revision");
-  const expectedRevision = hasRevision ? parseRevisionValue(prompt.target.artifact_revision) : null;
-  const conflicts = [];
-  const queueIds = [];
-  let hadKnownWarning = false;
-
-  for (const id of warningIds) {
-    const warning = warnings.find((candidate) => candidate.id === id);
-    if (!warning) continue;
-    hadKnownWarning = true;
-    const duplicate =
-      warning.status === "queued" &&
-      Boolean(warning.queued_at) &&
-      expectedRevision !== null &&
-      warning.queued_revision === expectedRevision;
-    if (duplicate) continue;
-    if (hasRevision && (expectedRevision === null || expectedRevision !== revision)) {
-      conflicts.push(id);
-      continue;
-    }
-    if (isSelectableLayoutWarning(warning)) queueIds.push(id);
-    else if (hasRevision) conflicts.push(id);
-  }
-
-  return { warningIds, expectedRevision, conflicts, queueIds, hadKnownWarning };
-}
-
 // The active artifact load, in the shape state.json carries it. Snake-cased like every other
 // stored field, and complete: the fences a begin is judged against (`request_id`,
 // `request_sequence`, `handoff_token`) belong to the same epoch as the token, so a process that
@@ -1015,19 +787,17 @@ function serializeArtifactLoad(load) {
   return {
     artifact_load_token: load.artifactLoadToken,
     artifact_revision: load.artifactRevision,
-    last_pass_sequence: load.lastPassSequence,
     request_id: load.requestId,
     request_sequence: load.requestSequence,
     handoff_token: load.handoffToken,
   };
 }
 
-// Every key `serializeArtifactLoad` writes. A record this code wrote always carries all six, so a
+// Every key `serializeArtifactLoad` writes. A record this code wrote always carries all five, so a
 // record missing one was not written by this code and cannot be read as a whole.
 const STORED_ARTIFACT_LOAD_FIELDS = [
   "artifact_load_token",
   "artifact_revision",
-  "last_pass_sequence",
   "request_id",
   "request_sequence",
   "handoff_token",
@@ -1039,13 +809,13 @@ const STORED_ARTIFACT_LOAD_FIELDS = [
 // the previous process already overtook wins. So an older or hand-edited state.json degrades to
 // the pre-persistence behaviour - one re-handshake and a fresh epoch - rather than admitting a
 // load the store can only partly describe. Presence and type are what is checked, not value:
-// `request_id` is legitimately "" and both sequence fences are legitimately 0 on a just-begun
+// `request_id` is legitimately "" and the request sequence is legitimately 0 on a just-begun
 // load. The revision is not: `beginArtifactLoad` only mints positive ones, so 0 is a value this
 // code never wrote and a load restored with it would be served at a revision that never existed.
 // The two tokens are additionally required non-empty, which rejects nothing this code wrote
 // (`beginArtifactLoad` only mints non-empty ones) and is load-bearing for `artifact_load_token`:
-// diagnostics compare their own token against it, so an empty restored token would be matched by
-// a token-less pass.
+// artifact-failure reports compare their own token against it, so an empty restored token would
+// be matched by a token-less report.
 function restoreArtifactLoad(stored) {
   if (!stored || typeof stored !== "object" || Array.isArray(stored)) return null;
   if (STORED_ARTIFACT_LOAD_FIELDS.some((field) => !Object.hasOwn(stored, field))) return null;
@@ -1057,10 +827,9 @@ function restoreArtifactLoad(stored) {
   if (typeof requestId !== "string") return null;
   const artifactRevision = parseSequenceValue(stored.artifact_revision);
   if (artifactRevision === 0) return null;
-  const lastPassSequence = parseSequenceValue(stored.last_pass_sequence);
   const requestSequence = parseSequenceValue(stored.request_sequence);
-  if (artifactRevision === null || lastPassSequence === null || requestSequence === null) return null;
-  return { artifactRevision, artifactLoadToken, lastPassSequence, requestId, requestSequence, handoffToken };
+  if (artifactRevision === null || requestSequence === null) return null;
+  return { artifactRevision, artifactLoadToken, requestId, requestSequence, handoffToken };
 }
 
 function normalizeStoredArtifactLoad(stored) {
@@ -1084,18 +853,11 @@ function parseRevisionValue(value) {
   return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : null;
 }
 
-function parseDiagnosticRevision(payload) {
+function parseReportedRevision(payload) {
   const source = payload && typeof payload === "object" ? payload : {};
   const present = Object.hasOwn(source, "artifact_revision") || Object.hasOwn(source, "artifactRevision");
   if (!present) return { present: false, value: null };
   return { present: true, value: parseRevisionValue(source.artifact_revision ?? source.artifactRevision) };
-}
-
-function parsePassSequence(payload) {
-  const source = payload && typeof payload === "object" ? payload : {};
-  const present = Object.hasOwn(source, "artifact_pass_sequence") || Object.hasOwn(source, "artifactPassSequence");
-  const value = Number(source.artifact_pass_sequence ?? source.artifactPassSequence);
-  return { present, value: Number.isSafeInteger(value) && value > 0 ? value : null };
 }
 
 const ARTIFACT_FAILURE_KINDS = new Set(["artifact-unavailable", "artifact-asset-unavailable"]);
@@ -1138,7 +900,6 @@ function normalizeArtifactFailures(failures) {
 
 function normalizeTarget(target) {
   if (!target || typeof target !== "object" || Array.isArray(target)) return null;
-  if (target.type === LAYOUT_WARNINGS_TARGET_TYPE) return normalizeLayoutWarningsTarget(target);
   // text-range and any other/legacy target shapes pass through unchanged.
   return JSON.parse(JSON.stringify(target));
 }

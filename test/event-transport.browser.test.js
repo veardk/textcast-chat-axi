@@ -139,7 +139,7 @@ test(
         );
         const output = run(
           process.execPath,
-          ["bin/textcast-chat-axi.js", file, "--no-open", "--no-gate"],
+          ["bin/textcast-chat-axi.js", file, "--no-open"],
           lavishEnv,
           20_000,
           oldRoot,

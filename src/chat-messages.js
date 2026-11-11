@@ -1,8 +1,7 @@
 // The conversation transcript's two shapes: what a prompt becomes when it enters `session.chat`
 // (`chatEntryForPrompt`), and how a stored entry is rendered for the chrome (`serializeChat`,
 // `renderChatMarkdown`). Both live on the server because `chrome-client.js` is served as a raw
-// file and cannot import modules - the same reason layout-warning display strings and share
-// passwords are computed server-side. State keeps only text; `html` exists only on the wire, and
+// file and cannot import modules. State keeps only text; `html` exists only on the wire, and
 // only for agent entries: a reviewer's own words are never parsed.
 
 // `session.chat` lives in state.json, which is rewritten wholesale on every store operation, so
@@ -398,11 +397,6 @@ function promptAnchor(prompt, kind) {
   if (kind === "message") return null;
   const target = prompt.target && typeof prompt.target === "object" ? prompt.target : null;
   const selector = bound(prompt.selector, SELECTOR_MAX);
-  if (kind === "layout-warnings") {
-    const count = Array.isArray(target?.warnings) ? target.warnings.length : 0;
-    const excerpt = count > 0 ? count + (count === 1 ? " issue" : " issues") : prompt.text;
-    return { kind: "layout", label: "layout", excerpt: bound(excerpt, EXCERPT_MAX) };
-  }
   const type = String(target?.type || "");
   if (type === "text-range") {
     return withSelector(
@@ -436,7 +430,7 @@ export function chatEntryForPrompt(prompt, at) {
         )
     : [];
   const tag = String(prompt.tag || "");
-  const kind = tag === "message" ? "message" : tag === "layout-warnings" ? "layout-warnings" : "annotation";
+  const kind = tag === "message" ? "message" : "annotation";
   const promptId = normalizePromptId(prompt.prompt_id);
   const anchor = promptAnchor(prompt, kind);
   if (!text && attachments.length === 0 && !promptId && !anchor) return null;
