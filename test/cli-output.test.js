@@ -313,7 +313,7 @@ test("feedback next step keeps the next poll completion observable", () => {
   assert.doesNotMatch(output.next_step, /above 10 minutes/);
 });
 
-test("poll feedback and the next step are emitted before the bulky DOM snapshot", async () => {
+test("poll feedback emits prompts, failures, then next step, and no DOM snapshot", async () => {
   const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-poll-output-test-`);
   const artifact = `${stateDir}/artifact.html`;
   await writeFile(artifact, "<html><body>hello</body></html>", "utf8");
@@ -373,14 +373,12 @@ test("poll feedback and the next step are emitted before the bulky DOM snapshot"
     const promptsIndex = stdout.indexOf("prompts[");
     const failuresIndex = stdout.indexOf("artifact_failures[");
     const nextStepIndex = stdout.indexOf("next_step:");
-    const snapshotIndex = stdout.indexOf("dom_snapshot:");
     assert.ok(promptsIndex >= 0, "poll stdout contains prompts");
     assert.ok(failuresIndex >= 0, "poll stdout contains artifact_failures");
     assert.ok(nextStepIndex >= 0, "poll stdout contains next_step");
-    assert.ok(snapshotIndex >= 0, "poll stdout contains dom_snapshot");
+    assert.equal(stdout.indexOf("dom_snapshot"), -1, "poll stdout carries no DOM snapshot");
     assert.ok(promptsIndex < failuresIndex, "prompts precede artifact_failures in poll stdout");
     assert.ok(failuresIndex < nextStepIndex, "artifact_failures precede next_step in poll stdout");
-    assert.ok(nextStepIndex < snapshotIndex, "next_step precedes dom_snapshot in poll stdout");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(stateDir, { force: true, recursive: true });

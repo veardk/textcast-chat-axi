@@ -820,8 +820,6 @@ export function createArtifactSdk(
     return parts.join(" > ");
   }
 
-  // `table` is opt-in because resolving a cell's row and column walks the whole table, while
-  // `snapshot()` calls this for every element in the document and reads only uid/tag/text.
   function context(el) {
     const base = {
       uid: uid(el),
@@ -1246,22 +1244,6 @@ export function createArtifactSdk(
 
   function endSession() {
     postArtifactMessage("lavish:endSession");
-  }
-
-  function snapshot() {
-    const lines = [];
-
-    function walk(el, depth) {
-      if (!(el instanceof Element) || depth > 6 || isLavishUi(el)) return;
-
-      const c = context(el);
-      const name = c.text ? ' "' + c.text.slice(0, 80).replace(/"/g, "'") + '"' : "";
-      lines.push("  ".repeat(depth) + "uid=" + c.uid + " " + c.tag + name);
-      for (const child of el.children) walk(child, depth + 1);
-    }
-
-    walk(document.body, 0);
-    return lines.join("\n");
   }
 
   const layoutAuditSettleMs = 180;
@@ -2476,7 +2458,6 @@ export function createArtifactSdk(
     getQueuedPrompts: () => [],
     setStatus: (message) => postArtifactMessage("lavish:status", { message: String(message) }),
     setDocumentMeta,
-    snapshot,
   };
 
   window.addEventListener("message", (event) => {
@@ -2491,7 +2472,7 @@ export function createArtifactSdk(
     }
     if (msg.type === "lavish:requestSnapshot") {
       postArtifactMessage("lavish:snapshot", {
-        snapshot: snapshot(),
+        snapshot: "",
         snapshot_request_id: typeof msg.snapshot_request_id === "string" ? msg.snapshot_request_id : "",
       });
     }

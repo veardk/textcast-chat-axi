@@ -68,9 +68,9 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - Every poll exit path undoes the presence it set and cancels the disconnect grace timer. `/api/poll` subscribes to closure before its first `await`. [Request flow](docs/invariants.md#request-flow).
 - Poll stdout is reserved for the final JSON/TOON response. Recurring wait ticks go to stderr only on a TTY, and notification failure never affects the poll. [Request flow](docs/invariants.md#request-flow).
 - The chrome never promotes presence to `working` on send. It renders only the state the live stream reports. [Request flow](docs/invariants.md#request-flow).
-- Poll feedback field order is `prompts`, `artifact_failures`, `next_step`, then `dom_snapshot`. Never move `next_step` after the snapshot. [Request flow](docs/invariants.md#request-flow).
+- Poll feedback field order is `prompts`, `artifact_failures`, then `next_step`. No DOM snapshot is collected or emitted. [Request flow](docs/invariants.md#request-flow).
 - `takeFeedback` is destructive. A disconnected poll restores through `queuePrompts` `restore`: prepend, do not re-plan, re-emit `feedback`, and exempt only the request-wide attachment-ref cap. [Request flow](docs/invariants.md#request-flow).
-- A disconnected-poll restore never overwrites a newer `dom_snapshot` or `artifact_failures` recorded after the take. [Request flow](docs/invariants.md#request-flow).
+- A disconnected-poll restore never overwrites newer `artifact_failures` recorded after the take. [Request flow](docs/invariants.md#request-flow).
 - A layout warning clears only on a newer artifact revision plus a complete pass at the same viewport class. Do not emit `feedback` for a detection. [Passive layout-warning inbox](docs/invariants.md#passive-layout-warning-inbox).
 - The chrome never decides that a warning went away. Display strings come from `serializeLayoutWarnings`. [Passive layout-warning inbox](docs/invariants.md#passive-layout-warning-inbox).
 - The active artifact load is durable in `session.artifact_load`. Only a newer `beginArtifactLoad` retires it, and only an explicit takeover reload replaces a superseded reviewer. [Passive layout-warning inbox](docs/invariants.md#passive-layout-warning-inbox).

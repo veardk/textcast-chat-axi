@@ -887,43 +887,6 @@ test("a queued send falls back without a snapshot and ignores a late snapshot", 
   );
 });
 
-test("Copy snapshot stays independent while a Send snapshot is pending", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      return { ok: true };
-    },
-  });
-  chrome.element("chatInput").value = "Wait for this snapshot";
-
-  chrome.element("send").click();
-  const submitRequest = chrome.postedToFrame.at(-1);
-  chrome.element("copySnapshot").click();
-  const copyRequest = chrome.postedToFrame.at(-1);
-  assert.notEqual(copyRequest.snapshot_request_id, submitRequest.snapshot_request_id);
-
-  chrome.sendFrameMessage({
-    type: "lavish:snapshot",
-    snapshot: "uid=7 copied body",
-    snapshot_request_id: copyRequest.snapshot_request_id,
-  });
-  await flushPromises();
-
-  assert.deepEqual(chrome.clipboardWrites, ["uid=7 copied body"]);
-  assert.equal(posts.length, 0, "the Copy reply must not complete the pending Send");
-
-  chrome.sendFrameMessage({
-    type: "lavish:snapshot",
-    snapshot: "uid=8 submitted body",
-    snapshot_request_id: submitRequest.snapshot_request_id,
-  });
-  await flushPromises();
-
-  assert.equal(posts.length, 1);
-  assert.equal(posts[0].body.domSnapshot, "uid=8 submitted body");
-});
-
 test("a Send only submits prompts present when that action started", async () => {
   const posts = [];
   const chrome = await createChromeHarness({

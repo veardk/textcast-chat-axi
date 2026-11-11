@@ -128,7 +128,6 @@ const moreWrap = /** @type {HTMLDivElement} */ (document.getElementById("moreWra
 const moreButton = /** @type {HTMLButtonElement} */ (document.getElementById("moreButton"));
 const moreMenu = /** @type {HTMLDivElement} */ (document.getElementById("moreMenu"));
 const reloadArtifactButton = /** @type {HTMLButtonElement} */ (document.getElementById("reloadArtifact"));
-const copySnapshotButton = /** @type {HTMLButtonElement} */ (document.getElementById("copySnapshot"));
 const endButton = /** @type {HTMLButtonElement} */ (document.getElementById("end"));
 const copyPathButton = /** @type {HTMLButtonElement} */ (document.getElementById("copyPath"));
 const copyHint = /** @type {HTMLSpanElement} */ (document.getElementById("copyHint"));
@@ -1741,26 +1740,24 @@ function postToFrame(message) {
   if (frame.contentWindow) frame.contentWindow.postMessage(message, "*");
 }
 
+// A Send first round-trips through the artifact frame, so every note the frame already posted is
+// queued before the batch leaves. The frame answers with an empty snapshot: Textcast notes carry
+// segment selectors, so no DOM snapshot is collected or delivered to the agent.
 function requestSnapshot(action, prompts = [], endAfter = false, terminal = null) {
   const requestId = "snapshot-" + ++nextSnapshotRequestId;
-  const request =
-    action === "submit"
-      ? {
-          action,
-          prompts,
-          chatAtRequest: displayedChat.slice(),
-          endAfter,
-          terminal,
-          order: terminal?.order || ++nextSendOperationOrder,
-        }
-      : { action };
+  const request = {
+    action,
+    prompts,
+    chatAtRequest: displayedChat.slice(),
+    endAfter,
+    terminal,
+    order: terminal?.order || ++nextSendOperationOrder,
+  };
   snapshotRequests.set(requestId, request);
-  if (action === "submit") {
-    request.acknowledgement = {};
-    pendingAcknowledgements.add(request.acknowledgement);
-    armSendAcknowledgementWarning();
-    request.timeout = setTimeout(() => completeSnapshotRequest(requestId, ""), SNAPSHOT_REQUEST_TIMEOUT_MS);
-  }
+  request.acknowledgement = {};
+  pendingAcknowledgements.add(request.acknowledgement);
+  armSendAcknowledgementWarning();
+  request.timeout = setTimeout(() => completeSnapshotRequest(requestId, ""), SNAPSHOT_REQUEST_TIMEOUT_MS);
   postToFrame({ type: "lavish:requestSnapshot", snapshot_request_id: requestId });
 }
 
@@ -1775,10 +1772,6 @@ function takeSnapshotRequest(requestId) {
 function completeSnapshotRequest(requestId, snapshot) {
   const request = takeSnapshotRequest(requestId);
   if (!request) return;
-  if (request.action === "copy") {
-    copyText(snapshot || "");
-    return;
-  }
 
   submitQueued({
     prompts: request.prompts || [],
@@ -3165,11 +3158,6 @@ function copyFilePath() {
   }, 1600);
 }
 
-function copyDomSnapshot() {
-  closeMenus();
-  requestSnapshot("copy");
-}
-
 function cancelArtifactLoadRecovery() {
   if (artifactLoadRecoveryTimer) clearTimeout(artifactLoadRecoveryTimer);
   artifactLoadRecoveryTimer = undefined;
@@ -4393,7 +4381,6 @@ chatInput.addEventListener("keydown", (event) => {
 chatInput.addEventListener("input", () => hideSendHint());
 copyPathButton.onclick = copyFilePath;
 reloadArtifactButton.onclick = reloadArtifact;
-copySnapshotButton.onclick = copyDomSnapshot;
 endButton.onclick = () => {
   closeMenus();
   endSession();

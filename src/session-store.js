@@ -147,7 +147,6 @@ export class SessionStore {
       // reading the path. Every field this constructor omits is silently dropped, so
       // any new session field must be added here too.
       delivered_attachments: Array.isArray(existing.delivered_attachments) ? existing.delivered_attachments : [],
-      dom_snapshot: existing.dom_snapshot || "",
       chat: existing.chat || [],
       chat_revision: normalizeRevision(existing.chat_revision),
       // Compact prompt_id acks for bubbles evicted by the stored-chat byte bound. Reopening
@@ -324,10 +323,6 @@ export class SessionStore {
       session.artifact_failures = mergeArtifactFailures(restoredFailures, existingFailures).failures;
     }
     session.pending_prompts = session.prompts.length;
-    const restoredSnapshot = String(payload.domSnapshot || payload.dom_snapshot || "");
-    if (!restoring || (existingPrompts.length === 0 && !session.dom_snapshot)) {
-      session.dom_snapshot = restoredSnapshot;
-    }
     session.status =
       shouldEndSession || alreadyEnded
         ? "ended"
@@ -640,7 +635,6 @@ export class SessionStore {
       const deliverySeq = normalizeRevision(session.delivery_seq) + 1;
       const result = {
         status: "feedback",
-        dom_snapshot: session.dom_snapshot || "",
         prompts,
         ...(artifactFailures.length > 0 ? { artifact_failures: artifactFailures } : {}),
         ...(alreadyEnded ? { session_ended: true, ended_by: session.ended_by } : {}),
@@ -677,7 +671,6 @@ export class SessionStore {
       session.prompts = [];
       session.artifact_failures = [];
       session.pending_prompts = 0;
-      session.dom_snapshot = "";
       if (!alreadyEnded) {
         session.status = "open";
       }

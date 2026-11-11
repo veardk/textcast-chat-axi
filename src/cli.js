@@ -475,7 +475,6 @@ export function startPollWaitReporter({
  *   prompts?: any[],
  *   artifact_failures?: any[],
  *   next_step?: string,
- *   dom_snapshot?: string,
  * }}
  */
 export function createPollOutput({ file, response, agent = "generic" }) {
@@ -497,7 +496,6 @@ export function createPollOutput({ file, response, agent = "generic" }) {
       prompts: response.prompts || [],
       ...(artifactFailures.length > 0 ? { artifact_failures: artifactFailures } : {}),
       next_step: createFeedbackNextStep(file, artifactFailures, sessionEnded, endedBy, response.prompts || [], agent),
-      dom_snapshot: response.dom_snapshot || "",
     };
   }
   if (response.status === "ended") {

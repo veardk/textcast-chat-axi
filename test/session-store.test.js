@@ -42,7 +42,7 @@ function feedbackResult(result) {
   );
 }
 
-test("queued prompts are returned with DOM snapshot context and then cleared", async () => {
+test("queued prompts are returned without DOM snapshot context and then cleared", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-store-"));
   try {
     const stateFile = path.join(dir, "state.json");
@@ -57,7 +57,7 @@ test("queued prompts are returned with DOM snapshot context and then cleared", a
     });
 
     const first = feedbackResult(await store.takeFeedback(session.key));
-    assert.equal(first.dom_snapshot, 'uid=1 h1 "Hello"');
+    assert.equal(first.dom_snapshot, undefined);
     assert.deepEqual(first.prompts, [
       { uid: "1", prompt: "Make this warmer", selector: "h1", tag: "h1", text: "Hello" },
     ]);
@@ -1236,7 +1236,7 @@ test("prompts queued before ending are still delivered before the ended status",
     const first = feedbackResult(await store.takeFeedback(session.key));
     assert.equal(first.prompts.length, 1);
     assert.equal(first.prompts[0].prompt, "Parting feedback");
-    assert.equal(first.dom_snapshot, 'uid=1 h1 "Hello"');
+    assert.equal(first.dom_snapshot, undefined);
 
     // Delivering the final batch must not resurrect the session.
     const second = await store.takeFeedback(session.key);
@@ -1659,7 +1659,7 @@ test("queuePrompts and takeFeedback serialize so a mid-resolution poll never clo
   }
 });
 
-test("restoring a taken batch preserves newer prompts, snapshot, chat, and artifact failures", async () => {
+test("restoring a taken batch preserves newer prompts, chat, and artifact failures", async () => {
   await withStore(async ({ store, session }) => {
     const first = { uid: "A", prompt: "First", selector: "", tag: "message", text: "" };
     const second = { uid: "B", prompt: "Second", selector: "", tag: "message", text: "" };
@@ -1688,7 +1688,7 @@ test("restoring a taken batch preserves newer prompts, snapshot, chat, and artif
       restored.prompts.map((prompt) => prompt.uid),
       ["A", "B"],
     );
-    assert.equal(restored.dom_snapshot, "SECOND snapshot");
+    assert.equal(restored.dom_snapshot, undefined);
     assert.deepEqual(
       restored.chat.map((message) => message.text),
       ["First", "Second"],
@@ -1703,7 +1703,7 @@ test("restoring a taken batch preserves newer prompts, snapshot, chat, and artif
       feedback.prompts.map((prompt) => prompt.uid),
       ["A", "B"],
     );
-    assert.equal(feedback.dom_snapshot, "SECOND snapshot");
+    assert.equal(feedback.dom_snapshot, undefined);
     assert.deepEqual(
       feedback.artifact_failures.map((item) => item.detail),
       ["newer asset"],

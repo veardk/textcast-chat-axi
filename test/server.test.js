@@ -904,12 +904,12 @@ test("chrome can copy the full file path from the overflow menu", async () => {
   assert.match(js, /copyHintText\.textContent = "Copy"/);
 });
 
-test("overflow menu offers reload, snapshot copy, and end session actions", async () => {
+test("overflow menu offers reload and end session actions", async () => {
   const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
   const js = await chromeClientSource();
 
   assert.match(html, /id="reloadArtifact"[^<]*>.*Reload artifact/);
-  assert.match(html, /id="copySnapshot"[^<]*>.*Copy DOM snapshot/);
+  assert.doesNotMatch(html, /copySnapshot|Copy DOM snapshot/);
   assert.match(html, /class="menu-item danger" id="end"[^<]*>.*End session/);
   assert.doesNotMatch(html, /End Session</);
   assert.match(js, /event\.key === "Escape"/);
@@ -5007,7 +5007,7 @@ test("a disconnect during immediate feedback take requeues the batch without wor
     const next = await fetch(`${base}/api/poll?file=${encodeURIComponent(artifact)}&timeoutMs=0`);
     const feedback = await next.json();
     assert.equal(feedback.status, "feedback");
-    assert.deepEqual(feedback.dom_snapshot, queued.domSnapshot);
+    assert.equal(feedback.dom_snapshot, undefined);
     assert.deepEqual(feedback.prompts, before);
     // This delivery reached the agent, so it is the one that counts as Seen.
     assert.deepEqual(
@@ -5117,7 +5117,7 @@ test("a disconnect during event-driven feedback take requeues the batch without 
       const next = await fetch(`${base}/api/poll?file=${encodeURIComponent(artifact)}&timeoutMs=0`);
       const feedback = await next.json();
       assert.equal(feedback.status, "feedback");
-      assert.equal(feedback.dom_snapshot, queued.domSnapshot);
+      assert.equal(feedback.dom_snapshot, undefined);
       assert.deepEqual(feedback.prompts, [queued.prompts[0]]);
       // This delivery reached the agent, so it is the one that counts as Seen.
       assert.deepEqual(
