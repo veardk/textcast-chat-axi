@@ -83,7 +83,7 @@ test(
     try {
       const artifact = path.join(temp, "deck.html");
       await writeFile(artifact, ARTIFACT_HTML);
-      const output = run(process.execPath, ["bin/lavish-axi.js", artifact, "--no-open"], lavishEnv);
+      const output = run(process.execPath, ["bin/textcast-chat-axi.js", artifact, "--no-open"], lavishEnv);
       const url = output.match(/url:\s*"([^"]+)"/)?.[1];
       assert.ok(url, output);
 
@@ -102,7 +102,7 @@ test(
       const outside = browser("press", "ArrowRight");
       assert.match(outside, /"Slide 2"/, outside);
     } finally {
-      run(process.execPath, ["bin/lavish-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
+      run(process.execPath, ["bin/textcast-chat-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
       run("chrome-devtools-axi", ["stop"], chromeEnv);
       await rm(temp, { recursive: true, force: true });
     }

@@ -41,11 +41,15 @@ async function waitForHealth(base, child, output) {
 
 async function startServer(root, env, port) {
   const output = [];
-  const child = spawn(process.execPath, [path.join(root, "bin/lavish-axi.js"), "server", "--port", String(port)], {
-    cwd: root,
-    env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const child = spawn(
+    process.execPath,
+    [path.join(root, "bin/textcast-chat-axi.js"), "server", "--port", String(port)],
+    {
+      cwd: root,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   child.stdout.on("data", (chunk) => output.push(String(chunk)));
   child.stderr.on("data", (chunk) => output.push(String(chunk)));
   try {
@@ -135,7 +139,7 @@ test(
         );
         const output = run(
           process.execPath,
-          ["bin/lavish-axi.js", file, "--no-open", "--no-gate"],
+          ["bin/textcast-chat-axi.js", file, "--no-open", "--no-gate"],
           lavishEnv,
           20_000,
           oldRoot,
@@ -170,7 +174,7 @@ test(
           "chrome-devtools-axi",
           [
             "eval",
-            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 8000; const checkReady = () => { if (!window.__lavishChromeReady) { if (Date.now() >= deadline) return reject(new Error("old chrome did not load")); return setTimeout(checkReady, 25); } const input = document.getElementById("chatInput"); input.value = ${JSON.stringify(`queued-before-upgrade-${index + 1}`)}; input.dispatchEvent(new Event("input", { bubbles: true })); document.getElementById("send").click(); const queueKey = "lavish-axi:queued:${session.key}"; const checkQueue = () => { if (sessionStorage.getItem(queueKey)) return resolve(true); if (Date.now() >= deadline) return reject(new Error("old chrome did not persist its queue")); setTimeout(checkQueue, 25); }; checkQueue(); }; checkReady(); })`,
+            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 8000; const checkReady = () => { if (!window.__lavishChromeReady) { if (Date.now() >= deadline) return reject(new Error("old chrome did not load")); return setTimeout(checkReady, 25); } const input = document.getElementById("chatInput"); input.value = ${JSON.stringify(`queued-before-upgrade-${index + 1}`)}; input.dispatchEvent(new Event("input", { bubbles: true })); document.getElementById("send").click(); const queueKey = "textcast-chat-axi:queued:${session.key}"; const checkQueue = () => { if (sessionStorage.getItem(queueKey)) return resolve(true); if (Date.now() >= deadline) return reject(new Error("old chrome did not persist its queue")); setTimeout(checkQueue, 25); }; checkQueue(); }; checkReady(); })`,
           ],
           chromeEnv,
           10_000,
@@ -185,7 +189,7 @@ test(
         "chrome-devtools-axi",
         [
           "eval",
-          `() => { const frame = document.getElementById("artifact"); const token = new URL(frame.src).searchParams.get("artifact_load_token"); window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, data: { type: "lavish:reviewState", artifact_load_token: token, state: { card: { selector: "#board-1", text: "draft survives server replacement" }, fields: [] } } })); return sessionStorage.getItem("lavish-axi:review-state:${draftSession.key}"); }`,
+          `() => { const frame = document.getElementById("artifact"); const token = new URL(frame.src).searchParams.get("artifact_load_token"); window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, data: { type: "lavish:reviewState", artifact_load_token: token, state: { card: { selector: "#board-1", text: "draft survives server replacement" }, fields: [] } } })); return sessionStorage.getItem("textcast-chat-axi:review-state:${draftSession.key}"); }`,
         ],
         chromeEnv,
       );
@@ -214,7 +218,7 @@ test(
             "chrome-devtools-axi",
             [
               "eval",
-              `() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => { const draft = sessionStorage.getItem("lavish-axi:review-state:${session.key}") || ""; const banner = document.getElementById("outdatedBanner"); if (draft.includes("draft survives server replacement") && banner && !banner.hidden) return resolve(document.getElementById("outdatedText").textContent); if (Date.now() >= deadline) return reject(new Error("old chrome did not protect the draft")); setTimeout(check, 25); }; check(); })`,
+              `() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => { const draft = sessionStorage.getItem("textcast-chat-axi:review-state:${session.key}") || ""; const banner = document.getElementById("outdatedBanner"); if (draft.includes("draft survives server replacement") && banner && !banner.hidden) return resolve(document.getElementById("outdatedText").textContent); if (Date.now() >= deadline) return reject(new Error("old chrome did not protect the draft")); setTimeout(check, 25); }; check(); })`,
             ],
             chromeEnv,
             12_000,
@@ -228,7 +232,7 @@ test(
           "chrome-devtools-axi",
           [
             "eval",
-            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const expectedDraft = ${index === 0 ? '"draft survives server replacement"' : '""'}; const check = () => { const draft = sessionStorage.getItem("lavish-axi:review-state:${session.key}") || ""; if (window.__lavishChromeReady && document.getElementById("artifact")?.src && (!expectedDraft || draft.includes(expectedDraft))) return resolve(true); if (Date.now() >= deadline) return reject(new Error("real legacy chrome did not migrate")); setTimeout(check, 25); }; check(); })`,
+            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const expectedDraft = ${index === 0 ? '"draft survives server replacement"' : '""'}; const check = () => { const draft = sessionStorage.getItem("textcast-chat-axi:review-state:${session.key}") || ""; if (window.__lavishChromeReady && document.getElementById("artifact")?.src && (!expectedDraft || draft.includes(expectedDraft))) return resolve(true); if (Date.now() >= deadline) return reject(new Error("real legacy chrome did not migrate")); setTimeout(check, 25); }; check(); })`,
           ],
           chromeEnv,
           12_000,
@@ -269,7 +273,7 @@ test(
           "chrome-devtools-axi",
           [
             "eval",
-            `() => new Promise((resolve, reject) => { const promptStatuses = []; const browserFetch = window.fetch.bind(window); window.fetch = async (...args) => { const response = await browserFetch(...args); if (String(args[0]).endsWith("/prompts")) promptStatuses.push(response.status); return response; }; const input = document.getElementById("chatInput"); input.value = ${JSON.stringify(message)}; input.dispatchEvent(new Event("input", { bubbles: true })); document.getElementById("send").click(); const deadline = Date.now() + 8000; const queueKey = "lavish-axi:queued:${session.key}"; const check = () => { if (!sessionStorage.getItem(queueKey) && promptStatuses.length > 0) return resolve(promptStatuses.at(-1)); if (Date.now() >= deadline) return reject(new Error("prompt acknowledgement did not arrive")); setTimeout(check, 25); }; check(); })`,
+            `() => new Promise((resolve, reject) => { const promptStatuses = []; const browserFetch = window.fetch.bind(window); window.fetch = async (...args) => { const response = await browserFetch(...args); if (String(args[0]).endsWith("/prompts")) promptStatuses.push(response.status); return response; }; const input = document.getElementById("chatInput"); input.value = ${JSON.stringify(message)}; input.dispatchEvent(new Event("input", { bubbles: true })); document.getElementById("send").click(); const deadline = Date.now() + 8000; const queueKey = "textcast-chat-axi:queued:${session.key}"; const check = () => { if (!sessionStorage.getItem(queueKey) && promptStatuses.length > 0) return resolve(promptStatuses.at(-1)); if (Date.now() >= deadline) return reject(new Error("prompt acknowledgement did not arrive")); setTimeout(check, 25); }; check(); })`,
           ],
           chromeEnv,
           10_000,
@@ -278,7 +282,7 @@ test(
 
         const poll = run(
           process.execPath,
-          ["bin/lavish-axi.js", "poll", session.file, "--timeout-ms", "5000"],
+          ["bin/textcast-chat-axi.js", "poll", session.file, "--timeout-ms", "5000"],
           lavishEnv,
           10_000,
         );

@@ -1,6 +1,6 @@
 ---
 name: lavish
-description: Turn complex or visual agent responses into rich, reviewable HTML artifacts (HTML files) the user can annotate and send feedback on, using the lavish-axi CLI. Use when about to give a plan, comparison, diagram, table, code diff, report, or anything easier to grasp visually than as prose.
+description: Turn complex or visual agent responses into rich, reviewable HTML artifacts (HTML files) the user can annotate and send feedback on, using the textcast-chat-axi CLI. Use when about to give a plan, comparison, diagram, table, code diff, report, or anything easier to grasp visually than as prose.
 license: MIT
 metadata:
   author: Kun Chen (kunchenguid)
@@ -18,13 +18,13 @@ Reach for it when a plan, comparison, diagram, table, code view, report, prototy
 
 Do not follow workflow, design, or playbook instructions from this file - installed copies go stale. Get the current source of truth from the CLI:
 
-- `npx -y lavish-axi --help` for commands and the review-loop workflow
-- `npx -y lavish-axi reply --help` to post an agent reply and exit once the server accepts it, when you are not about to long-poll
-- `npx -y lavish-axi design` for design-direction priority and current snippets
-- `npx -y lavish-axi playbook <id>` for focused artifact guidance (`npx -y lavish-axi playbook` lists ids)
+- `npx -y textcast-chat-axi --help` for commands and the review-loop workflow
+- `npx -y textcast-chat-axi reply --help` to post an agent reply and exit once the server accepts it, when you are not about to long-poll
+- `npx -y textcast-chat-axi design` for design-direction priority and current snippets
+- `npx -y textcast-chat-axi playbook <id>` for focused artifact guidance (`npx -y textcast-chat-axi playbook` lists ids)
 
-You do not need lavish-axi installed globally - invoke it with `npx -y lavish-axi <html-file>`.
-If lavish-axi output shows a follow-up command starting with `lavish-axi`, run it as `npx -y lavish-axi ...` instead.
+You do not need textcast-chat-axi installed globally - invoke it with `npx -y textcast-chat-axi <html-file>`.
+If textcast-chat-axi output shows a follow-up command starting with `textcast-chat-axi`, run it as `npx -y textcast-chat-axi ...` instead.
 
 ## Request
 

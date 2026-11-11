@@ -15,7 +15,7 @@ import WebSocket from "ws";
 import { run, stopCommand, VERSION } from "../src/cli.js";
 import { serve } from "../src/server.js";
 
-const SERVER_ENTRY = fileURLToPath(new URL("../bin/lavish-axi-server.js", import.meta.url));
+const SERVER_ENTRY = fileURLToPath(new URL("../bin/textcast-chat-axi-server.js", import.meta.url));
 
 // 192.0.2.0/24 is TEST-NET-1: routable nowhere and assigned to no interface, so binding it fails
 // with EADDRNOTAVAIL exactly the way a pinned Tailscale address does once Tailscale goes down.
@@ -143,9 +143,18 @@ test("a stale control-channel server is replaced only once per CLI invocation", 
       return shutdowns;
     }
 
-    assert.equal(await countShutdowns({ ok: true, app: "lavish-axi", version: VERSION, network_stale: true }), 1);
-    assert.equal(await countShutdowns({ ok: true, app: "lavish-axi", version: "0.0.1", network_stale: true }), 2);
-    assert.equal(await countShutdowns({ ok: true, app: "lavish-axi", version: "999.0.0", network_stale: true }), 1);
+    assert.equal(
+      await countShutdowns({ ok: true, app: "textcast-chat-axi", version: VERSION, network_stale: true }),
+      1,
+    );
+    assert.equal(
+      await countShutdowns({ ok: true, app: "textcast-chat-axi", version: "0.0.1", network_stale: true }),
+      2,
+    );
+    assert.equal(
+      await countShutdowns({ ok: true, app: "textcast-chat-axi", version: "999.0.0", network_stale: true }),
+      1,
+    );
   });
 });
 

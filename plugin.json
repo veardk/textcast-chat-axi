@@ -1,14 +1,14 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "lavish-axi",
-  "version": "0.1.96",
-  "description": "HTML is the new markdown. Lavish is the new editor for your HTML artifacts.",
+  "name": "textcast-chat-axi",
+  "version": "0.1.0",
+  "description": "Reading-companion and revision AXI for Textcast, forked from lavish-axi",
   "author": {
-    "name": "Kun Chen",
-    "url": "https://github.com/kunchenguid"
+    "name": "veardk",
+    "url": "https://github.com/veardk"
   },
-  "homepage": "https://github.com/kunchenguid/lavish-axi#readme",
-  "repository": "https://github.com/kunchenguid/lavish-axi",
+  "homepage": "https://github.com/veardk/textcast-chat-axi#readme",
+  "repository": "https://github.com/veardk/textcast-chat-axi",
   "license": "MIT",
   "keywords": [
     "axi",
@@ -16,6 +16,7 @@
     "cli",
     "html",
     "review",
-    "collaboration"
+    "collaboration",
+    "textcast"
   ]
 }

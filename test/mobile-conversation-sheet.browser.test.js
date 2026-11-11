@@ -227,13 +227,13 @@ test(
     try {
       const artifact = path.join(temp, "review.html");
       await writeFile(artifact, ARTIFACT);
-      const output = run(process.execPath, ["bin/lavish-axi.js", artifact, "--no-open"], lavishEnv);
+      const output = run(process.execPath, ["bin/textcast-chat-axi.js", artifact, "--no-open"], lavishEnv);
       const url = output.match(/url:\s*"([^"]+)"/)?.[1];
       assert.ok(url, output);
       for (const reply of REPLIES) {
         run(
           process.execPath,
-          ["bin/lavish-axi.js", "poll", artifact, "--agent-reply", reply, "--timeout-ms", "200"],
+          ["bin/textcast-chat-axi.js", "poll", artifact, "--agent-reply", reply, "--timeout-ms", "200"],
           lavishEnv,
           30_000,
         );
@@ -319,7 +319,7 @@ test(
       assert.equal(g.chat.inert, false);
       assert.equal(g.frame.right, g.panel.left, "artifact and panel sit side by side");
     } finally {
-      run(process.execPath, ["bin/lavish-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
+      run(process.execPath, ["bin/textcast-chat-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
       run("chrome-devtools-axi", ["stop"], chromeEnv);
       await rm(temp, { recursive: true, force: true });
     }

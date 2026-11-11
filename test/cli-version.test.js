@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 import { isVersionOnlyArgv, VERSION } from "../src/cli.js";
 
 const execFileAsync = promisify(execFile);
-const BIN = fileURLToPath(new URL("../bin/lavish-axi.js", import.meta.url));
+const BIN = fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url));
 
 // Accepts the telemetry connection and never answers, so a regression pays the whole
 // drain timeout instead of a fast connection refusal.

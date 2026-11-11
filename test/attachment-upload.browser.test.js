@@ -185,7 +185,7 @@ test(
     try {
       const artifact = path.join(temp, "attach.html");
       await writeFile(artifact, ARTIFACT_HTML);
-      const output = run(process.execPath, ["bin/lavish-axi.js", artifact, "--no-open"], lavishEnv);
+      const output = run(process.execPath, ["bin/textcast-chat-axi.js", artifact, "--no-open"], lavishEnv);
       const url = output.match(/url:\s*"([^"]+)"/)?.[1];
       assert.ok(url, output);
       const key = new URL(url).pathname.split("/").pop();
@@ -226,7 +226,7 @@ test(
       evaluate('document.getElementById("send").click()');
       const poll = run(
         process.execPath,
-        ["bin/lavish-axi.js", "poll", artifact, "--timeout-ms", "20000"],
+        ["bin/textcast-chat-axi.js", "poll", artifact, "--timeout-ms", "20000"],
         lavishEnv,
         65_000,
       );
@@ -263,7 +263,7 @@ test(
       evaluate('document.getElementById("send").click()');
       const conversationPoll = run(
         process.execPath,
-        ["bin/lavish-axi.js", "poll", artifact, "--timeout-ms", "20000"],
+        ["bin/textcast-chat-axi.js", "poll", artifact, "--timeout-ms", "20000"],
         lavishEnv,
         65_000,
       );
@@ -298,7 +298,7 @@ test(
       assert.match(colors.text, /Unsupported file type/, errorColors);
       assert.equal(colors.actual, colors.expected, `error status must render in --danger:\n${errorColors}`);
     } finally {
-      run(process.execPath, ["bin/lavish-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
+      run(process.execPath, ["bin/textcast-chat-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
       run("chrome-devtools-axi", ["stop"], chromeEnv);
       await rm(temp, { recursive: true, force: true });
     }

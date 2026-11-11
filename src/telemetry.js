@@ -1,4 +1,5 @@
-const HARDCODED_FALLBACK_HOST = "https://a.kunchenguid.com";
+// No default collector in this fork: telemetry stays off unless a host and website ID are both set.
+const HARDCODED_FALLBACK_HOST = "";
 const UMAMI_PATH = "/api/send";
 const DEFAULT_HOSTNAME = "cli";
 const DEFAULT_TITLE = "Lavish Editor CLI";

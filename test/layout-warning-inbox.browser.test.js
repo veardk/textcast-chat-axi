@@ -8,7 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 // The behavioral regression boundary for passive layout triage. Before this change the browser's
-// audit returned straight out of `lavish-axi poll` with no user action, so several individually
+// audit returned straight out of `textcast-chat-axi poll` with no user action, so several individually
 // reasonable agent fixes produced repeated edit/reload cycles while the user was mid-review. Every
 // assertion here pins the replacement contract in a real browser: detection is passive, the user
 // decides what becomes work, and only a queued batch wakes the agent.
@@ -60,7 +60,7 @@ test(
     };
 
     function openArtifact(file, args = []) {
-      const output = run(process.execPath, ["bin/lavish-axi.js", file, "--no-open", ...args], lavishEnv);
+      const output = run(process.execPath, ["bin/textcast-chat-axi.js", file, "--no-open", ...args], lavishEnv);
       const url = output.match(/url:\s*"([^"]+)"/)?.[1];
       assert.ok(url, output);
       return url;
@@ -69,7 +69,7 @@ test(
     function poll(file, timeoutMs) {
       return run(
         process.execPath,
-        ["bin/lavish-axi.js", "poll", file, "--timeout-ms", String(timeoutMs)],
+        ["bin/textcast-chat-axi.js", "poll", file, "--timeout-ms", String(timeoutMs)],
         lavishEnv,
         timeoutMs + 45_000,
       );
@@ -413,7 +413,7 @@ test(
       assert.match(cleanFeedback, /Tighten the summary/);
       assert.doesNotMatch(cleanFeedback, /layout-warnings/);
     } finally {
-      run(process.execPath, ["bin/lavish-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
+      run(process.execPath, ["bin/textcast-chat-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
       run("chrome-devtools-axi", ["stop"], chromeEnv);
       await rm(temp, { recursive: true, force: true });
     }
@@ -457,7 +457,7 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
   try {
     const artifact = path.join(temp, "review-context.html");
     await copyFile(path.join(fixtures, "review-context.html"), artifact);
-    const output = run(process.execPath, ["bin/lavish-axi.js", artifact, "--no-open"], lavishEnv);
+    const output = run(process.execPath, ["bin/textcast-chat-axi.js", artifact, "--no-open"], lavishEnv);
     const url = output.match(/url:\s*"([^"]+)"/)?.[1];
     assert.ok(url, output);
     run("chrome-devtools-axi", ["emulate", "--viewport", "1440x1000x1"], chromeEnv);
@@ -504,7 +504,7 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
     assert.equal(geometry.emptyCopyDisplay, "none");
     assert.ok(geometry.excerptHeight <= geometry.excerptLineHeight + 1, "the anchor excerpt stays on one line");
   } finally {
-    run(process.execPath, ["bin/lavish-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
+    run(process.execPath, ["bin/textcast-chat-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
     run("chrome-devtools-axi", ["stop"], chromeEnv);
     await rm(temp, { recursive: true, force: true });
   }

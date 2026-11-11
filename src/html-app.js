@@ -263,7 +263,7 @@ async function requestHtmlApp({ method, path, body, bearer, options, env, action
   const apiUrl = (options.apiUrl ? String(options.apiUrl).replace(/\/+$/, "") : "") || htmlAppApiUrl(env);
   const fetchImpl = options.fetch || fetch;
 
-  const headers = { "content-type": "application/json", "user-agent": "lavish-axi" };
+  const headers = { "content-type": "application/json", "user-agent": "textcast-chat-axi" };
   if (bearer) headers.authorization = `Bearer ${bearer}`;
 
   const controller = new AbortController();

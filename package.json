@@ -1,11 +1,11 @@
 {
-  "name": "lavish-axi",
-  "version": "0.1.96",
+  "name": "textcast-chat-axi",
+  "version": "0.1.0",
   "packageManager": "pnpm@11.1.1",
-  "description": "HTML is the new markdown. Lavish is the new editor for your HTML artifacts.",
+  "description": "Reading-companion and revision AXI for Textcast, forked from lavish-axi",
   "type": "module",
   "bin": {
-    "lavish-axi": "dist/cli.mjs"
+    "textcast-chat-axi": "dist/cli.mjs"
   },
   "files": [
     "dist",
@@ -65,17 +65,18 @@
     "cli",
     "html",
     "review",
-    "collaboration"
+    "collaboration",
+    "textcast"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kunchenguid/lavish-axi.git"
+    "url": "git+https://github.com/veardk/textcast-chat-axi.git"
   },
   "bugs": {
-    "url": "https://github.com/kunchenguid/lavish-axi/issues"
+    "url": "https://github.com/veardk/textcast-chat-axi/issues"
   },
-  "homepage": "https://github.com/kunchenguid/lavish-axi#readme",
+  "homepage": "https://github.com/veardk/textcast-chat-axi#readme",
   "publishConfig": {
     "access": "public"
   }

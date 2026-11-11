@@ -1,7 +1,7 @@
 dist
 node_modules
 .lavish
-.lavish-axi
+.textcast-chat-axi
 .no-mistakes
 lavish-code-review.html
 package-lock.json

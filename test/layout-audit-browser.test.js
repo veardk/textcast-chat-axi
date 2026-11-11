@@ -55,7 +55,7 @@ test(
     };
 
     function openArtifact(file) {
-      const output = run(process.execPath, ["bin/lavish-axi.js", file, "--no-open"], lavishEnv);
+      const output = run(process.execPath, ["bin/textcast-chat-axi.js", file, "--no-open"], lavishEnv);
       const url = output.match(/url:\s*"([^"]+)"/)?.[1];
       assert.ok(url, output);
       return { file, url };
@@ -109,7 +109,7 @@ test(
         run("chrome-devtools-axi", ["wait", String(settleMs)], chromeEnv, settleMs + 45_000);
         inbox = readInbox();
       }
-      const poll = run(process.execPath, ["bin/lavish-axi.js", "poll", file, "--timeout-ms", "600"], lavishEnv);
+      const poll = run(process.execPath, ["bin/textcast-chat-axi.js", "poll", file, "--timeout-ms", "600"], lavishEnv);
 
       assert.equal(inbox.gate, false, `${name}: the artifact is always revealed after a completed pass`);
       assert.equal(Number(inbox.badge), expectedCount, name);
@@ -162,7 +162,7 @@ test(
       assert.equal(Number(detected.badge), 3);
       assert.equal(detected.gate, false);
       assert.match(
-        run(process.execPath, ["bin/lavish-axi.js", "poll", revalidationFile, "--timeout-ms", "600"], lavishEnv),
+        run(process.execPath, ["bin/textcast-chat-axi.js", "poll", revalidationFile, "--timeout-ms", "600"], lavishEnv),
         /status:\s*waiting/,
       );
 
@@ -176,7 +176,7 @@ test(
       assert.equal(repaired.wrapHidden, true);
       assert.equal(repaired.gate, false);
     } finally {
-      run(process.execPath, ["bin/lavish-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
+      run(process.execPath, ["bin/textcast-chat-axi.js", "stop", "--port", String(port)], lavishEnv, 15_000);
       run("chrome-devtools-axi", ["stop"], chromeEnv);
       await rm(temp, { recursive: true, force: true });
     }

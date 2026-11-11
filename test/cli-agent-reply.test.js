@@ -16,7 +16,7 @@ import { createOpenOutput, createPollOutput, getCommandHelp, resolveAgentReply, 
 import { serve } from "../src/server.js";
 import { sessionKey } from "../src/session-store.js";
 
-const CLI = fileURLToPath(new URL("../bin/lavish-axi.js", import.meta.url));
+const CLI = fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const STRUCTURED_REPLY = ["## What changed", "", "- **Phase 1 heading** done", "- next item", "", "1. ship it"].join(
@@ -85,7 +85,7 @@ function runCli(args, { cwd = REPO_ROOT, env = process.env, stdin } = {}) {
 test("open and poll next_step keep --agent-reply concise-first and structure-when-long", () => {
   const open = createOpenOutput({
     file: "/tmp/artifact.html",
-    url: "http://127.0.0.1:4387/session/abc",
+    url: "http://127.0.0.1:4397/session/abc",
     status: "opened",
   });
   const poll = createPollOutput({
@@ -95,8 +95,8 @@ test("open and poll next_step keep --agent-reply concise-first and structure-whe
 
   assertConciseFirstGuidance(open.next_step);
   assertConciseFirstGuidance(poll.next_step);
-  assert.match(open.next_step, /lavish-axi poll --help|README/);
-  assert.match(poll.next_step, /lavish-axi poll --help|README/);
+  assert.match(open.next_step, /textcast-chat-axi poll --help|README/);
+  assert.match(poll.next_step, /textcast-chat-axi poll --help|README/);
 });
 
 test("poll help documents --agent-reply-file for longer Markdown and points at README's subset", () => {
@@ -114,8 +114,8 @@ test("poll help documents --agent-reply-file for longer Markdown and points at R
   assert.match(help, /README/);
   assert.match(help, /Feedback controls/);
   assert.doesNotMatch(help, /prefer multiline/i);
-  assert.match(help, /lavish-axi poll report\.html --agent-reply "Renamed the payment step\."/);
-  assert.match(help, /lavish-axi poll report\.html --agent-reply-file reply\.md/);
+  assert.match(help, /textcast-chat-axi poll report\.html --agent-reply "Renamed the payment step\."/);
+  assert.match(help, /textcast-chat-axi poll report\.html --agent-reply-file reply\.md/);
 });
 
 test("resolveAgentReply keeps the inline --agent-reply string", async () => {

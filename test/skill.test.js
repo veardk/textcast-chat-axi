@@ -83,17 +83,17 @@ test("createSkillMarkdown stays a short stub that defers to the CLI", () => {
 
   assert.ok(md.length <= MAX_SKILL_MARKDOWN_CHARS, "the generated skill stays drastically smaller than CLI guidance");
   assert.match(md, /Lavish Editor/);
-  assert.match(md, /`npx -y lavish-axi --help`/);
-  assert.match(md, /`npx -y lavish-axi reply --help`/);
+  assert.match(md, /`npx -y textcast-chat-axi --help`/);
+  assert.match(md, /`npx -y textcast-chat-axi reply --help`/);
   assert.match(md, /not about to long-poll/);
-  assert.match(md, /`npx -y lavish-axi design`/);
-  assert.match(md, /`npx -y lavish-axi playbook <id>`/);
+  assert.match(md, /`npx -y textcast-chat-axi design`/);
+  assert.match(md, /`npx -y textcast-chat-axi playbook <id>`/);
   assert.match(md, /stale/i);
 });
 
 test("createSkillMarkdown does not bake CLI-owned guidance into the skill", () => {
   const md = createSkillMarkdown();
-  const home = createHomeOutput({ bin: "lavish-axi", sessions: [], includeSessions: false, agent: "static" });
+  const home = createHomeOutput({ bin: "textcast-chat-axi", sessions: [], includeSessions: false, agent: "static" });
 
   for (const item of home.visual_guidance) {
     assert.ok(!md.includes(item), `must not copy visual guidance: ${item.slice(0, 48)}...`);
@@ -133,9 +133,9 @@ test("createSkillMarkdown omits setup guidance", () => {
 test("createSkillMarkdown uses non-interactive npx commands", () => {
   const md = createSkillMarkdown();
 
-  assert.match(md, /`npx -y lavish-axi <html-file>`/);
-  assert.match(md, /If lavish-axi output shows a follow-up command starting with `lavish-axi`/);
-  assert.match(md, /run it as `npx -y lavish-axi/);
-  assert.doesNotMatch(md, /`npx lavish-axi/);
-  assert.doesNotMatch(md, /Run `lavish-axi/);
+  assert.match(md, /`npx -y textcast-chat-axi <html-file>`/);
+  assert.match(md, /If textcast-chat-axi output shows a follow-up command starting with `textcast-chat-axi`/);
+  assert.match(md, /run it as `npx -y textcast-chat-axi/);
+  assert.doesNotMatch(md, /`npx textcast-chat-axi/);
+  assert.doesNotMatch(md, /Run `textcast-chat-axi/);
 });

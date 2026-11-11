@@ -138,7 +138,7 @@ export function hostForUrl(host) {
 }
 
 export function stateDir() {
-  return process.env.LAVISH_AXI_STATE_DIR || path.join(os.homedir(), ".lavish-axi");
+  return process.env.LAVISH_AXI_STATE_DIR || path.join(os.homedir(), ".textcast-chat-axi");
 }
 
 export function stateFile() {
@@ -173,5 +173,5 @@ export async function ensureStateDir() {
 }
 
 export function defaultPort() {
-  return Number(process.env.LAVISH_AXI_PORT || 4387);
+  return Number(process.env.LAVISH_AXI_PORT || 4397);
 }

@@ -50,7 +50,7 @@ test("queued prompts are returned with DOM snapshot context and then cleared", a
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.queuePrompts(session.key, {
       domSnapshot: 'uid=1 h1 "Hello"',
       prompts: [{ uid: "1", prompt: "Make this warmer", selector: "h1", tag: "h1", text: "Hello" }],
@@ -77,7 +77,7 @@ test("queued text selection prompts preserve range anchors", async () => {
     await writeFile(artifact, "<p id='intro'>Hello <strong>bright</strong> world</p>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const target = {
       type: "text-range",
       text: "lo bright wo",
@@ -109,7 +109,7 @@ test("queued mermaid node prompts preserve node identity and drop unknown fields
     await writeFile(artifact, "<div class='mermaid'>graph TD; A-->B;</div>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const target = {
       type: "mermaid-node",
       diagramId: "mermaid-7",
@@ -156,7 +156,7 @@ test("queued whiteboard prompts normalize the excalidraw-scene target to its fix
     await writeFile(artifact, "<div class='mermaid'>graph TD; A-->B;</div>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
 
     await store.queuePrompts(session.key, {
       prompts: [
@@ -207,7 +207,7 @@ test("a diagnostic pass records warnings passively and never becomes agent feedb
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     const result = await store.recordLayoutDiagnostics(
       session.key,
@@ -247,7 +247,7 @@ test("a newer begun load invalidates an older diagnostic atomically", async () =
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     const newerContext = await store.issueReviewerHandoff(session.key);
     await Promise.all([
@@ -282,7 +282,7 @@ test("a retried begin request reuses the same load epoch", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const context = await store.issueReviewerHandoff(session.key);
     const first = await store.beginArtifactLoad(session.key, {
       requestId: "request-1",
@@ -327,7 +327,7 @@ test("reopening a session preserves the live reviewer handoff and artifact load"
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const handoff = await store.issueReviewerHandoff(session.key);
     const load = await store.beginArtifactLoad(session.key, {
       requestId: "live-load",
@@ -336,7 +336,7 @@ test("reopening a session preserves the live reviewer handoff and artifact load"
     });
     const before = await store.verifyArtifactLoad(session.key, load.artifact_load_token, load.artifact_revision);
 
-    await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const after = await store.verifyArtifactLoad(session.key, load.artifact_load_token, load.artifact_revision);
     const next = await store.beginArtifactLoad(session.key, {
       requestId: "next-load",
@@ -360,7 +360,7 @@ test("a replacement server preserves the live reviewer handoff and artifact load
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const handoff = await store.issueReviewerHandoff(session.key);
     const load = await store.beginArtifactLoad(session.key, {
       requestId: "live-load",
@@ -407,7 +407,7 @@ test("a replacement server restores the begin fences the previous one issued", a
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const handoff = await store.issueReviewerHandoff(session.key);
     const load = await store.beginArtifactLoad(session.key, {
       requestId: "live-load",
@@ -456,7 +456,7 @@ test("a partially stored artifact load is no load at all", async () => {
       await writeFile(artifact, "<h1>Hello</h1>");
 
       const store = new SessionStore(stateFile);
-      const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+      const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
       const handoff = await store.issueReviewerHandoff(session.key);
       const load = await store.beginArtifactLoad(session.key, {
         requestId: "live-load",
@@ -516,7 +516,7 @@ test("a stored artifact load with a malformed fence is no load at all", async ()
       await writeFile(artifact, "<h1>Hello</h1>");
 
       const store = new SessionStore(stateFile);
-      const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+      const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
       const handoff = await store.issueReviewerHandoff(session.key);
       const load = await store.beginArtifactLoad(session.key, {
         requestId: "live-load",
@@ -550,7 +550,7 @@ test("typed handoff outcomes separate superseded and no-handoff begins", async (
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const noHandoff = await store.beginArtifactLoad(session.key, {
       requestId: "missing",
       requestSequence: 1,
@@ -598,7 +598,7 @@ test("non-severe observations never enter the inbox", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     const result = await store.recordLayoutDiagnostics(
       session.key,
@@ -633,7 +633,7 @@ test("queueing a warning produces one ordinary prompt and leaves the warning unr
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     const recorded = await store.recordLayoutDiagnostics(
       session.key,
@@ -685,7 +685,7 @@ test("an acknowledged layout prompt retry bypasses a later recurring-warning con
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const firstLoad = await beginArtifactLoad(store, session.key);
     const finding = { selector: "p", kind: "clipped-text", axis: "vertical", overflowPx: 27, severity: "error" };
     const recorded = await store.recordLayoutDiagnostics(
@@ -728,7 +728,7 @@ test("a prepared layout prompt conflicts when its warning changes before sending
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const firstLoad = await beginArtifactLoad(store, session.key);
     const recorded = await store.recordLayoutDiagnostics(
       session.key,
@@ -771,7 +771,7 @@ test("a stale diagnostic pass cannot mutate the current revision", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const firstLoad = await beginArtifactLoad(store, session.key);
     const recorded = await store.recordLayoutDiagnostics(
       session.key,
@@ -810,7 +810,7 @@ test("a queued layout-warnings prompt is normalized like ordinary feedback", asy
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.queuePrompts(session.key, {
       prompts: [
         {
@@ -845,7 +845,7 @@ test("the inbox survives reopening the same artifact", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     await store.recordLayoutDiagnostics(
       session.key,
@@ -856,7 +856,7 @@ test("the inbox survives reopening the same artifact", async () => {
       }),
     );
 
-    const reopened = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const reopened = await store.upsertSession(artifact, "http://localhost:4397/session/test");
 
     assert.equal(reopened.status, "open");
     assert.equal(reopened.layout_warnings.length, 1);
@@ -875,7 +875,7 @@ test("dismissing a warning lasts only for the current artifact revision", async 
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const firstLoad = await beginArtifactLoad(store, session.key);
     const finding = { selector: "html", kind: "page-horizontal-overflow", overflowPx: 40, severity: "error" };
     const recorded = await store.recordLayoutDiagnostics(
@@ -927,7 +927,7 @@ test("fatal artifact failures still reach the agent without user action", async 
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     const result = await store.recordArtifactFailures(session.key, {
       ...diagnosticPayload(load, 1),
@@ -955,7 +955,7 @@ test("stale artifact failures and duplicate diagnostic sequences have no side ef
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const load = await beginArtifactLoad(store, session.key);
     const finding = { selector: "p", kind: "clipped-text", axis: "vertical", overflowPx: 20, severity: "error" };
     const first = await store.recordLayoutDiagnostics(
@@ -998,7 +998,7 @@ test("ending a session makes feedback return ended", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.endSession(session.key);
 
     const result = await store.takeFeedback(session.key);
@@ -1016,7 +1016,7 @@ test("ending a session defaults to agent-initiated and takeFeedback reports who 
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const ended = await store.endSession(session.key);
 
     assert.equal(ended.ended_by, "agent");
@@ -1036,7 +1036,7 @@ test("ending a session as the user is recorded distinctly from an agent end", as
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const ended = await store.endSession(session.key, "user");
 
     assert.equal(ended.ended_by, "user");
@@ -1056,7 +1056,7 @@ test("agent cleanup cannot overwrite an existing user end", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.endSession(session.key, "user");
     const ended = await store.endSession(session.key, "agent");
 
@@ -1077,7 +1077,7 @@ test("the final feedback batch before an end flags session_ended with who ended 
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     // Browser send-and-end: prompts land first, then the session ends before delivery.
     await store.queuePrompts(session.key, {
       domSnapshot: 'uid=1 h1 "Hello"',
@@ -1105,7 +1105,7 @@ test("queued prompts can atomically carry a browser end intent", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.queuePrompts(session.key, {
       domSnapshot: 'uid=1 h1 "Hello"',
       endSession: true,
@@ -1133,7 +1133,7 @@ test("prompts queued after a session already ended are rejected, not silently st
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.endSession(session.key, "user");
     // No agent will ever poll for this again - accepting it with a 200 would be a
     // promise the server cannot keep, so the whole batch is rejected instead.
@@ -1165,7 +1165,7 @@ test("a Send & End that arrives after the session already ended is also rejected
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     // The agent already ended the session; a browser tab that has not learned that yet clicks
     // Send & End. That request also asking to end is not enough to make it deliverable - no
     // agent will ever poll for it either way, so it must be rejected the same as a plain Send.
@@ -1197,7 +1197,7 @@ test("late layout diagnostics do not reopen ended sessions or become feedback", 
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.endSession(session.key);
     const load = await beginArtifactLoad(store, session.key);
     await store.recordLayoutDiagnostics(
@@ -1225,7 +1225,7 @@ test("prompts queued before ending are still delivered before the ended status",
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     // Browser send-and-end with no agent listening: prompts land first, then the session ends.
     await store.queuePrompts(session.key, {
       domSnapshot: 'uid=1 h1 "Hello"',
@@ -1254,7 +1254,7 @@ test("agent replies are stored in session chat history", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.addAgentReply(session.key, "Applied the requested changes.");
 
     const updated = await store.findByKey(session.key);
@@ -1275,7 +1275,7 @@ test("freeform user prompts are stored in session chat history", async () => {
     await writeFile(artifact, "<h1>Hello</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.queuePrompts(session.key, {
       prompts: [
         { uid: "", prompt: "Please make this clearer", selector: "", tag: "message", text: "Freeform message" },
@@ -1300,7 +1300,7 @@ test("queued prompt attachments are resolved server-side and client path claims 
     await writeFile(artifact, "<h1>Hi</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
 
     // The resolver stands in for the on-disk attachment store: only a known id
     // resolves, and it returns the authoritative metadata (never the client's).
@@ -1353,7 +1353,7 @@ test("duplicate attachment ids preserve logical refs and count toward prompt cap
     await writeFile(artifact, "<h1>Hi</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const id = "a".repeat(64) + ".png";
     const resolveAttachment = async (_key, attachmentId) => ({
       id: attachmentId,
@@ -1444,7 +1444,7 @@ test("queuePrompts rejects the batch atomically when the count or byte cap is ex
     await writeFile(artifact, "<h1>Hi</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const ids = [0, 1, 2, 3, 4].map((n) => String(n).repeat(64).slice(0, 64) + ".png");
     const resolveAttachment = async (_key, id) => ({
       id,
@@ -1504,7 +1504,7 @@ test("queuePrompts rejects the batch atomically when an attachment id is unknown
     await writeFile(artifact, "<h1>Hi</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const known = "a".repeat(64) + ".png";
     const unknown = "b".repeat(64) + ".png";
     const resolveAttachment = async (_key, id) =>
@@ -1545,7 +1545,7 @@ test("attachments are dropped when no resolver is supplied", async () => {
     await writeFile(artifact, "<h1>Hi</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await store.queuePrompts(session.key, {
       prompts: [
         {
@@ -1573,7 +1573,7 @@ test("referencedAttachmentIds covers pending prompts, then the delivery read gra
     await writeFile(artifact, "<h1>Hi</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     const id = "a".repeat(64) + ".png";
     const resolveAttachment = async (_key, ref) => ({
       id: ref,
@@ -1615,7 +1615,7 @@ test("queuePrompts and takeFeedback serialize so a mid-resolution poll never clo
     await writeFile(artifact, "<h1>Hi</h1>");
 
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
 
     // Prompt A is already queued and undelivered.
     await store.queuePrompts(session.key, { prompts: [{ uid: "A", prompt: "A", selector: "", tag: "h1", text: "" }] });
@@ -1895,7 +1895,7 @@ async function withStore(run) {
     const artifact = path.join(dir, "artifact.html");
     await writeFile(artifact, "<h1>Hello</h1>");
     const store = new SessionStore(stateFile);
-    const session = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const session = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     await run({ store, session, stateFile, artifact });
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -2189,7 +2189,7 @@ test("reopening a session preserves the delivery read grace (post-poll-retention
     // `upsertSession` rebuilds the session from an explicit field list, so any field
     // it forgets is erased. Re-opening the artifact during the grace hour must not
     // drop the protection and hand the next sweep a path the agent is still reading.
-    await store.upsertSession(session.file, "http://localhost:4387/session/test");
+    await store.upsertSession(session.file, "http://localhost:4397/session/test");
 
     assert.ok(
       (await store.referencedAttachmentIds()).has(`${session.key}/${id}`),
@@ -2707,9 +2707,9 @@ test("a note an ended round left at seen is not marked by the next round's edit 
     });
     feedbackResult(await store.takeFeedback(session.key));
     await store.endSession(session.key, "agent");
-    await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    await store.upsertSession(artifact, "http://localhost:4397/session/test");
     // A plain re-open of the now-open session does not move the boundary again.
-    await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    await store.upsertSession(artifact, "http://localhost:4397/session/test");
 
     assert.equal(await store.markWorking(session.key), null, "an edit in the new round is not about the old note");
     await store.queuePrompts(session.key, {
@@ -2785,7 +2785,7 @@ test("reopening a session keeps the delivery sequence and the stamps", async () 
     feedbackResult(await store.takeFeedback(session.key));
     await store.endSession(session.key, "agent");
 
-    const reopened = await store.upsertSession(artifact, "http://localhost:4387/session/test");
+    const reopened = await store.upsertSession(artifact, "http://localhost:4397/session/test");
     assert.equal(reopened.delivery_seq, 1);
     assert.deepEqual(stampsOf(reopened), [{ text: "First", delivered: true, seq: 1, working: false, done: false }]);
   });
@@ -2806,7 +2806,7 @@ test("a transcript older than receipts is marked at load and never stamped", asy
           [key]: {
             key,
             file: artifact,
-            url: "http://localhost:4387/session/legacy",
+            url: "http://localhost:4397/session/legacy",
             status: "open",
             pending_prompts: 0,
             prompts: [],

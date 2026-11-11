@@ -1,6 +1,6 @@
 # Self-hosting the share backend
 
-`lavish-axi share` publishes to [ht-ml.app](https://ht-ml.app) by default. Set
+`textcast-chat-axi share` publishes to [ht-ml.app](https://ht-ml.app) by default. Set
 `LAVISH_AXI_HTML_APP_API_URL` to point `share` at a backend you control instead.
 This page documents the contract that backend must implement.
 

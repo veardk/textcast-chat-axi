@@ -986,7 +986,7 @@ test("the share dialog hands back the site id alongside the update key it tells 
   // command as a way to lock a page - only --private sets one.
   assert.match(
     html,
-    /Republish this page&#39;s HTML with <code>lavish-axi share &lt;file&gt; --site &lt;site id&gt; --update-key &lt;key&gt;<\/code>/,
+    /Republish this page&#39;s HTML with <code>textcast-chat-axi share &lt;file&gt; --site &lt;site id&gt; --update-key &lt;key&gt;<\/code>/,
   );
   assert.match(html, /add <code>--private<\/code> to also lock it/);
   assert.doesNotMatch(html, /Republish or lock this page/);
@@ -1245,7 +1245,7 @@ test("chrome ignores Lavish postMessages not sent by the artifact iframe", async
 test("chrome restores queued prompts from tab storage after reload", async () => {
   const js = await chromeClientSource();
 
-  assert.match(js, /lavish-axi:queued:/);
+  assert.match(js, /textcast-chat-axi:queued:/);
   assert.match(js, /function loadQueuedPrompts\(\)/);
   assert.match(js, /const queued = loadQueuedPrompts\(\)/);
   assert.match(js, /sessionStorage\.getItem\(queueStorageKey\)/);
@@ -2132,11 +2132,11 @@ test("a '*' entry in allowedHosts disables the Host guard entirely", async () =>
 
 test("isAllowedHostHeader enforces the loopback Host allowlist", () => {
   const allowed = new Set(["127.0.0.1", "::1", "localhost", "host.example"]);
-  assert.equal(isAllowedHostHeader("127.0.0.1:4387", allowed), true);
+  assert.equal(isAllowedHostHeader("127.0.0.1:4397", allowed), true);
   assert.equal(isAllowedHostHeader("localhost", allowed), true);
-  assert.equal(isAllowedHostHeader("[::1]:4387", allowed), true);
-  assert.equal(isAllowedHostHeader("HOST.EXAMPLE:4387", allowed), true);
-  assert.equal(isAllowedHostHeader("evil.example:4387", allowed), false);
+  assert.equal(isAllowedHostHeader("[::1]:4397", allowed), true);
+  assert.equal(isAllowedHostHeader("HOST.EXAMPLE:4397", allowed), true);
+  assert.equal(isAllowedHostHeader("evil.example:4397", allowed), false);
   assert.equal(isAllowedHostHeader("evil.example", allowed), false);
   assert.equal(isAllowedHostHeader("host.example:443@evil.example", allowed), false);
   assert.equal(isAllowedHostHeader("host.example:not-a-port", allowed), false);
@@ -2153,7 +2153,7 @@ test("hostnameFromHostHeader rejects trailing garbage after a bracketed IPv6 lit
   // Only an empty string or a `:port` suffix may follow the closing bracket;
   // anything else is a malformed authority and must not resolve to the IPv6 host.
   assert.equal(hostnameFromHostHeader("[::1]evil.com"), null);
-  assert.equal(hostnameFromHostHeader("[::1]:4387"), "::1");
+  assert.equal(hostnameFromHostHeader("[::1]:4397"), "::1");
   assert.equal(hostnameFromHostHeader("[::1]"), "::1");
   assert.equal(hostnameFromHostHeader("::1"), null);
   assert.equal(hostnameFromHostHeader("[:::1]"), null);
@@ -2162,12 +2162,12 @@ test("hostnameFromHostHeader rejects trailing garbage after a bracketed IPv6 lit
 test("isAllowedHostHeader rejects a bracketed IPv6 host with trailing garbage", () => {
   const allowed = new Set(["127.0.0.1", "::1", "localhost"]);
   assert.equal(isAllowedHostHeader("[::1]evil.com", allowed), false);
-  assert.equal(isAllowedHostHeader("[::1]:4387", allowed), true);
+  assert.equal(isAllowedHostHeader("[::1]:4397", allowed), true);
 });
 
 test("isAllowedRequestHost requires an allowlisted Host and validates X-Forwarded-Host", () => {
   const allowed = new Set(["127.0.0.1", "proxy.example"]);
-  assert.equal(isAllowedRequestHost({ host: "127.0.0.1:4387" }, allowed), true);
+  assert.equal(isAllowedRequestHost({ host: "127.0.0.1:4397" }, allowed), true);
   // Missing Host is blocked (HTTP/1.1 requires it).
   assert.equal(isAllowedRequestHost({ host: undefined }, allowed), false);
   assert.equal(isAllowedRequestHost({ host: "evil.example" }, allowed), false);
@@ -3070,7 +3070,7 @@ test("a refreshed chrome receives a new handoff and establishes the newest load"
   }
 });
 
-// Issue #369: an `npx -y lavish-axi ...` that resolves a newer CLI restarts the server under a
+// Issue #369: an `npx -y textcast-chat-axi ...` that resolves a newer CLI restarts the server under a
 // reviewer who never asked for it. Every open review then answered 409 "Artifact load expired"
 // and the chrome showed an empty middle, which reads as the page being gone.
 test("a live artifact load survives the server restart the reviewer never asked for", async () => {
@@ -4762,7 +4762,7 @@ test("an agent-initiated end via the file-based route reopens normally without t
       body: JSON.stringify({ file: artifact }),
     });
 
-    // `lavish-axi end <file>` uses the file-based route - agent-initiated.
+    // `textcast-chat-axi end <file>` uses the file-based route - agent-initiated.
     await fetch(`${base}/api/end`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -5958,7 +5958,7 @@ test("SSE agent-presence resets to waiting after ending and reopening a session"
   }
 });
 
-// #171: a browser tab left open across `lavish-axi end` must be told the session ended, instead
+// #171: a browser tab left open across `textcast-chat-axi end` must be told the session ended, instead
 // of silently keeping Send enabled for feedback nobody will ever poll for.
 test("SSE forwards an ended event to an attached chrome when the agent ends the session (#171)", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));

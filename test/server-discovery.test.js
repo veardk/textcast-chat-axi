@@ -688,7 +688,7 @@ test(
       const old = createHttpServer((req, res) => {
         if (req.url?.startsWith("/health")) {
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ ok: true, app: "lavish-axi", version: "0.1.77" }));
+          res.end(JSON.stringify({ ok: true, app: "textcast-chat-axi", version: "0.1.77" }));
           return;
         }
         if (req.method === "POST" && req.url === "/shutdown") shutdowns += 1;
@@ -777,10 +777,10 @@ test(
           res.end(
             JSON.stringify(
               starting
-                ? { ok: false, app: "lavish-axi", version: VERSION }
+                ? { ok: false, app: "textcast-chat-axi", version: VERSION }
                 : {
                     ok: true,
-                    app: "lavish-axi",
+                    app: "textcast-chat-axi",
                     version: VERSION,
                     state_id: stateId(path.join(dir, "state.json")),
                     hosts: ["127.0.0.1"],
@@ -802,7 +802,7 @@ test(
         assert.equal(shutdowns, 2, "expected the initial replacement plus exactly one retry");
         assert.match(output, /SERVER_ERROR/);
         assert.ok(output.includes(otherHost), `expected the missing address in ${output}`);
-        assert.match(output, /lavish-axi stop/);
+        assert.match(output, /textcast-chat-axi stop/);
       } finally {
         await new Promise((resolve) => loopbackOnly.close(() => resolve(undefined)));
         await shutdownAt(otherHost, port);
@@ -1114,7 +1114,7 @@ function lsofAvailable() {
 }
 
 // A child process listening at host:port. The script's file name is what `ps` shows, so a
-// pre-handshake Lavish server is one whose name says lavish-axi and an unrelated one is not.
+// pre-handshake Lavish server is one whose name says textcast-chat-axi and an unrelated one is not.
 async function spawnListener(dir, name, host, port, source) {
   const script = path.join(dir, name);
   await writeFile(script, source);
@@ -1139,7 +1139,7 @@ test("stopping a pre-handshake server signals only the process at its own addres
     // Answers /health with no app or version and has no /shutdown, like the oldest releases.
     const preHandshake = await spawnListener(
       dir,
-      "lavish-axi-pre-handshake.mjs",
+      "textcast-chat-axi-pre-handshake.mjs",
       "127.0.0.1",
       port,
       `import { createServer } from "node:http";
@@ -1189,7 +1189,7 @@ os.networkInterfaces = () => ({ ...networkInterfaces(), blackhole: [{ address: "
     const started = Date.now();
     const child = spawn(
       process.execPath,
-      [fileURLToPath(new URL("../bin/lavish-axi.js", import.meta.url)), "stop", "--port", String(port)],
+      [fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url)), "stop", "--port", String(port)],
       {
         env: {
           ...process.env,
