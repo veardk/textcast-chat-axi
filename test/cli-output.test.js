@@ -17,7 +17,6 @@ process.env.LAVISH_AXI_LINK_HOST = "127.0.0.1";
 import {
   collapseHomeDirectory,
   createHomeOutput,
-  createLibrariesOutput,
   createOpenOutput,
   createPollOutput,
   createServerSpawnOptions,
@@ -463,42 +462,6 @@ test("a fatal artifact failure is the only thing that reaches the agent without 
   assert.match(output.next_step, /artifact-asset-unavailable/);
 });
 
-test("whiteboard feedback tells agents to read the summary, inspect files when needed, and update the Mermaid source", () => {
-  const output = createPollOutput({
-    file: "/tmp/report.html",
-    response: {
-      status: "feedback",
-      dom_snapshot: "",
-      prompts: [
-        {
-          uid: "",
-          prompt: "Whiteboard edits to diagram 1:\nMoved rectangle (Auth)",
-          selector: "",
-          tag: "whiteboard",
-          text: "Whiteboard: diagram 1",
-          target: {
-            type: "excalidraw-scene",
-            diagramIndex: 0,
-            diagramId: "mermaid-1",
-            sourceHash: "abc",
-            scenePath: "/state/whiteboards/k/0.excalidraw",
-            previewPath: "/state/whiteboards/k/0.png",
-            imageFallback: false,
-            stats: { added: 0, removed: 0, moved: 1, relabeled: 0, drawn: 0 },
-          },
-        },
-      ],
-    },
-  });
-
-  assert.match(output.next_step, /whiteboard edits \(tag "whiteboard"\)/);
-  assert.match(output.next_step, /read the edit summary in the prompt text first/);
-  assert.match(output.next_step, /scenePath/);
-  assert.match(output.next_step, /previewPath/);
-  assert.match(output.next_step, /Mermaid source stays authoritative/);
-  assert.match(output.next_step, /never try to write the \.excalidraw scene back/);
-});
-
 test("image-attachment feedback tells agents to open the local image paths", () => {
   const output = createPollOutput({
     file: "/tmp/report.html",
@@ -544,19 +507,6 @@ test("feedback without attachments does not mention image attachments", () => {
     },
   });
   assert.doesNotMatch(output.next_step, /image attachments/);
-});
-
-test("non-whiteboard feedback does not mention whiteboard guidance", () => {
-  const output = createPollOutput({
-    file: "/tmp/report.html",
-    response: {
-      status: "feedback",
-      dom_snapshot: "",
-      prompts: [{ uid: "", prompt: "Tighten this", selector: "h1", tag: "h1", text: "Title" }],
-    },
-  });
-
-  assert.doesNotMatch(output.next_step, /whiteboard/i);
 });
 
 test("a poll reporting the session ended by the user tells the agent to stop and not reopen", () => {
@@ -1348,83 +1298,6 @@ test("opening an artifact names that session as the one to reload across a versi
     recorder.close();
     await rm(dir, { recursive: true, force: true });
   }
-});
-
-function fixtureLibraries() {
-  const item = (library, name) => ({ ref: `${library}/${name}`, name, elements: [] });
-  return [
-    { id: "aws", items: [item("aws", "AWS Lambda"), item("aws", "Lambda Function"), item("aws", "Amazon S3")] },
-    { id: "system-design", items: [item("system-design", "Queue")] },
-  ];
-}
-
-test("libraries output tells the user where to put files when none are installed", () => {
-  const output = createLibrariesOutput({
-    dir: "/home/me/.textcast-chat-axi/excalidraw-libraries",
-    libraries: [],
-    skipped: [],
-  });
-  assert.equal(output.dir, "/home/me/.textcast-chat-axi/excalidraw-libraries");
-  assert.deepEqual(output.libraries, []);
-  assert.match(output.help.join("\n"), /\.excalidrawlib/);
-  assert.equal(output.items, undefined);
-});
-
-test("libraries output lists counts, skips, and points at item search", () => {
-  const output = createLibrariesOutput({
-    dir: "/x",
-    libraries: fixtureLibraries(),
-    skipped: [{ file: "/x/broken.excalidrawlib", reason: "not valid JSON" }],
-  });
-  assert.deepEqual(output.libraries, [
-    { id: "aws", items: 3 },
-    { id: "system-design", items: 1 },
-  ]);
-  assert.deepEqual(output.skipped, [{ file: "broken.excalidrawlib", reason: "not valid JSON" }]);
-  assert.equal(output.items, undefined);
-  const help = output.help.join("\n");
-  assert.match(help, /textcast-chat-axi libraries --search <text>/);
-  assert.match(help, /textcast-chat-axi design/);
-});
-
-test("libraries output filters item refs by search terms and library", () => {
-  const searched = createLibrariesOutput({ dir: "/x", libraries: fixtureLibraries(), skipped: [], search: "lambda" });
-  assert.deepEqual(searched.items, [{ ref: "aws/AWS Lambda" }, { ref: "aws/Lambda Function" }]);
-  const both = createLibrariesOutput({ dir: "/x", libraries: fixtureLibraries(), skipped: [], search: "aws lambda" });
-  assert.deepEqual(both.items, [{ ref: "aws/AWS Lambda" }, { ref: "aws/Lambda Function" }]);
-  const library = createLibrariesOutput({
-    dir: "/x",
-    libraries: fixtureLibraries(),
-    skipped: [],
-    library: "system-design",
-  });
-  assert.deepEqual(library.items, [{ ref: "system-design/Queue" }]);
-  const none = createLibrariesOutput({ dir: "/x", libraries: fixtureLibraries(), skipped: [], search: "kafka" });
-  assert.deepEqual(none.items, []);
-});
-
-test("libraries output bounds long item listings", () => {
-  const many = Array.from({ length: 120 }, (_, index) => ({
-    ref: `big/Icon ${index}`,
-    name: `Icon ${index}`,
-    elements: [],
-  }));
-  const output = createLibrariesOutput({
-    dir: "/x",
-    libraries: [{ id: "big", items: many }],
-    skipped: [],
-    library: "big",
-  });
-  assert.equal(output.items.length, 50);
-  assert.equal(output.more_items, 70);
-  assert.match(output.help.join("\n"), /--search/);
-});
-
-test("libraries help documents the command and the directory", () => {
-  const help = getCommandHelp("libraries");
-  assert.match(help, /textcast-chat-axi libraries \[--search <text>\] \[--library <id>\]/);
-  assert.match(help, /excalidraw-libraries/);
-  assert.equal(normalizeArgv(["libraries"])[0], "libraries");
 });
 
 test("html file arguments normalize to the hidden open command", () => {

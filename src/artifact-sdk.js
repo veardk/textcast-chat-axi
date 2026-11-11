@@ -1,7 +1,6 @@
 /* global CSS, Element, MutationObserver, ResizeObserver, document, getComputedStyle, parent, window */
 
 import { readArtifactRevisions } from "./artifact-revisions.js";
-import * as mermaidHelpers from "./mermaid-node.js";
 
 export const LAVISH_INTERNAL_QUEUE_KEY = "_lavishQueueKey";
 
@@ -452,22 +451,17 @@ export function deriveAttachmentNoticeState(state = {}) {
 /**
  * @param {*} deriveQueueKey
  * @param {*} [isNativeInteractive]
- * @param {*} [mermaid]
  * @param {number} [artifactRevision]
  * @param {string} [artifactLoadToken]
- * @param {string} [sessionKey]
  * @param {{ maxAttachmentCount?: number, maxAttachmentBytes?: number, acceptedImageMime?: string[] }} [options]
  */
 export function createArtifactSdk(
   deriveQueueKey,
   isNativeInteractive = isNativeInteractiveControl,
-  mermaid = mermaidHelpers,
   artifactRevision = 0,
   artifactLoadToken = "",
-  sessionKey = "",
   options = {},
 ) {
-  const { isMermaidSvg, mermaidNodeFrom, mermaidNodeElement } = mermaid;
   function postArtifactMessage(type, payload = {}) {
     parent.postMessage({ type, ...payload, artifact_load_token: String(artifactLoadToken || "") }, "*");
   }
@@ -828,261 +822,19 @@ export function createArtifactSdk(
       text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 240),
     };
 
-    const mermaidNode = mermaidNodeFrom(el, selector);
-    if (mermaidNode) {
-      base.tag = "mermaid-node";
-      base.text = mermaidNode.label || base.text;
-      base.target = mermaidNode;
-    }
-
     return base;
   }
 
-  // Hover and click must outline the exact element they annotate. Clicking inside
-  // a Mermaid diagram annotates the whole <g> node, so resolve a raw event target
-  // up to that node before highlighting; every other element annotates itself.
+  // Hover and click outline the exact element they annotate.
   function annotationTargetEl(el) {
-    return mermaidNodeElement(el) || el;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Mermaid diagram enhancement: pan/zoom in explore mode, freeze in annotate
-  // mode. All of this operates on the rendered SVG only; the saved artifact is
-  // never modified, so a diagram still renders identically when opened directly.
-  // Node identity/label extraction lives in the injected `mermaid` helpers so it
-  // can be unit tested and shared with the server-side target validator.
-  // ---------------------------------------------------------------------------
-
-  const mermaidViewports = new WeakMap();
-
-  function findMermaidSvgs() {
-    const svgs = new Set();
-    for (const svg of document.querySelectorAll("svg")) {
-      if (isMermaidSvg(svg)) svgs.add(svg);
-    }
-    return [...svgs];
-  }
-
-  // A minimal, dependency-free viewBox-based pan/zoom. Kept small on purpose:
-  // "nodes only" annotation plus freeze-on-annotate means we do not need
-  // momentum, gestures, or a full pan/zoom library here. svg-pan-zoom is a
-  // documented drop-in upgrade if richer interaction is wanted later.
-  function createViewport(svg) {
-    const bbox = svg.getBBox ? safeBBox(svg) : null;
-    const initial = readViewBox(svg) || (bbox ? { x: bbox.x, y: bbox.y, w: bbox.width, h: bbox.height } : null);
-    if (!initial) return null;
-    svg.setAttribute("viewBox", `${initial.x} ${initial.y} ${initial.w} ${initial.h}`);
-
-    const view = { ...initial };
-    let frozen = false;
-    let panning = null;
-
-    function apply() {
-      svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
-    }
-    function reset() {
-      Object.assign(view, initial);
-      apply();
-    }
-    function zoomAt(clientX, clientY, factor) {
-      const rect = svg.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      const px = (clientX - rect.left) / rect.width;
-      const py = (clientY - rect.top) / rect.height;
-      const fx = view.x + view.w * px;
-      const fy = view.y + view.h * py;
-      const next = Math.min(Math.max(view.w * factor, initial.w / 40), initial.w * 8);
-      const scale = next / view.w;
-      view.w = next;
-      view.h *= scale;
-      view.x = fx - (fx - view.x) * scale;
-      view.y = fy - (fy - view.y) * scale;
-      apply();
-    }
-
-    function onWheel(event) {
-      if (frozen) return;
-      event.preventDefault();
-      zoomAt(event.clientX, event.clientY, event.deltaY > 0 ? 1.15 : 1 / 1.15);
-    }
-    function onPointerDown(event) {
-      if (frozen || event.button !== 0) return;
-      panning = { x: event.clientX, y: event.clientY, vx: view.x, vy: view.y };
-      svg.setPointerCapture?.(event.pointerId);
-      svg.style.cursor = "grabbing";
-    }
-    function onPointerMove(event) {
-      if (!panning) return;
-      const rect = svg.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      view.x = panning.vx - ((event.clientX - panning.x) / rect.width) * view.w;
-      view.y = panning.vy - ((event.clientY - panning.y) / rect.height) * view.h;
-      apply();
-    }
-    function onPointerUp(event) {
-      panning = null;
-      svg.releasePointerCapture?.(event.pointerId);
-      svg.style.cursor = frozen ? "" : "grab";
-    }
-
-    svg.addEventListener("wheel", onWheel, { passive: false });
-    svg.addEventListener("pointerdown", onPointerDown);
-    svg.addEventListener("pointermove", onPointerMove);
-    svg.addEventListener("pointerup", onPointerUp);
-    svg.addEventListener("pointercancel", onPointerUp);
-
-    function setFrozen(next) {
-      frozen = !!next;
-      panning = null;
-      svg.style.cursor = frozen ? "" : "grab";
-      svg.style.touchAction = frozen ? "" : "none";
-    }
-    setFrozen(false);
-
-    return { reset, setFrozen };
-  }
-
-  function safeBBox(svg) {
-    try {
-      return svg.getBBox();
-    } catch {
-      return null;
-    }
-  }
-
-  function readViewBox(svg) {
-    const raw = svg.getAttribute?.("viewBox");
-    if (!raw) return null;
-    const parts = raw
-      .trim()
-      .split(/[\s,]+/)
-      .map(Number);
-    if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
-    return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
-  }
-
-  // Inline whiteboard embedding. Each rendered diagram inside a `.mermaid`
-  // container is replaced, at view time only, by a nested sandboxed iframe
-  // hosting the Excalidraw whiteboard frame - the artifact file keeps its
-  // Mermaid source and still renders plain diagrams when opened standalone or
-  // exported. The index of the container among `.mermaid` elements in document
-  // order is the diagram's identity; the server recovers the matching source
-  // from the artifact file. This SDK owns their lifecycle during fullscreen
-  // transitions.
-  const whiteboardEmbeds = new Map(); // container -> { iframe, index }
-
-  function mermaidContainerIndex(container) {
-    return [...document.querySelectorAll(".mermaid")].indexOf(container);
-  }
-
-  function whiteboardEmbedHeightPx(svgRect) {
-    const headerPx = 96;
-    const min = 360;
-    const max = Math.max(min, Math.round((window.innerHeight || 800) * 0.8));
-    return Math.max(min, Math.min(Math.round(svgRect.height) + headerPx, max));
-  }
-
-  function embedWhiteboard(svg) {
-    const container = svg.closest(".mermaid");
-    if (!container) return;
-    const existing = whiteboardEmbeds.get(container);
-    if (existing && existing.iframe.isConnected) {
-      existing.index = mermaidContainerIndex(container);
-      return;
-    }
-    const index = mermaidContainerIndex(container);
-    if (index < 0) return;
-    const rect = svg.getBoundingClientRect();
-    // Mermaid renders asynchronously; a zero-ish rect means this svg has not
-    // been laid out yet. Skip it and retry shortly - layout completion does
-    // not necessarily mutate the DOM again, so the observer alone is not a
-    // guaranteed wake-up.
-    if (rect.height < 40) {
-      window.setTimeout(scheduleMermaidEnhance, 150);
-      return;
-    }
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute("data-lavish-ui", "whiteboard-inline");
-    iframe.setAttribute("title", "Excalidraw whiteboard");
-    // Stricter than (and independent of) this artifact frame's own sandbox.
-    iframe.setAttribute("sandbox", "allow-scripts allow-popups");
-    iframe.src = whiteboardFrameSrc({ index, diagramId: svg.id || "" });
-    iframe.style.cssText =
-      `display:block;width:100%;height:${whiteboardEmbedHeightPx(rect)}px;border:1px solid rgba(128,128,128,.35);` +
-      "border-radius:12px;background:transparent";
-    // The design snippet re-renders Mermaid inside the container on theme
-    // changes, so the frame lives as a sibling: re-renders stay harmless
-    // inside the hidden container instead of destroying the editor.
-    container.style.display = "none";
-    container.insertAdjacentElement("afterend", iframe);
-    whiteboardEmbeds.set(container, { iframe, index, diagramId: svg.id || "" });
-  }
-
-  function whiteboardEmbedEntries() {
-    return [...whiteboardEmbeds.values()].filter((entry) => entry.iframe.isConnected);
-  }
-
-  function whiteboardEntryByIndex(index) {
-    return whiteboardEmbedEntries().find((entry) => entry.index === Number(index)) || null;
-  }
-
-  function whiteboardFrameSrc(entry) {
-    const params = new URLSearchParams({
-      diagramIndex: String(entry.index),
-      diagramId: String(entry.diagramId || ""),
-      // The frame's channel token is bound to this session, so the frame page
-      // must be told which session it belongs to.
-      key: String(sessionKey || ""),
-    });
-    return `/whiteboard-frame?${params}`;
+    return el;
   }
 
   window.addEventListener("message", (event) => {
     if (event.source !== parent) return;
     const msg = event.data || {};
-    // While the chrome overlay edits a diagram fullscreen, its inline frame is
-    // parked on about:blank so two editors never autosave the same sidecar;
-    // resume reboots the frame, which re-inits from the latest saved scene.
-    if (msg.type === "lavish:suspendWhiteboard") {
-      const target = whiteboardEntryByIndex(msg.diagramIndex);
-      if (target) target.iframe.src = "about:blank";
-    }
-    if (msg.type === "lavish:resumeWhiteboard") {
-      const target = whiteboardEntryByIndex(msg.diagramIndex);
-      if (target) target.iframe.src = whiteboardFrameSrc(target);
-    }
     if (msg.type === "lavish:requestLayoutDiagnostics") scheduleLayoutAudit(true);
   });
-
-  function enhanceMermaid() {
-    for (const svg of findMermaidSvgs()) {
-      embedWhiteboard(svg);
-      if (mermaidViewports.has(svg)) continue;
-      const viewport = createViewport(svg);
-      if (viewport) {
-        viewport.setFrozen(annotationMode);
-        mermaidViewports.set(svg, viewport);
-      }
-    }
-  }
-
-  let mermaidEnhanceScheduled = false;
-  function scheduleMermaidEnhance() {
-    if (mermaidEnhanceScheduled) return;
-    mermaidEnhanceScheduled = true;
-    const run = () => {
-      mermaidEnhanceScheduled = false;
-      enhanceMermaid();
-    };
-    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(run);
-    else window.setTimeout(run, 50);
-  }
-
-  function setMermaidFrozen(frozen) {
-    for (const svg of findMermaidSvgs()) {
-      mermaidViewports.get(svg)?.setFrozen(frozen);
-    }
-  }
 
   function closestElement(node) {
     if (!node) return document.body;
@@ -1200,10 +952,6 @@ export function createArtifactSdk(
     }
     if (!annotationMode && style) style.remove();
     if (!annotationMode) closeCard();
-
-    // Freeze Mermaid pan/zoom while annotating so nodes sit at stable screen
-    // positions and a click resolves cleanly to one node instead of panning.
-    setMermaidFrozen(annotationMode);
   }
 
   function queuePrompt(prompt, options = {}) {
@@ -1437,7 +1185,7 @@ export function createArtifactSdk(
   }
 
   function isDiagramLayoutElement(el) {
-    return Boolean(el?.closest?.(".mermaid,svg,[data-lavish-ui]"));
+    return Boolean(el?.closest?.("svg,[data-lavish-ui]"));
   }
 
   function hasVisualMaskAncestor(el) {
@@ -2163,7 +1911,7 @@ export function createArtifactSdk(
     const target = safeQuerySelector(card.selector);
     if (!target) {
       // The load event says the document parsed, not that it finished rendering: a section this
-      // page builds in script, or a Mermaid diagram, arrives later. Ask again once it has had
+      // page builds in script arrives later. Ask again once it has had
       // time to appear, and restore the card if it did. Only then is the anchor's absence an
       // answer worth reporting - the chrome cannot see into this document, and a draft it is
       // never told about is retried against every later load.
@@ -2260,19 +2008,11 @@ export function createArtifactSdk(
     const rect = options.range ? options.range.getBoundingClientRect() : anchor.getBoundingClientRect();
     const card = document.createElement("div");
     card.className = "lavish-annotation-card";
-    const nodeLabel = c.tag === "mermaid-node" ? c.target?.label || c.text || "" : "";
-    const heading =
-      c.tag === "text"
-        ? "Annotate text"
-        : c.tag === "mermaid-node"
-          ? "Annotate node" + (nodeLabel ? ": " + escapeAnnotationText(nodeLabel) : "")
-          : "Annotate &lt;" + c.tag + "&gt;";
+    const heading = c.tag === "text" ? "Annotate text" : "Annotate &lt;" + c.tag + "&gt;";
     const placeholder =
       c.tag === "text"
         ? "Tell the agent what to change about this text..."
-        : c.tag === "mermaid-node"
-          ? "Tell the agent what to change about this diagram node..."
-          : "Tell the agent what to change about this element...";
+        : "Tell the agent what to change about this element...";
     const sendNowHint = isApplePlatform() ? "⌘" : "Ctrl";
     card.innerHTML =
       '<div class="lavish-heading">' +
@@ -2614,11 +2354,9 @@ export function createArtifactSdk(
         ignoreNextClick = false;
         return;
       }
-      // The clicked element's own selector, plus its diagram node's, so any click inside a node
-      // finds the node's note again.
+      // A click on an element that already carries a queued note reopens that note.
       const clicked = queuedAnchorSelectors.size ? context(event.target) : null;
-      const node = clicked?.target?.type === "mermaid-node" ? clicked.target.selector : "";
-      const selector = [clicked?.selector, node].find((candidate) => candidate && queuedAnchorSelectors.has(candidate));
+      const selector = clicked?.selector && queuedAnchorSelectors.has(clicked.selector) ? clicked.selector : "";
       if (selector) {
         closeCard();
         postArtifactMessage("lavish:editQueuedAnchor", { selector });
@@ -2637,15 +2375,6 @@ export function createArtifactSdk(
   } else {
     startLayoutAudit();
   }
-
-  // Mermaid renders asynchronously (and can re-render on theme/resize), so we
-  // enhance on load, again shortly after, and whenever the DOM adds new SVGs.
-  enhanceMermaid();
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", enhanceMermaid, { once: true });
-  }
-  const mermaidObserver = new MutationObserver(() => scheduleMermaidEnhance());
-  mermaidObserver.observe(document.documentElement, { childList: true, subtree: true });
 
   // Report the agent-declared revision registry so the chrome can offer its
   // legend. Read-only: the SDK never marks up the page for it, because a

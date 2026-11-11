@@ -393,18 +393,11 @@ function withSelector(anchor, selector) {
 }
 
 // The anchor names what a note was attached to, in the annotation card's own words: the card
-// said "Annotate <h2>", "Annotate text", "Annotate cell: ...", or "Annotate node: ...", so the
-// transcript says `<h2>`, `text`, `cell`, `node`. A cell without a provable row or column label
-// falls back to the element form rather than inventing a name, the rule the card follows too.
+// said "Annotate <h2>" or "Annotate text", so the transcript says `<h2>` or `text`.
 function promptAnchor(prompt, kind) {
   if (kind === "message") return null;
   const target = prompt.target && typeof prompt.target === "object" ? prompt.target : null;
   const selector = bound(prompt.selector, SELECTOR_MAX);
-  if (kind === "whiteboard") {
-    const index = Number(target?.diagramIndex);
-    const excerpt = Number.isInteger(index) && index >= 0 ? "Diagram " + (index + 1) : prompt.text;
-    return { kind: "whiteboard", label: "whiteboard", excerpt: bound(excerpt, EXCERPT_MAX) };
-  }
   if (kind === "layout-warnings") {
     const count = Array.isArray(target?.warnings) ? target.warnings.length : 0;
     const excerpt = count > 0 ? count + (count === 1 ? " issue" : " issues") : prompt.text;
@@ -414,12 +407,6 @@ function promptAnchor(prompt, kind) {
   if (type === "text-range") {
     return withSelector(
       { kind: "text", label: "text", excerpt: bound(target.text || prompt.text, EXCERPT_MAX) },
-      selector,
-    );
-  }
-  if (type === "mermaid-node") {
-    return withSelector(
-      { kind: "node", label: "node", excerpt: bound(target.label || prompt.text, EXCERPT_MAX) },
       selector,
     );
   }
@@ -449,14 +436,7 @@ export function chatEntryForPrompt(prompt, at) {
         )
     : [];
   const tag = String(prompt.tag || "");
-  const kind =
-    tag === "message"
-      ? "message"
-      : tag === "whiteboard"
-        ? "whiteboard"
-        : tag === "layout-warnings"
-          ? "layout-warnings"
-          : "annotation";
+  const kind = tag === "message" ? "message" : tag === "layout-warnings" ? "layout-warnings" : "annotation";
   const promptId = normalizePromptId(prompt.prompt_id);
   const anchor = promptAnchor(prompt, kind);
   if (!text && attachments.length === 0 && !promptId && !anchor) return null;

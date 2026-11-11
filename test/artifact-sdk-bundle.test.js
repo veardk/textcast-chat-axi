@@ -536,8 +536,7 @@ test("the served SDK bundle reports a draft whose anchor the artifact no longer 
   assert.equal(report.artifact_load_token, "load-token");
 });
 
-// A section this page builds in script, or a Mermaid diagram, is not in the document when it
-// loads. Reporting that as a missing anchor is how a live draft gets thrown away.
+// A section this page builds in script is not in the document when it loads. Reporting that as a missing anchor is how a live draft gets thrown away.
 test("the served SDK bundle restores a draft whose anchor arrives after the load", () => {
   const sdk = bootSdk();
   let late = null;
@@ -667,41 +666,6 @@ test("the chrome can hand an element click back for a fresh card", () => {
   sdk.sendChromeMessage({ type: "lavish:annotateElement", selector: "body > p" });
 
   assert.match(sdk.card().innerHTML, /Annotate &lt;p&gt;/);
-});
-
-// A Mermaid node as the SDK sees one: a `<g class="node">` inside an SVG Mermaid rendered.
-function buildMermaidNode(sdk) {
-  const svg = appendTo(sdk.body, createElement("svg"));
-  svg.id = "mermaid-1";
-  const node = appendTo(svg, createElement("g"));
-  node.id = "flowchart-A-0";
-  const matchesTag = node.matches;
-  node.matches = (selectorList) =>
-    String(selectorList)
-      .split(",")
-      .some((part) => part.trim() === "g.node") || matchesTag(selectorList);
-  const label = appendTo(node, cell("span", "Start"));
-  const shape = appendTo(node, createElement("rect"));
-  return { label, shape };
-}
-
-test("a note queued from a diagram node's label opens again from the node's shape", () => {
-  const sdk = bootSdk();
-  const { label, shape } = buildMermaidNode(sdk);
-  sdk.click(label);
-  const queued = sdk.queue("Rename this step");
-  sdk.sendChromeMessage({
-    type: "lavish:queuedAnchors",
-    selectors: [queued.prompt.selector, queued.prompt.target.selector],
-  });
-  const cardsBefore = sdk.cards().length;
-
-  sdk.click(shape);
-
-  assert.equal(sdk.cards().length, cardsBefore);
-  const message = sdk.posted.at(-1);
-  assert.equal(message.type, "lavish:editQueuedAnchor");
-  assert.equal(message.selector, queued.prompt.target.selector);
 });
 
 // In annotate mode a plain click on a link annotates it, so Ctrl-click (Cmd-click on macOS) is the

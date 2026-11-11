@@ -6,8 +6,7 @@ import path from "node:path";
 // `state.json` on purpose: `SessionStore` rewrites the whole state file on every
 // operation, so multi-MB image bytes would turn each unrelated store write into a
 // large rewrite (and blow past the 2 MB JSON cap on the prompts route). Bytes live
-// as one file per (session key, content hash) under `<state-dir>/attachments/`,
-// next to the whiteboard sidecars.
+// as one file per (session key, content hash) under `<state-dir>/attachments/`.
 //
 // The id is `<sha256-of-bytes>.<ext>` and the on-disk file is the whole identity:
 // the client never dictates the path or id, and every field the agent receives is

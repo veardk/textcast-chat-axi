@@ -26,9 +26,8 @@ import { analyzeSelfPaint, SELF_PAINT_WARNING } from "./self-paint.js";
 import { serve } from "./server.js";
 import { isHtmlPath } from "./artifact-path.js";
 import { canonicalFile, sessionKey, SessionStore } from "./session-store.js";
-import { excalidrawLibrariesDir, loadExcalidrawLibraries } from "./whiteboard-library-store.js";
 
-const COMMANDS = new Set(["open", "poll", "reply", "end", "stop", "server", "libraries"]);
+const COMMANDS = new Set(["open", "poll", "reply", "end", "stop", "server"]);
 // SDK-reserved built-ins (e.g. `update`) must reach runAxiCli untouched; otherwise
 // the bare-arg normalization below would rewrite them into the hidden `open` command.
 const RESERVED = new Set(RESERVED_COMMANDS);
@@ -165,7 +164,6 @@ export async function run(argv) {
       end: endCommand,
       stop: stopCommand,
       server: serverCommand,
-      libraries: librariesCommand,
     },
     getCommandHelp: (command) => getCommandHelp(command, { agent }),
   });
@@ -215,7 +213,6 @@ export function createHomeOutput({ bin, sessions, includeSessions = true, agent 
       "Lavish serves the html file through a local express.js server. If your html needs to reference other filesystem assets such as images, CSS, fonts, and local scripts, copy them into the same directory as the HTML file, then reference them with relative paths from that directory. Never prepend `/` to those asset paths - root paths won't work",
       `Run \`textcast-chat-axi poll <html-file>\` to wait for user feedback. It long-polls and stays silent until the user sends feedback, ends the session, or leaves every review window disconnected past the reconnect grace period, so leave it running - never kill it. Detected layout issues never return this poll: the browser files them in the user's Layout issues inbox in the Lavish top bar, and they arrive as an ordinary tag "layout-warnings" prompt only when the user selects them and queues the fixes. Never edit the artifact to chase a layout issue the user has not queued. The only exception is a fatal artifact_failures response, which means the review surface itself could not be used. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}`,
       'Run `textcast-chat-axi reply <html-file> --agent-reply "<message>"` to show a concise reply and exit once Lavish Editor accepts it, when you are handing a result back and are not about to long-poll. The board stops showing Working only after this command exits 0. Use `textcast-chat-axi poll <html-file> --agent-reply "<message>"` when that reply should be followed by another wait for feedback. A longer reply uses `--agent-reply-file <path>` (`-` reads stdin) on either command. Run `textcast-chat-axi reply --help` for the receipt contract',
-      'Mermaid is the whiteboard opt-in, not the diagram default: only when the user asks for an editable whiteboard, author that diagram as Mermaid in a `.mermaid` container. Rendered Mermaid diagrams there become embedded, editable Excalidraw whiteboards in the browser (click a diagram to unlock editing; a Fullscreen action opens it over the whole viewport) - flowchart, sequence, class, ER, and state diagrams convert to editable shapes; other types embed as an image to draw on. Scenes autosave locally; an unmodified autosave silently re-converts when a reload changes the Mermaid source. If the reviewer edited the scene, they choose to re-convert and discard saved edits or keep editing the saved scene. Standalone and exported copies still render plain Mermaid. Queue feedback adds a prompt to the Conversation panel; when the user sends it, poll returns a tag "whiteboard" prompt carrying a bounded edit summary plus local scenePath (.excalidraw JSON) and previewPath (PNG) files - read the summary first, open the files only when needed, then apply the edits by updating the Mermaid source in the artifact (never try to write the scene back)',
       "Run `textcast-chat-axi end <html-file>` to end a session as the agent - ending it this way still allows a plain reopen later. When the user ends it from the browser instead, a later `textcast-chat-axi <html-file>` refuses to reopen it without `--reopen`",
       "A request under a hostname Lavish does not answer to (a reverse-proxy name, a LAN IP) gets 403 `forbidden host`. Set `LAVISH_AXI_ALLOWED_HOSTS` in the environment that starts the server, running `textcast-chat-axi stop` first if one is already up. See README's Allowed hosts section for the rules",
       "Run `textcast-chat-axi stop` to shut down the background server (it also self-stops when idle or after the last session ends with nothing connected)",
@@ -519,9 +516,6 @@ export function createPollOutput({ file, response, agent = "generic" }) {
 
 function createFeedbackNextStep(file, artifactFailures, sessionEnded, endedBy, prompts = [], agent = "generic") {
   const count = artifactFailures.length;
-  const whiteboardNote = prompts.some((prompt) => prompt && prompt.tag === "whiteboard")
-    ? `This feedback includes whiteboard edits (tag "whiteboard"): read the edit summary in the prompt text first, and only when it is not enough, open the target's scenePath (.excalidraw scene JSON) or previewPath (PNG) local files for detail. The artifact's Mermaid source stays authoritative - apply the edits by updating the Mermaid text in ${file} (Lavish live-reloads it); never try to write the .excalidraw scene back. `
-    : "";
   const layoutNote = prompts.some((prompt) => prompt && prompt.tag === "layout-warnings")
     ? `This feedback includes layout issues the user selected from the Lavish Layout issues inbox (tag "layout-warnings"): the target lists the exact warning ids and targets. Apply every listed fix in one pass before saving so the user's review refreshes once. Queueing is a repair request, not a resolution - Lavish only marks a warning resolved after a newer artifact load and a complete check at the same viewport no longer detects it. `
     : "";
@@ -540,13 +534,13 @@ function createFeedbackNextStep(file, artifactFailures, sessionEnded, endedBy, p
         count > 0
           ? ""
           : ` Only run \`textcast-chat-axi ${file} --reopen\` if the user explicitly asks for further review or something genuinely important needs their visual attention.`;
-      return `${failureNote}${layoutNote}${whiteboardNote}${attachmentNote}This was the last feedback before the user ended the session. Stop polling ${file} and do not reopen it - deliver any remaining updates directly in this conversation instead.${reopenNote}`;
+      return `${failureNote}${layoutNote}${attachmentNote}This was the last feedback before the user ended the session. Stop polling ${file} and do not reopen it - deliver any remaining updates directly in this conversation instead.${reopenNote}`;
     }
-    return `${failureNote}${layoutNote}${whiteboardNote}${attachmentNote}This was the last feedback before the Lavish Editor session ended. Stop polling ${file}. Deliver any remaining updates directly in this conversation, or run \`textcast-chat-axi ${file}\` to open a fresh session if the user needs further visual review.`;
+    return `${failureNote}${layoutNote}${attachmentNote}This was the last feedback before the Lavish Editor session ended. Stop polling ${file}. Deliver any remaining updates directly in this conversation, or run \`textcast-chat-axi ${file}\` to open a fresh session if the user needs further visual review.`;
   }
   const prefix =
     count > 0 ? artifactFailuresPrefix(file, artifactFailures) : `Apply the requested changes to ${file}. `;
-  return `${prefix}${layoutNote}${whiteboardNote}${attachmentNote}Do not respond to the user just yet. If you are continuing to wait for feedback, run \`textcast-chat-axi poll ${file} --agent-reply "<message for the user>"\` without --timeout-ms to reply and keep polling. If instead you are handing back a result without starting another long-poll, run \`textcast-chat-axi reply ${file} --agent-reply "<message for the user>"\` to post it and receive an acceptance receipt. ${POLL_AGENT_REPLY_RULE} ${POLL_AGENT_REPLY_NEXT_POINTER} The poll waits silently until the user sends more feedback, ends the session, or leaves every review window disconnected past the reconnect grace period - never kill it. ${pollExecutionGuidance({ agent })}`;
+  return `${prefix}${layoutNote}${attachmentNote}Do not respond to the user just yet. If you are continuing to wait for feedback, run \`textcast-chat-axi poll ${file} --agent-reply "<message for the user>"\` without --timeout-ms to reply and keep polling. If instead you are handing back a result without starting another long-poll, run \`textcast-chat-axi reply ${file} --agent-reply "<message for the user>"\` to post it and receive an acceptance receipt. ${POLL_AGENT_REPLY_RULE} ${POLL_AGENT_REPLY_NEXT_POINTER} The poll waits silently until the user sends more feedback, ends the session, or leaves every review window disconnected past the reconnect grace period - never kill it. ${pollExecutionGuidance({ agent })}`;
 }
 
 // The narrow fatal path. Ordinary layout findings never reach the poll: they wait in the user's
@@ -619,56 +613,6 @@ export async function shutdownServerOnPort(
     freed = await portFreeWaiter(baseUrl, 3000);
   }
   return { server: { status: freed ? "stopped" : "stopping", port } };
-}
-
-const LIBRARY_ITEM_LIST_LIMIT = 50;
-
-async function librariesCommand(args) {
-  const dir = excalidrawLibrariesDir(path.dirname(stateFile()));
-  const { libraries, skipped } = await loadExcalidrawLibraries(dir);
-  return createLibrariesOutput({
-    dir: collapseHomeDirectory(dir, os.homedir()),
-    libraries,
-    skipped,
-    search: flagValue(args, "--search") || "",
-    library: flagValue(args, "--library") || "",
-  });
-}
-
-/**
- * @param {{ dir: string, libraries: { id: string, items: { ref: string, name: string }[] }[], skipped: { file: string, reason: string }[], search?: string, library?: string }} options
- */
-export function createLibrariesOutput({ dir, libraries, skipped, search = "", library = "" }) {
-  /** @type {Record<string, any>} */
-  const output = {
-    dir,
-    libraries: libraries.map((entry) => ({ id: entry.id, items: entry.items.length })),
-  };
-  if (skipped.length > 0) {
-    output.skipped = skipped.map((entry) => ({ file: path.basename(entry.file), reason: entry.reason }));
-  }
-  if (libraries.length === 0) {
-    output.help = [
-      `Copy Excalidraw library files (.excalidrawlib, for example from https://libraries.excalidraw.com) into ${dir}; every whiteboard's library panel then lists their items`,
-    ];
-    return output;
-  }
-  const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length > 0 || library) {
-    const matches = libraries
-      .filter((entry) => !library || entry.id === library.toLowerCase())
-      .flatMap((entry) => entry.items)
-      .filter((item) => terms.every((term) => item.ref.toLowerCase().includes(term)));
-    output.items = matches.slice(0, LIBRARY_ITEM_LIST_LIMIT).map((item) => ({ ref: item.ref }));
-    if (matches.length > LIBRARY_ITEM_LIST_LIMIT) output.more_items = matches.length - LIBRARY_ITEM_LIST_LIMIT;
-  }
-  output.help = [
-    output.more_items
-      ? "Narrow the list with `textcast-chat-axi libraries --search <text>`"
-      : "Run `textcast-chat-axi libraries --search <text>` or `--library <id>` to list item refs",
-    "To show an item as a node icon in a whiteboard flowchart, see `whiteboard_tooling.library_icons` in `textcast-chat-axi design`",
-  ];
-  return output;
 }
 
 async function serverCommand(args) {
@@ -1583,7 +1527,7 @@ export function getCommandHelp(command, { agent = "generic" } = {}) {
 }
 
 function createTopLevelHelp({ agent = "generic" } = {}) {
-  return `textcast-chat-axi - Lavish Editor AXI\n\nUsage:\n  textcast-chat-axi\n  textcast-chat-axi <html-file> [--no-open] [--no-gate] [--reopen]\n  textcast-chat-axi poll <html-file> [--owner <label>] [--takeover] [--agent-reply "..."] [--agent-reply-file <path>]\n  textcast-chat-axi reply <html-file> (--agent-reply "..." | --agent-reply-file <path>)\n  textcast-chat-axi end <html-file>\n  textcast-chat-axi stop\n  textcast-chat-axi libraries [--search <text>] [--library <id>]\n\nNote: poll long-polls until the user sends feedback, ends the session, or leaves every review window disconnected past the reconnect grace period, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the Lavish top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE} Use \`textcast-chat-axi reply\` when handing a result back without waiting for more feedback: it exits 0 only after the server accepts the reply, so the board stops showing Working. \`poll --agent-reply\` posts a reply and then keeps waiting.\n\n`;
+  return `textcast-chat-axi - Lavish Editor AXI\n\nUsage:\n  textcast-chat-axi\n  textcast-chat-axi <html-file> [--no-open] [--no-gate] [--reopen]\n  textcast-chat-axi poll <html-file> [--owner <label>] [--takeover] [--agent-reply "..."] [--agent-reply-file <path>]\n  textcast-chat-axi reply <html-file> (--agent-reply "..." | --agent-reply-file <path>)\n  textcast-chat-axi end <html-file>\n  textcast-chat-axi stop\n\nNote: poll long-polls until the user sends feedback, ends the session, or leaves every review window disconnected past the reconnect grace period, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the Lavish top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE} Use \`textcast-chat-axi reply\` when handing a result back without waiting for more feedback: it exits 0 only after the server accepts the reply, so the board stops showing Working. \`poll --agent-reply\` posts a reply and then keeps waiting.\n\n`;
 }
 
 function createCommandHelp({ agent = "generic" } = {}) {
@@ -1593,7 +1537,6 @@ function createCommandHelp({ agent = "generic" } = {}) {
     reply: `Usage: textcast-chat-axi reply <html-file> (--agent-reply "..." | --agent-reply-file <path>)\n\nPost an agent reply to the open Lavish Editor session and exit once the server confirms it was accepted. Exit 0 only when the server answers that the reply was sent, which is when the board stops showing Working. If that answer does not arrive within ${AGENT_REPLY_RECEIPT_TIMEOUT_MS / 1000} seconds, exit non-zero with a timeout error. Use this when you are handing a result back and are not about to wait for more feedback. A reply also marks every note the poll delivered to you as Done in the reviewer's panel, so reply once you have handled them.\n\nUse \`textcast-chat-axi poll <html-file> --agent-reply "..."\` instead when the reply should be followed by a long-poll. That command posts the reply and then keeps waiting, so it does not exit when the reply is accepted.\n\nPass exactly one of --agent-reply or --agent-reply-file. ${POLL_AGENT_REPLY_RULE} ${POLL_AGENT_REPLY_HELP_POINTER} Do not combine the two flags. An empty reply is refused.\n\nExamples:\n  textcast-chat-axi reply report.html --agent-reply "Renamed the payment step."\n  textcast-chat-axi reply report.html --agent-reply-file reply.md\n  textcast-chat-axi reply report.html --agent-reply-file -\n`,
     end: `Usage: textcast-chat-axi end <html-file>\n\nEnd a Lavish Editor session as the agent. A session ended this way still reopens normally on the next \`textcast-chat-axi <html-file>\`, unlike a user ending it from the browser, which requires --reopen.\n`,
     stop: `Usage: textcast-chat-axi stop [--port <port>]\n\nShut down the background Lavish Editor server. The server also stops itself when no browser or poll has been connected for a while (LAVISH_AXI_IDLE_TIMEOUT_MS, default 30m) and immediately when the last session ends with nothing connected.\n`,
-    libraries: `Usage: textcast-chat-axi libraries [--search <text>] [--library <id>]\n\nList the Excalidraw libraries (.excalidrawlib files) the user copied into ~/.textcast-chat-axi/excalidraw-libraries, or LAVISH_AXI_STATE_DIR/excalidraw-libraries when set. Their items appear in every whiteboard's library panel. --search lists item refs whose ref contains every search word; --library lists one library's item refs. Lavish only reads this directory and never downloads libraries.\n\nExamples:\n  textcast-chat-axi libraries\n  textcast-chat-axi libraries --search lambda\n  textcast-chat-axi libraries --library aws-architecture-icons\n`,
     server: `Usage: textcast-chat-axi server [--port 4397] [--verbose] [--also-listen <host>...]\n\nRun the local Lavish Editor server. Pass --verbose (or set LAVISH_AXI_DEBUG=1) to log session and watcher events to stderr. Detached server output is appended to ~/.textcast-chat-axi/server.log, or LAVISH_AXI_STATE_DIR/server.log when set, for startup and crash diagnostics.\n\nBy default Lavish binds to 127.0.0.1 and, when Tailscale is running, this machine's Tailscale IPv4. Any explicit LAVISH_AXI_HOST overrides automatic Tailscale binding; wildcard values such as 0.0.0.0 or :: are restricted to loopback. An explicit non-wildcard LAVISH_AXI_HOST sets the bind address, and the server also listens on 127.0.0.1 so every local CLI finds it; --also-listen adds further concrete addresses (the CLI passes it when it replaces a server, to keep every address the old one served). An address that cannot be bound is retried in the background and reported as network_warning. Binding beyond loopback exposes an unauthenticated server that can read and serve arbitrary local files to anything that can reach it, so only do so on a trusted network. With automatic binding enabled, a successfully bound Tailscale listener uses its MagicDNS name in generated session links; otherwise LAVISH_AXI_LINK_HOST can set the link hostname. See README's Allowed hosts section for Host allowlisting and LAVISH_AXI_ALLOWED_HOSTS. LAVISH_AXI_NO_OPEN=1 (or --no-open) suppresses the local browser launch.\n`,
   };
 }

@@ -1,12 +1,9 @@
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { createServer, get as httpGet } from "node:http";
 import { isIP } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import chokidar from "chokidar";
 import express from "express";
@@ -36,17 +33,6 @@ import {
   serializeLayoutWarnings,
 } from "./layout-warnings.js";
 import * as artifactRevisions from "./artifact-revisions.js";
-import * as mermaidNode from "./mermaid-node.js";
-import { extractMermaidSources, whiteboardSourceHash } from "./mermaid-source.js";
-import { createExcalidrawLibraryCache, excalidrawLibrariesDir } from "./whiteboard-library-store.js";
-import { parseLibraryIconDirectives } from "./whiteboard-libraries.js";
-import {
-  isValidDiagramIndex,
-  isValidWhiteboardKey,
-  loadWhiteboard,
-  saveWhiteboard,
-  writeWhiteboardFeedbackFiles,
-} from "./whiteboard-store.js";
 import { serializeChat, serializeChatAckIds, serializeChatSync } from "./chat-messages.js";
 import { formatServerLogLine, serverStdioIsTimestamped } from "./server-log.js";
 import { injectLavishSdk } from "./html-transform.js";
@@ -82,7 +68,6 @@ const chromeClientUrl = new URL("./chrome-client.js", import.meta.url);
 const chromeCssUrl = new URL("./chrome.css", import.meta.url);
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60_000;
-const WHITEBOARD_CHANNEL_TOKEN_TTL_MS = 5 * 60_000;
 const NETWORK_RECONCILE_CACHE_MS = 1_000;
 // Every concrete address gets this retry budget, not just the Tailscale one: an interface that is
 // still coming up fails the same way whichever host names it, and the single-pinned-host case has
@@ -120,23 +105,6 @@ const AGENT_LISTENER_LABEL = "agent-listener";
 // window: the user asked for one group of fixes and should get one artifact refresh for it.
 export const RELOAD_DEBOUNCE_MS = 100;
 export const BATCH_RELOAD_DEBOUNCE_MS = 900;
-
-// The whiteboard frame bundle (Excalidraw + Mermaid converter + React) is
-// produced by `scripts/build.js` into dist/whiteboard. Packaged runs find it
-// next to the served bundle; source runs (node bin/textcast-chat-axi.js) fall back to
-// the repo's dist output, so `pnpm run build` must have run at least once.
-export function defaultWhiteboardAssetsDir() {
-  const packaged = fileURLToPath(new URL("./whiteboard", import.meta.url));
-  if (existsSync(packaged)) return packaged;
-  return fileURLToPath(new URL("../dist/whiteboard", import.meta.url));
-}
-
-// Whiteboard scene saves carry full Excalidraw scenes (and, at queue time, a
-// PNG preview data URL), which outgrow the default 2 MB JSON cap. Only the
-// whiteboard write routes get the larger limit.
-export function isWhiteboardWriteApiPath(pathname) {
-  return /^\/api\/[0-9a-f]{16}\/whiteboard\/\d{1,3}(\/feedback-files)?$/.test(String(pathname || ""));
-}
 
 // The attachment upload carries raw image bytes, not JSON, so it bypasses both
 // JSON body parsers and is read straight from the request stream by the route.
@@ -198,40 +166,6 @@ export function readAttachmentUploadBody(req, maxBytes) {
   });
 }
 
-// The signed payload carries the session key, so a token is a capability for
-// exactly one session. Without that binding any token - including one minted by
-// a request that named no session - authenticated an arbitrary session's
-// whiteboard channel. The wire format stays `${issuedAt}.${nonce}.${signature}`;
-// the key is signed over, never transmitted in the token.
-function whiteboardChannelPayload(issuedAt, nonce, sessionKey) {
-  return `${issuedAt}.${nonce}.${sessionKey}`;
-}
-
-export function createWhiteboardChannelToken(secret, sessionKey, now = Date.now()) {
-  const nonce = crypto.randomBytes(24).toString("base64url");
-  const signature = crypto
-    .createHmac("sha256", secret)
-    .update(whiteboardChannelPayload(now, nonce, String(sessionKey || "")))
-    .digest("base64url");
-  return `${now}.${nonce}.${signature}`;
-}
-
-export function isValidWhiteboardChannelToken(token, secret, sessionKey, now = Date.now()) {
-  if (!isValidWhiteboardKey(sessionKey)) return false;
-  const [issuedAtText, nonce, signature, extra] = String(token || "").split(".");
-  if (extra !== undefined || !/^\d{13}$/.test(issuedAtText) || !/^[A-Za-z0-9_-]{32}$/.test(nonce)) return false;
-  const issuedAt = Number(issuedAtText);
-  if (!Number.isSafeInteger(issuedAt) || issuedAt > now || now - issuedAt > WHITEBOARD_CHANNEL_TOKEN_TTL_MS)
-    return false;
-  const expected = crypto
-    .createHmac("sha256", secret)
-    .update(whiteboardChannelPayload(issuedAtText, nonce, String(sessionKey)))
-    .digest("base64url");
-  const actualBuffer = Buffer.from(signature || "", "utf8");
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
-}
-
 // A detached server should not live forever. When no browser chrome or agent poll
 // are connected for this long, the server shuts itself down so it stops dangling. The next
 // `textcast-chat-axi <file>` invocation re-spawns a fresh server and adopts resumable sessions from
@@ -283,7 +217,6 @@ export async function serve({
   lookupHost,
   extraListenHosts = [],
   bindRecoveryDelaysMs = BIND_RECOVERY_DELAYS_MS,
-  whiteboardAssetsDir = defaultWhiteboardAssetsDir(),
 } = {}) {
   // Keep the transport dependency off fast metadata paths such as `--version`.
   const { WebSocket, WebSocketServer } = await import("ws");
@@ -331,7 +264,6 @@ export async function serve({
   const liveEventClients = new Map();
   const browserDisconnectTimers = new Map();
   const browserDisconnectPending = new Set();
-  const whiteboardChannelSecret = crypto.randomBytes(32);
   // Sessions with at least one warning the user queued that has not been re-checked yet.
   const outstandingRepairBatches = new Set();
   const diagnosticViewportClasses = resolveDiagnosticViewportClasses();
@@ -603,13 +535,8 @@ export async function serve({
     // a refused restore included, which still takes the stamps off.
     await publishChatSync(key);
   }
-  // Whiteboard sidecar files live next to state.json, keyed by session + diagram.
-  const whiteboardStateRoot = path.dirname(stateFile);
-  const loadExcalidrawLibraries = createExcalidrawLibraryCache();
-  const libraryDir = excalidrawLibrariesDir(whiteboardStateRoot);
-
-  // DNS-rebinding guard. isSameOriginRequest (used on the whiteboard
-  // write routes) stops classic cross-origin CSRF but NOT DNS rebinding: a page
+  // DNS-rebinding guard. isSameOriginRequest (used on the prompt and
+  // attachment write routes) stops classic cross-origin CSRF but NOT DNS rebinding: a page
   // that rebinds its own domain to this loopback port sends that domain in both
   // Origin and Host, so the two still match. The robust defense is a Host-header
   // allowlist - a rebound browser carries the attacker's domain in Host, which is
@@ -713,7 +640,7 @@ export async function serve({
   });
 
   const attachmentConfig = resolveAttachmentConfig();
-  // Attachment bytes are content-addressed on disk alongside the whiteboard sidecars.
+  // Attachment bytes are content-addressed on disk next to state.json.
   const attachmentStateRoot = path.dirname(stateFile);
   // The store owns the ONE shared lock covering BOTH state consistency AND the
   // attachment lifecycle. It serializes every state.json read-modify-write
@@ -724,14 +651,12 @@ export async function serve({
   // interleave with a concurrent poll.
 
   const defaultJsonParser = express.json({ limit: "2mb" });
-  const whiteboardJsonParser = express.json({ limit: "20mb" });
   app.use((req, res, next) => {
     // The attachment upload reads the raw request stream itself (see the route),
     // so no body parser runs for it - express.raw's limit aborts on Content-Length
     // WITHOUT draining the body, which leaves the browser's in-flight upload to be
     // reset mid-stream instead of receiving the 413.
     if (req.method === "POST" && isAttachmentUploadApiPath(req.path)) return next();
-    if (isWhiteboardWriteApiPath(req.path)) return whiteboardJsonParser(req, res, next);
     return defaultJsonParser(req, res, next);
   });
 
@@ -1335,12 +1260,10 @@ export async function serve({
       const artifactHtml = await readFile(session.file, "utf8").catch(() => "");
       const { faviconTag, title } = extractArtifactHead(artifactHtml);
       // Nothing legitimately frames the review chrome - it is the top-level
-      // page, and shares/exports ship standalone HTML rather than embedding it.
+      // page, and nothing ships a copy that embeds it.
       // Refusing to be framed denies an attacker page both a window handle to
       // this chrome and a clickjacking surface over Send. Scoped to this route:
-      // /artifact/* is framed by this page and /whiteboard-frame is framed by
-      // that artifact document, whose sandbox gives it an opaque origin no
-      // frame-ancestors expression can name.
+      // /artifact/* is framed by this page.
       res.setHeader("x-frame-options", "DENY");
       res.setHeader("content-security-policy", "frame-ancestors 'none'");
       res.type("html").send(
@@ -1520,198 +1443,11 @@ export async function serve({
     }
   });
 
-  // The whiteboard frame page. Hosted by the chrome in a dedicated sandboxed
-  // iframe (allow-scripts allow-popups, no allow-same-origin) so untrusted
-  // Mermaid text renders - and the Excalidraw editor runs - inside an opaque
-  // origin, matching the artifact iframe's trust posture. The chrome passes
-  // the diagram source and saved scene over postMessage after the frame
-  // reports ready.
-  app.get("/whiteboard-frame", (req, res) => {
-    res.setHeader("cache-control", "no-store");
-    // The frame's channel token is minted for one session, so the caller must
-    // name it. Both call sites (the chrome overlay and the artifact SDK's
-    // inline embed) know their own key; a request without one could only
-    // produce a token that authenticates nothing, so reject it outright.
-    const sessionKey = String(req.query.key || "");
-    if (!isValidWhiteboardKey(sessionKey)) {
-      res.status(400).type("text/plain").send("Missing session key");
-      return;
-    }
-    res.type("html").send(createWhiteboardFrameHtml(createWhiteboardChannelToken(whiteboardChannelSecret, sessionKey)));
-  });
-
-  // Whiteboard bundle, stylesheet, and vendored Excalidraw fonts. The frame
-  // runs in an opaque origin, and font fetches from an opaque origin are
-  // CORS-gated, so this static, public-content route must answer with
-  // Access-Control-Allow-Origin: * or every canvas font falls back.
-  app.get(/^\/whiteboard-assets\/(.+)$/, async (req, res, next) => {
-    try {
-      const file = await resolveArtifactAsset(whiteboardAssetsDir, req.params[0]);
-      if (!file) {
-        res.status(403).send("Forbidden");
-        return;
-      }
-      if (!existsSync(file)) {
-        res
-          .status(404)
-          .send(existsSync(whiteboardAssetsDir) ? "Not found" : "Whiteboard bundle missing - run `pnpm run build`");
-        return;
-      }
-      res.setHeader("access-control-allow-origin", "*");
-      // Revalidate on every use (304 via Last-Modified/ETag): the bundle URL
-      // is unversioned, and a memory-cached stale bundle after an upgrade or
-      // local rebuild is far worse than cheap loopback revalidations.
-      res.setHeader("cache-control", "no-cache");
-      // Traversal is already rejected by resolveArtifactAsset; "allow" keeps
-      // dot components in the assets dir's own absolute path (e.g. a checkout
-      // under a dot-directory) from 403ing every asset.
-      res.sendFile(file, { dotfiles: "allow" });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Mermaid sources for a session's artifact, extracted from the HTML on disk
-  // in document order so `index` matches the browser's `.mermaid` element
-  // order. The hash feeds whiteboard staleness detection.
-  app.get("/api/:key/mermaid-sources", async (req, res, next) => {
-    try {
-      const session = await store.findByKey(req.params.key);
-      if (!session) {
-        res.status(404).json({ error: "session not found" });
-        return;
-      }
-      if (refuseNonHtmlArtifact(session, res)) return;
-      const html = await readFile(session.file, "utf8").catch(() => "");
-      const extracted = extractMermaidSources(html);
-      const usesLibraries = extracted.some(({ source }) => parseLibraryIconDirectives(source).length > 0);
-      const snapshot = usesLibraries ? await loadExcalidrawLibraries(libraryDir) : null;
-      const libraries = snapshot ? snapshot.libraries : [];
-      const sources = extracted.map(({ index, source }) => ({
-        index,
-        source,
-        hash: whiteboardSourceHash(source, libraries),
-      }));
-      // The chrome compares this with /api/whiteboard-libraries' version: a
-      // library file that changed between the two requests means the frame's
-      // libraries do not match these hashes.
-      res.json(snapshot ? { sources, libraries_version: snapshot.version } : { sources });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // User-supplied Excalidraw libraries for every whiteboard's library panel and
-  // for `%% lavish-icon` nodes. Read-only: Lavish never writes that directory.
-  app.get("/api/whiteboard-libraries", async (req, res, next) => {
-    try {
-      if (hasPresentOriginOrReferer(req) && !isSameOriginRequest(req, allowedHostnames, allowAnyHostname)) {
-        res.status(403).json({ error: "cross-origin whiteboard library request rejected" });
-        return;
-      }
-      const { libraries, version } = await loadExcalidrawLibraries(libraryDir);
-      res.setHeader("cache-control", "no-store");
-      res.json({ libraries: libraries.map(({ id, items }) => ({ id, items })), version });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.get("/api/:key/whiteboard/:index", async (req, res, next) => {
-    try {
-      const session = await store.findByKey(req.params.key);
-      if (!session || !isValidDiagramIndex(req.params.index)) {
-        res.status(404).json({ error: "whiteboard not found" });
-        return;
-      }
-      const whiteboard = await loadWhiteboard(whiteboardStateRoot, req.params.key, Number(req.params.index));
-      res.json({ whiteboard });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post("/api/:key/whiteboard-channel", async (req, res, next) => {
-    try {
-      if (!isSameOriginRequest(req, allowedHostnames, allowAnyHostname)) {
-        res.status(403).json({ error: "cross-origin whiteboard channel request rejected" });
-        return;
-      }
-      const session = await store.findByKey(req.params.key);
-      if (!session) {
-        res.status(404).json({ error: "session not found" });
-        return;
-      }
-      if (!isValidWhiteboardChannelToken(req.body?.token, whiteboardChannelSecret, req.params.key)) {
-        res.status(403).json({ error: "invalid whiteboard channel" });
-        return;
-      }
-      res.json({ status: "authenticated" });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Writing to the local state directory is a state-changing action, so both
-  // whiteboard write routes are same-origin guarded like /prompts - a hostile
-  // cross-origin page must not be able to fill the state dir through the
-  // loopback server.
-  app.put("/api/:key/whiteboard/:index", async (req, res, next) => {
-    try {
-      if (!isSameOriginRequest(req, allowedHostnames, allowAnyHostname)) {
-        res.status(403).json({ error: "cross-origin whiteboard write rejected" });
-        return;
-      }
-      const session = await store.findByKey(req.params.key);
-      if (!session || !isValidWhiteboardKey(req.params.key) || !isValidDiagramIndex(req.params.index)) {
-        res.status(404).json({ error: "whiteboard not found" });
-        return;
-      }
-      const body = req.body || {};
-      await saveWhiteboard(whiteboardStateRoot, req.params.key, Number(req.params.index), {
-        sourceHash: String(body.source_hash || body.sourceHash || ""),
-        textMetricsVersion: Number(body.text_metrics_version || body.textMetricsVersion) || 0,
-        scene: body.scene ?? null,
-        baseline: body.baseline ?? null,
-      });
-      res.json({ status: "saved" });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Publish the agent-facing feedback files (.excalidraw scene + PNG preview)
-  // for a diagram, returning their absolute paths for the queued prompt's
-  // target. Files stay on this machine; the prompt carries only the paths.
-  app.post("/api/:key/whiteboard/:index/feedback-files", async (req, res, next) => {
-    try {
-      if (!isSameOriginRequest(req, allowedHostnames, allowAnyHostname)) {
-        res.status(403).json({ error: "cross-origin whiteboard write rejected" });
-        return;
-      }
-      const session = await store.findByKey(req.params.key);
-      if (!session || !isValidWhiteboardKey(req.params.key) || !isValidDiagramIndex(req.params.index)) {
-        res.status(404).json({ error: "whiteboard not found" });
-        return;
-      }
-      const body = req.body || {};
-      const { scenePath, previewPath } = await writeWhiteboardFeedbackFiles(
-        whiteboardStateRoot,
-        req.params.key,
-        Number(req.params.index),
-        { scene: body.scene ?? null, pngDataUrl: String(body.pngDataUrl || body.png_data_url || "") },
-      );
-      res.json({ scene_path: scenePath, preview_path: previewPath });
-    } catch (error) {
-      next(error);
-    }
-  });
-
   // Annotation image attachments. Upload writes raw bytes to the state dir and
   // returns server-vetted metadata (content-hash id + absolute path); the prompt
   // later references the id and the server re-resolves it (see queuePrompts).
   // Upload and delete write/remove local files, so they are same-origin guarded
-  // like the whiteboard writes - a hostile cross-origin page must not drive them.
+  // like /prompts - a hostile cross-origin page must not drive them.
   app.post("/api/:key/attachments", async (req, res, next) => {
     try {
       if (!isSameOriginRequest(req, allowedHostnames, allowAnyHostname)) {
@@ -2499,7 +2235,7 @@ export async function resolveArtifactAsset(root, assetPath) {
   } catch (error) {
     // Nonexistent path (e.g. an asset that hasn't been built yet): nothing to read, so the
     // lexical confinement above is enough - the caller's existsSync/sendFile handles the 404.
-    // Every other realpath failure fails closed, like guardedRead.
+    // Every other realpath failure fails closed.
     if (error?.code === "ENOENT" || error?.code === "ENOTDIR") {
       return file;
     }
@@ -2899,7 +2635,7 @@ ${faviconTag}
 
 <div class="ended-overlay layout-gate-overlay" id="layoutGateOverlay"${layoutGateHidden}><div class="ended-card"><div class="ended-title" id="layoutGateTitle">Checking layout.<br>One moment.</div><p class="ended-copy" id="layoutGateCopy">Lavish is waiting for fonts and final geometry before revealing this artifact.</p><button class="button ended-action" id="layoutGateAction" type="button">Show anyway</button><button class="button ended-action layout-gate-bypass" id="layoutGateBypass" type="button" hidden>Show anyway</button></div></div>
 <div class="ended-overlay" id="endedOverlay" hidden><div class="ended-card"><div class="ended-title">Session ended.<br>Return to your agent to continue.</div><p class="ended-copy">${escapeHtml(session.file)}</p></div></div>
-<div class="whiteboard-overlay" id="whiteboardOverlay" hidden><div class="whiteboard-shell"><div class="whiteboard-error" id="whiteboardError" hidden></div><button class="whiteboard-close" id="whiteboardClose" type="button" aria-label="Close whiteboard"><svg width="14" height="14" viewBox="0 0 10 10" fill="none" aria-hidden="true" focusable="false"><path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button><iframe id="whiteboardFrame" title="Excalidraw whiteboard" sandbox="allow-scripts allow-popups"></iframe></div></div>
+
 <script id="lavish-session" type="application/json">${sessionJson}</script>
 <script>${CHROME_BOOT_FAILSAFE_JS}</script>
 <script src="/chrome-client.js" onerror="window.__lavishChromeBootFailed()"></script>
@@ -2907,24 +2643,8 @@ ${faviconTag}
 </html>`;
 }
 
-export function createWhiteboardFrameHtml(channelToken = "") {
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lavish Whiteboard</title>
-<link rel="stylesheet" href="/whiteboard-assets/whiteboard.css">
-</head>
-<body>
-<script>window.__lavishWhiteboardChannelToken=${JSON.stringify(channelToken)};</script>
-<script src="/whiteboard-assets/whiteboard.js"></script>
-</body>
-</html>`;
-}
-
 // Serialize every helper a shared module exports as a same-scope const so cross-helper calls
-// (e.g. mermaidNodeFrom → mermaidNodeElement) resolve in the browser. Deriving these from the
+// resolve in the browser. Deriving these from the
 // module's exports — rather than a hand-kept list — means adding a helper can never silently
 // ReferenceError at runtime.
 // Only functions survive `toString()` round-tripping: a Set, Map, or RegExp would serialize to a
@@ -2956,7 +2676,6 @@ export function createSdkJs(
   artifactLoadToken = "",
   { maxAttachmentCount, maxAttachmentBytes, acceptedImageMime = ACCEPTED_IMAGE_MIME } = {},
 ) {
-  const mermaidHelperSource = serializeModuleHelpers(mermaidNode);
   const revisionHelperSource = serializeModuleHelpers(artifactRevisions);
   const revisionNumber = Number(artifactRevision);
   const revision = Number.isFinite(revisionNumber) && revisionNumber >= 0 ? Math.trunc(revisionNumber) : 0;
@@ -2990,10 +2709,8 @@ const planClipboardPaste=${planClipboardPaste.toString()};
 const acceptedImageTypes=${acceptedImageTypes.toString()};
 const isTrustedAttachmentResult=${isTrustedAttachmentResult.toString()};
 const deriveAttachmentNoticeState=${deriveAttachmentNoticeState.toString()};
-${mermaidHelperSource.declarations}
-const mermaidHelpers={ ${mermaidHelperSource.names.join(", ")} };
 ${revisionHelperSource.declarations}
-(${createArtifactSdk.toString()})(deriveQueueKey, isNativeInteractiveControl, mermaidHelpers, artifactRevision, artifactLoadToken, key, ${JSON.stringify(sdkOptions)});
+(${createArtifactSdk.toString()})(deriveQueueKey, isNativeInteractiveControl, artifactRevision, artifactLoadToken, ${JSON.stringify(sdkOptions)});
 })();`;
 }
 

@@ -8,14 +8,13 @@ It owns exactly one thing: the review loop between one person and one agent over
 
 The saved HTML file is the source of truth, and serving it adds exactly one script tag and nothing else.
 Nothing else is injected, because an artifact must render identically when it is opened directly with Lavish absent.
-A rendered Mermaid diagram can be edited as a whiteboard, but the Mermaid source stays authoritative and the edits return as a summary the agent applies to that source.
 Export inlines local assets only and makes no outbound request, so exporting can never become fetching.
 A change that makes the served artifact differ from the file on disk is refused.
 
 ## Interaction beats prose
 
 An artifact earns its format by letting the reader understand and answer through the page itself instead of through a wall of text.
-Elements that can be pointed at, diagrams that can be drawn on, and controls that collect an answer are the substance; any one of them, the whiteboard included, is an instance of that and not a feature in its own right.
+Elements that can be pointed at and controls that collect an answer are the substance; any one of them is an instance of that and not a feature in its own right.
 A page that could have been a paragraph should have been a paragraph.
 
 ## An artifact's design is chosen, never defaulted into
@@ -60,7 +59,7 @@ It is one person and one agent, however many windows or screens that person uses
 It is not a hosting service, and publishing goes to a named third party that is never on by default.
 It expects to run inside an agent harness, and the long poll is how that harness holds a continuous session; Lavish does not launch, drive, or supervise the agent itself.
 It is not an MCP server and it has no marketplace, because the CLI is already the agent interface and an installed copy is already complete.
-It does not translate a whiteboard back into Mermaid, and it does not repair artifacts on the user's behalf.
+It does not repair artifacts on the user's behalf.
 
 A change aligns when it carries a human's intent to the agent more precisely, when it keeps the artifact portable and the review uninterrupted, and when it lands in the one surface that already owns the contract it touches.
 A change should be resisted when it acts on the artifact without the reviewer asking, when it makes the served artifact diverge from the saved file, when it spends the agent's tokens or the human's waiting time without earning them, or when it quietly widens Lavish past one person, one agent, and one local HTML file.

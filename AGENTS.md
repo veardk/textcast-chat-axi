@@ -51,9 +51,9 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - Host allowlist, then Origin/Referer guard. Header-less CLI control requests must keep working. `*` skips hostname membership and still rejects a malformed forwarded authority. [Process model](docs/invariants.md#process-model).
 - Live-event WebSockets keep the ping/pong heartbeat so half-open sockets terminate. Idle self-shutdown keys off tracked live connections, not session status. [Process model](docs/invariants.md#process-model).
 - The detached server entrypoint logs `uncaughtException` and exits 1 explicitly. Each listener keeps its `error` handler after `listening`. [Process model](docs/invariants.md#process-model).
-- `/api/:key/prompts`, whiteboard writes, and attachment upload/delete are same-origin guarded. The key alone must never queue a prompt or publish. [Request flow](docs/invariants.md#request-flow).
+- `/api/:key/prompts` and attachment upload/delete are same-origin guarded. The key alone must never queue a prompt or publish. [Request flow](docs/invariants.md#request-flow).
 - Poll control `GET` and `POST` requests reject a present foreign Origin or Referer while header-less CLI requests keep working. [Request flow](docs/invariants.md#request-flow).
-- The chrome page (`/session/:key`) answers `X-Frame-Options: DENY` and `frame-ancestors 'none'`. Keep that header off `/artifact/*` and `/whiteboard-frame`, which are framed. [Request flow](docs/invariants.md#request-flow).
+- The chrome page (`/session/:key`) answers `X-Frame-Options: DENY` and `frame-ancestors 'none'`. Keep that header off `/artifact/*`, which is framed. [Request flow](docs/invariants.md#request-flow).
 - The artifact route injects only the one SDK `<script>` tag. Served artifact bytes otherwise match the file on disk. [Request flow](docs/invariants.md#request-flow).
 - `/api/sessions` refuses a path that is not a regular `.html`/`.htm` file after `realpath`. [Request flow](docs/invariants.md#request-flow).
 - Artifact asset serving (`/artifact/:key/<path>`) stays inside that session's HTML-file directory, resolves with `realpath`, and never serves a symlink target outside that tree. [Request flow](docs/invariants.md#request-flow).
@@ -81,12 +81,6 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - `chrome-outdated` never reloads by itself, and a restart shows the banner instead of reloading while an unsent draft exists. The log-only shutdown `cause` is never widened into `reason`. [Live reload](docs/invariants.md#live-reload).
 - Review-state restore sets values directly and dispatches no synthetic `change`/`input` events. [Live reload](docs/invariants.md#live-reload).
 - A stored annotation draft is retired only after two artifact revisions report its selector missing. A retired draft is kept verbatim in `textcast-chat-axi:retired-drafts:<key>` and never trimmed. [Live reload](docs/invariants.md#live-reload).
-- The whiteboard channel token is not a secret. Trust is session-key binding plus descent from the artifact frame (`isArtifactChildWindow`). [Whiteboard](docs/invariants.md#whiteboard-mermaid-excalidraw).
-- `/whiteboard-frame` stays framable by any origin and requires `?key=`. The channel token is signed over the session key. [Whiteboard](docs/invariants.md#whiteboard-mermaid-excalidraw).
-- Whiteboard scenes persist in per-diagram sidecars, never in `state.json`. Stale user edits are never silently merged, and `handleInit` goes through `resolveWhiteboardInitAction`. [Whiteboard](docs/invariants.md#whiteboard-mermaid-excalidraw).
-- Mermaid source stays authoritative. There is no scene-to-Mermaid reverse conversion. `mermaid` is pinned exactly. Persisted Excalidraw `appState` must not carry `theme` or a dark `viewBackgroundColor`. [Whiteboard](docs/invariants.md#whiteboard-mermaid-excalidraw).
-- `/whiteboard-assets/*` keeps `Access-Control-Allow-Origin: *` so fonts load in the opaque-origin frame, plus `Cache-Control: no-cache` and sendFile `dotfiles: "allow"`. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
-- Mermaid skeletons re-materialize after Excalidraw fonts load, saved-scene repair is expansion-only, and `restoreMermaidLabelLineBreaks` runs before `convertToExcalidrawElements`. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - Every store mutation takes `store.lock`. `referencedAttachmentIds` stays lock-free. [Image attachments](docs/invariants.md#image-attachments).
 - Attachment identity is the content-addressed file. `queuePrompts` re-derives path, mime, bytes, and dimensions from disk. Resolution is all-or-nothing. `boundAttachmentRefs` runs before any filesystem await. [Image attachments](docs/invariants.md#image-attachments).
 - Uploads are magic-byte validated and ignore `Content-Type`. Accepted types derive from `ACCEPTED_IMAGE_MIME`, never a second hardcoded list. [Image attachments](docs/invariants.md#image-attachments).
@@ -104,7 +98,6 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - Every `/artifact/*` response carries the CSP `sandbox` policy matching the iframe, so an escaped popup stays opaque-origin. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - SDK helpers that the browser must call are exported functions in a module `serializeModuleHelpers` inlines. No module-level constants. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - Serialized SDK helper modules export only functions. `serializeModuleHelpers` throws on any other export. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
-- Mermaid pan and zoom touch only the live SVG `viewBox`, never the saved artifact. `normalizeMermaidNodeTarget` strips node targets to their fixed shape. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - A text annotation's `prompt.selector` names the container, not the selected range. Never target text by selector alone. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - Annotation handlers ignore native controls, editable regions, and `data-lavish-action` elements. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - `resetRevisionLegend()` runs only when `replaceArtifactFrame` actually assigns `frame.src`. Reject over-long revision ids and selectors. Lookups use `Map`/`Set`. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).

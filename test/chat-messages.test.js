@@ -222,58 +222,6 @@ test("a text selection anchors to the selected words", () => {
   assert.deepEqual(entry.anchor, { kind: "text", label: "text", excerpt: "marketing site", selector: "main > p" });
 });
 
-test("a diagram node anchors to its label", () => {
-  const entry = chatEntryForPrompt(
-    {
-      uid: "",
-      prompt: "Earlier",
-      selector: "svg g.node",
-      tag: "mermaid-node",
-      text: "Classify",
-      target: { type: "mermaid-node", diagramId: "d1", nodeId: "n1", label: "Classify checks", selector: "svg g.node" },
-    },
-    at,
-  );
-  assert.deepEqual(entry.anchor, { kind: "node", label: "node", excerpt: "Classify checks", selector: "svg g.node" });
-});
-
-test("whiteboard and layout batches anchor to the diagram and the issue count", () => {
-  const whiteboard = chatEntryForPrompt(
-    {
-      uid: "",
-      prompt: "Whiteboard edits...",
-      selector: "",
-      tag: "whiteboard",
-      text: "Whiteboard: diagram 2",
-      target: { type: "excalidraw-scene", diagramIndex: 1 },
-    },
-    at,
-  );
-  assert.equal(whiteboard.kind, "whiteboard");
-  assert.deepEqual(whiteboard.anchor, { kind: "whiteboard", label: "whiteboard", excerpt: "Diagram 2" });
-
-  const layout = chatEntryForPrompt(
-    {
-      uid: "",
-      prompt: "Fix these 2 layout issues...",
-      selector: "",
-      tag: "layout-warnings",
-      text: "2 layout issues",
-      target: { type: "layout-warnings", warnings: [{ id: "a" }, { id: "b" }] },
-    },
-    at,
-  );
-  assert.equal(layout.kind, "layout-warnings");
-  assert.deepEqual(layout.anchor, { kind: "layout", label: "layout", excerpt: "2 issues" });
-  assert.equal(
-    chatEntryForPrompt(
-      { ...layout, prompt: "x", tag: "layout-warnings", target: { type: "layout-warnings", warnings: [{ id: "a" }] } },
-      at,
-    ).anchor.excerpt,
-    "1 issue",
-  );
-});
-
 test("anchor fields are bounded and attachments keep only their id and name", () => {
   const entry = chatEntryForPrompt(
     {

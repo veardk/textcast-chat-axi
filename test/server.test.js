@@ -615,34 +615,6 @@ test("annotation hover remains active while another element is selected", () => 
   assert.match(js, /if \(hovered && hovered !== selected\) clearHighlight\(hovered\)/);
 });
 
-test("artifact SDK injects every shared mermaid node helper as a same-scope const", () => {
-  const js = createSdkJs("abc");
-
-  for (const name of ["isMermaidSvg", "readNodeLabel", "mermaidNodeElement", "mermaidNodeFrom"]) {
-    assert.match(js, new RegExp(`const ${name}=`));
-  }
-  // mermaidNodeFrom calls mermaidNodeElement, so the resolver must reach the
-  // SDK's mermaidHelpers bundle or the browser would ReferenceError on click.
-  assert.match(js, /const mermaidHelpers=\{[^}]*mermaidNodeElement[^}]*\}/);
-});
-
-test("shared SDK helper modules export only functions so serializeModuleHelpers can ship them", async () => {
-  const mermaid = await import("../src/mermaid-node.js");
-  const revisions = await import("../src/artifact-revisions.js");
-  for (const [name, value] of [...Object.entries(mermaid), ...Object.entries(revisions)]) {
-    assert.equal(typeof value, "function", `${name} must be a function`);
-  }
-});
-
-test("annotation hover and click resolve to the same Mermaid node element", () => {
-  const js = createSdkJs("abc");
-
-  assert.match(js, /function annotationTargetEl/);
-  assert.match(js, /mermaidNodeElement\(el\) \|\| el/);
-  assert.match(js, /hovered = target/);
-  assert.match(js, /anchor = annotationTargetEl\(target\)/);
-});
-
 test("annotation mode forces the artifact cursor to default", () => {
   const js = createSdkJs("abc");
 
@@ -2393,40 +2365,6 @@ test("/artifact serves same-tree assets for an HTML session", async () => {
   } finally {
     await server.close();
     await rm(parent, { recursive: true, force: true });
-  }
-});
-
-test("/whiteboard-assets refuses escaping symlinks and .. traversal but still serves its bundle", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
-  const outside = await mkdtemp(path.join(tmpdir(), "lavish-outside-"));
-  const assetsDir = path.join(dir, "whiteboard-assets");
-  await mkdir(assetsDir);
-  await writeFile(path.join(assetsDir, "whiteboard.js"), "// fake bundle\n");
-  await writeFile(path.join(outside, "secret.txt"), "outside-secret\n");
-  await symlink(path.join(outside, "secret.txt"), path.join(assetsDir, "leak.txt"));
-  await writeFile(path.join(dir, "sibling-secret.txt"), "outside-secret\n");
-  const server = await serve({
-    port: 0,
-    stateFile: path.join(dir, "state.json"),
-    version: "9.9.9-test",
-    whiteboardAssetsDir: assetsDir,
-  });
-  try {
-    const bundle = await fetch(`http://127.0.0.1:${server.port}/whiteboard-assets/whiteboard.js`);
-    assert.equal(bundle.status, 200);
-    assert.match(await bundle.text(), /fake bundle/);
-
-    const leak = await rawRequest(server.port, "/whiteboard-assets/leak.txt");
-    assert.equal(leak.status, 403);
-    assert.doesNotMatch(leak.body, /outside-secret/);
-
-    const traversal = await rawRequest(server.port, "/whiteboard-assets/../sibling-secret.txt");
-    assert.equal(traversal.status, 403);
-    assert.doesNotMatch(traversal.body, /outside-secret/);
-  } finally {
-    await server.close();
-    await rm(dir, { recursive: true, force: true });
-    await rm(outside, { recursive: true, force: true });
   }
 });
 
@@ -6129,6 +6067,13 @@ test("chat-sync stamps a note seen when a poll takes it, working when the artifa
   }
 });
 
+test("shared SDK helper modules export only functions so serializeModuleHelpers can ship them", async () => {
+  const revisions = await import("../src/artifact-revisions.js");
+  for (const [name, value] of Object.entries(revisions)) {
+    assert.equal(typeof value, "function", `${name} must be a function`);
+  }
+});
+
 test("leftover non-HTML sessions are refused before any session.file content read", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "lavish-serve-"));
   const secret = path.join(dir, "secret.txt");
@@ -6145,14 +6090,11 @@ test("leftover non-HTML sessions are refused before any session.file content rea
     const base = `http://127.0.0.1:${server.port}`;
     const documentResponse = await fetch(`${base}/artifact/${key}/index.html`);
     const sibling = await fetch(`${base}/artifact/${key}/.env`);
-    const mermaid = await fetch(`${base}/api/${key}/mermaid-sources`);
     const chrome = await fetch(`${base}/session/${key}`);
     assert.equal(documentResponse.status, 403);
     assert.doesNotMatch(await documentResponse.text(), /outside-secret/);
     assert.equal(sibling.status, 403);
     assert.doesNotMatch(await sibling.text(), /hidden-secret/);
-    assert.equal(mermaid.status, 403);
-    assert.doesNotMatch(await mermaid.text(), /outside-secret/);
     assert.equal(chrome.status, 403);
     assert.doesNotMatch(await chrome.text(), /outside-secret/);
   } finally {
