@@ -37,7 +37,6 @@ import {
 } from "./layout-warnings.js";
 import * as artifactRevisions from "./artifact-revisions.js";
 import * as mermaidNode from "./mermaid-node.js";
-import * as tableCellHelpers from "./table-cell.js";
 import { extractMermaidSources, whiteboardSourceHash } from "./mermaid-source.js";
 import { createExcalidrawLibraryCache, excalidrawLibrariesDir } from "./whiteboard-library-store.js";
 import { parseLibraryIconDirectives } from "./whiteboard-libraries.js";
@@ -3016,7 +3015,6 @@ export function createSdkJs(
   { maxAttachmentCount, maxAttachmentBytes, acceptedImageMime = ACCEPTED_IMAGE_MIME } = {},
 ) {
   const mermaidHelperSource = serializeModuleHelpers(mermaidNode);
-  const tableHelperSource = serializeModuleHelpers(tableCellHelpers);
   const revisionHelperSource = serializeModuleHelpers(artifactRevisions);
   const revisionNumber = Number(artifactRevision);
   const revision = Number.isFinite(revisionNumber) && revisionNumber >= 0 ? Math.trunc(revisionNumber) : 0;
@@ -3052,7 +3050,6 @@ const isTrustedAttachmentResult=${isTrustedAttachmentResult.toString()};
 const deriveAttachmentNoticeState=${deriveAttachmentNoticeState.toString()};
 ${mermaidHelperSource.declarations}
 const mermaidHelpers={ ${mermaidHelperSource.names.join(", ")} };
-${tableHelperSource.declarations}
 ${revisionHelperSource.declarations}
 (${createArtifactSdk.toString()})(deriveQueueKey, isNativeInteractiveControl, mermaidHelpers, artifactRevision, artifactLoadToken, key, ${JSON.stringify(sdkOptions)});
 })();`;

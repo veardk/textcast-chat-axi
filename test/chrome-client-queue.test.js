@@ -1894,49 +1894,6 @@ test("chrome client replaces queued prompts with the same internal key", async (
   assert.doesNotMatch(chrome.element("queuedLog").innerHTML, /Use plan A/);
 });
 
-test("chrome client shows semantic table coordinates before positional selector", async () => {
-  const chrome = await createChromeHarness();
-
-  chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
-    prompt: {
-      prompt: "Check this permission",
-      selector: "table > tbody > tr:nth-of-type(7) > td:nth-of-type(3) > code",
-      tag: "code",
-      text: "Drive",
-      target: {
-        type: "table-cell",
-        selector: "table > tbody > tr:nth-of-type(7) > td:nth-of-type(3)",
-        rowLabel: "Media & Apple Music",
-        columnLabel: "Database evidence",
-        text: "Drive, Neovide, Cursor, Alacritty",
-      },
-    },
-  });
-
-  assert.match(chrome.element("queuedLog").innerHTML, /Media &amp; Apple Music → Database evidence/);
-  assert.match(chrome.element("queuedLog").innerHTML, /tr:nth-of-type\(7\)/);
-});
-
-test("chrome client falls back to the locator when a table cell has no row or column name", async () => {
-  const chrome = await createChromeHarness();
-
-  chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
-    prompt: {
-      prompt: "Check this permission",
-      selector: "table > tbody > tr:nth-of-type(7) > td:nth-of-type(3)",
-      tag: "td",
-      text: "Drive",
-      target: { type: "table-cell", rowLabel: "", columnLabel: "", text: "Drive" },
-    },
-  });
-
-  const html = chrome.element("queuedLog").innerHTML;
-  assert.match(html, /tr:nth-of-type\(7\)/);
-  assert.doesNotMatch(html, /Locator/);
-});
-
 test("chrome client scrolls new chat bubbles into view above queued prompts", async () => {
   const chrome = await createChromeHarness();
   const panelScroll = chrome.element("panelScroll");
@@ -7038,89 +6995,6 @@ test("a queued note's remove control clears memory, storage, and its bubble", as
   assert.equal(chrome.element("queuedLog").innerHTML, "");
 });
 
-test("the chrome's queued anchor agrees with the server's transcript anchor for every prompt kind", async () => {
-  const fixtures = [
-    { prompt: "note", selector: "h2#phase-1", tag: "h2", text: "Phase 1: Inventory" },
-    {
-      prompt: "note",
-      selector: "main > p",
-      tag: "text",
-      text: "marketing site",
-      target: {
-        type: "text-range",
-        text: "marketing site",
-        selector: "main > p",
-        commonAncestorSelector: "main > p",
-        start: { selector: "main > p", path: [], offset: 0 },
-        end: { selector: "main > p", path: [], offset: 14 },
-      },
-    },
-    {
-      prompt: "note",
-      selector: "td",
-      tag: "td",
-      text: "Annotation card",
-      target: { type: "table-cell", rowLabel: "Annotation card", columnLabel: "Risk", text: "Annotation card" },
-    },
-    {
-      prompt: "note",
-      selector: "td",
-      tag: "td",
-      text: "Drive",
-      target: { type: "table-cell", rowLabel: "", columnLabel: "", text: "Drive" },
-    },
-    {
-      prompt: "note",
-      selector: "svg g.node",
-      tag: "mermaid-node",
-      text: "Classify",
-      target: { type: "mermaid-node", diagramId: "d", nodeId: "n", label: "Classify checks", selector: "svg g.node" },
-    },
-    {
-      prompt: "note",
-      selector: "",
-      tag: "whiteboard",
-      text: "Whiteboard: diagram 2",
-      target: { type: "excalidraw-scene", diagramIndex: 1 },
-    },
-    {
-      prompt: "note",
-      selector: "",
-      tag: "layout-warnings",
-      text: "2 layout issues",
-      target: { type: "layout-warnings", warnings: [{ id: "a" }, { id: "b" }] },
-    },
-    { prompt: "note", selector: "", tag: "message", text: "Freeform message" },
-  ];
-  const unescape = (value) =>
-    value
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, "&");
-  for (const fixture of fixtures) {
-    const chrome = await createChromeHarness();
-    chrome.sendFrameMessage({ type: "lavish:queuePrompt", prompt: fixture });
-    const html = chrome.element("queuedLog").innerHTML;
-    const expected = chatEntryForPrompt({ uid: "", ...fixture }, "2026-09-15T00:00:00.000Z").anchor;
-    const rendered = html.match(
-      /<div class="anchor" title="([^"]*)"><span class="anchor-kind">([^<]*)<\/span>(?:<span class="anchor-excerpt(?: text)?">([^<]*)<\/span>)?<\/div>/,
-    );
-    if (!expected) {
-      assert.equal(rendered, null, `${fixture.tag}: no anchor`);
-      continue;
-    }
-    assert.ok(rendered, `${fixture.tag}: anchor rendered`);
-    assert.equal(unescape(rendered[2]), expected.label, `${fixture.tag}: label`);
-    assert.equal(unescape(rendered[3] || ""), "“" + expected.excerpt + "”", `${fixture.tag}: excerpt`);
-    assert.equal(
-      unescape(rendered[1]),
-      [expected.excerpt, expected.selector].filter(Boolean).join("\n"),
-      `${fixture.tag}: hover`,
-    );
-  }
-});
-
 test("a sent batch settles in place: notes read Sending until the server's transcript carries them", async () => {
   let resolvePost = () => {};
   const transcript = [
@@ -8488,28 +8362,6 @@ test("a diagram node's note is found from any part of the node", async () => {
   assert.match(chrome.element("queuedLog").innerHTML, /class="queued-edit-input"[^>]*>Rename this step</);
 });
 
-test("a table cell's note tells the artifact only the exact element it was queued on", async () => {
-  const chrome = await createChromeHarness();
-  chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
-    prompt: {
-      prompt: "Explain this app",
-      selector: "td:nth-of-type(3) > strong",
-      tag: "strong",
-      text: "Drive",
-      target: {
-        type: "table-cell",
-        selector: "td:nth-of-type(3)",
-        rowLabel: "Media",
-        columnLabel: "Evidence",
-      },
-    },
-  });
-
-  const anchors = chrome.postedToFrame.filter((message) => message.type === "lavish:queuedAnchors").at(-1);
-  assert.deepEqual(JSON.parse(JSON.stringify(anchors.selectors)), ["td:nth-of-type(3) > strong"]);
-});
-
 test("a re-render while editing a queued note keeps the reviewer's caret and scroll", async () => {
   const chrome = await createChromeHarness();
   queueHeadingNote(chrome);
@@ -9026,4 +8878,73 @@ test("chrome goes read-only when the server forwards an ended SSE event (#171)",
   chrome.setMobile(false);
   assert.equal(chrome.element("panelScroll").inert, true);
   assert.equal(chrome.element("chatComposer").inert, true);
+});
+
+test("the chrome's queued anchor agrees with the server's transcript anchor for every prompt kind", async () => {
+  const fixtures = [
+    { prompt: "note", selector: "h2#phase-1", tag: "h2", text: "Phase 1: Inventory" },
+    {
+      prompt: "note",
+      selector: "main > p",
+      tag: "text",
+      text: "marketing site",
+      target: {
+        type: "text-range",
+        text: "marketing site",
+        selector: "main > p",
+        commonAncestorSelector: "main > p",
+        start: { selector: "main > p", path: [], offset: 0 },
+        end: { selector: "main > p", path: [], offset: 14 },
+      },
+    },
+    {
+      prompt: "note",
+      selector: "svg g.node",
+      tag: "mermaid-node",
+      text: "Classify",
+      target: { type: "mermaid-node", diagramId: "d", nodeId: "n", label: "Classify checks", selector: "svg g.node" },
+    },
+    {
+      prompt: "note",
+      selector: "",
+      tag: "whiteboard",
+      text: "Whiteboard: diagram 2",
+      target: { type: "excalidraw-scene", diagramIndex: 1 },
+    },
+    {
+      prompt: "note",
+      selector: "",
+      tag: "layout-warnings",
+      text: "2 layout issues",
+      target: { type: "layout-warnings", warnings: [{ id: "a" }, { id: "b" }] },
+    },
+    { prompt: "note", selector: "", tag: "message", text: "Freeform message" },
+  ];
+  const unescape = (value) =>
+    value
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&");
+  for (const fixture of fixtures) {
+    const chrome = await createChromeHarness();
+    chrome.sendFrameMessage({ type: "lavish:queuePrompt", prompt: fixture });
+    const html = chrome.element("queuedLog").innerHTML;
+    const expected = chatEntryForPrompt({ uid: "", ...fixture }, "2026-09-15T00:00:00.000Z").anchor;
+    const rendered = html.match(
+      /<div class="anchor" title="([^"]*)"><span class="anchor-kind">([^<]*)<\/span>(?:<span class="anchor-excerpt(?: text)?">([^<]*)<\/span>)?<\/div>/,
+    );
+    if (!expected) {
+      assert.equal(rendered, null, `${fixture.tag}: no anchor`);
+      continue;
+    }
+    assert.ok(rendered, `${fixture.tag}: anchor rendered`);
+    assert.equal(unescape(rendered[2]), expected.label, `${fixture.tag}: label`);
+    assert.equal(unescape(rendered[3] || ""), "“" + expected.excerpt + "”", `${fixture.tag}: excerpt`);
+    assert.equal(
+      unescape(rendered[1]),
+      [expected.excerpt, expected.selector].filter(Boolean).join("\n"),
+      `${fixture.tag}: hover`,
+    );
+  }
 });

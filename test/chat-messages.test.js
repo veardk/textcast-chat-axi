@@ -222,23 +222,6 @@ test("a text selection anchors to the selected words", () => {
   assert.deepEqual(entry.anchor, { kind: "text", label: "text", excerpt: "marketing site", selector: "main > p" });
 });
 
-test("a table cell anchors to its row and column when both are provable, else to the element", () => {
-  const cell = { uid: "3", prompt: "Downgrade", selector: "td", tag: "td", text: "Annotation card" };
-  assert.deepEqual(
-    chatEntryForPrompt(
-      { ...cell, target: { type: "table-cell", rowLabel: "Annotation card", columnLabel: "Risk" } },
-      at,
-    ).anchor,
-    { kind: "cell", label: "cell", excerpt: "Annotation card → Risk", selector: "td" },
-  );
-  assert.deepEqual(chatEntryForPrompt({ ...cell, target: { type: "table-cell" } }, at).anchor, {
-    kind: "element",
-    label: "<td>",
-    excerpt: "Annotation card",
-    selector: "td",
-  });
-});
-
 test("a diagram node anchors to its label", () => {
   const entry = chatEntryForPrompt(
     {

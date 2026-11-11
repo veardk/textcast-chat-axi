@@ -516,14 +516,6 @@ function promptAnchor(prompt) {
       excerpt: boundAnchorText(target.text || prompt.text, ANCHOR_EXCERPT_MAX),
     });
   }
-  if (type === "table-cell") {
-    const semantic = [target.rowLabel, target.columnLabel]
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .join(" \u2192 ");
-    if (semantic)
-      return withSelector({ kind: "cell", label: "cell", excerpt: boundAnchorText(semantic, ANCHOR_EXCERPT_MAX) });
-  }
   if (type === "mermaid-node") {
     return withSelector({
       kind: "node",

@@ -2,7 +2,6 @@
 
 import { readArtifactRevisions } from "./artifact-revisions.js";
 import * as mermaidHelpers from "./mermaid-node.js";
-import { tableCellTarget } from "./table-cell.js";
 
 export const LAVISH_INTERNAL_QUEUE_KEY = "_lavishQueueKey";
 
@@ -823,19 +822,13 @@ export function createArtifactSdk(
 
   // `table` is opt-in because resolving a cell's row and column walks the whole table, while
   // `snapshot()` calls this for every element in the document and reads only uid/tag/text.
-  function context(el, { table = false } = {}) {
+  function context(el) {
     const base = {
       uid: uid(el),
       selector: selector(el),
       tag: (el.tagName || "").toLowerCase(),
       text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 240),
     };
-
-    // Semantic table coordinates are extra context, never a replacement identity: the highlight
-    // outlines the element the reviewer clicked, so its selector, tag, and text must keep
-    // describing that exact element rather than being coarsened up to the enclosing cell.
-    const tableTarget = table ? tableCellTarget(el, selector) : null;
-    if (tableTarget) base.target = tableTarget;
 
     const mermaidNode = mermaidNodeFrom(el, selector);
     if (mermaidNode) {
@@ -2271,7 +2264,7 @@ export function createArtifactSdk(
     const root = ensureShadow();
     closeCard();
 
-    const c = options.context || context(target, { table: true });
+    const c = options.context || context(target);
     activeCardContext = c;
     let anchor = target;
     if (options.range) {
@@ -2286,31 +2279,18 @@ export function createArtifactSdk(
     const card = document.createElement("div");
     card.className = "lavish-annotation-card";
     const nodeLabel = c.tag === "mermaid-node" ? c.target?.label || c.text || "" : "";
-    const isTableCell = c.target?.type === "table-cell";
-    // The annotation targets the element that was clicked, which inside a table cell is often a
-    // nested badge or code span. Say "cell" only when the cell itself was clicked; otherwise name
-    // the clicked element and place it at the cell's coordinates. An unlabelled table names
-    // nothing, so it falls back to the plain element heading rather than a dangling "cell: ".
-    const isCellItself = isTableCell && (c.tag === "td" || c.tag === "th");
-    const tableLabel = isTableCell ? [c.target?.rowLabel, c.target?.columnLabel].filter(Boolean).join(" → ") : "";
     const heading =
       c.tag === "text"
         ? "Annotate text"
-        : tableLabel
-          ? isCellItself
-            ? "Annotate cell: " + escapeAnnotationText(tableLabel)
-            : "Annotate &lt;" + c.tag + "&gt; in " + escapeAnnotationText(tableLabel)
-          : c.tag === "mermaid-node"
-            ? "Annotate node" + (nodeLabel ? ": " + escapeAnnotationText(nodeLabel) : "")
-            : "Annotate &lt;" + c.tag + "&gt;";
+        : c.tag === "mermaid-node"
+          ? "Annotate node" + (nodeLabel ? ": " + escapeAnnotationText(nodeLabel) : "")
+          : "Annotate &lt;" + c.tag + "&gt;";
     const placeholder =
       c.tag === "text"
         ? "Tell the agent what to change about this text..."
-        : isCellItself
-          ? "Tell the agent what to change about this table cell..."
-          : c.tag === "mermaid-node"
-            ? "Tell the agent what to change about this diagram node..."
-            : "Tell the agent what to change about this element...";
+        : c.tag === "mermaid-node"
+          ? "Tell the agent what to change about this diagram node..."
+          : "Tell the agent what to change about this element...";
     const sendNowHint = isApplePlatform() ? "⌘" : "Ctrl";
     card.innerHTML =
       '<div class="lavish-heading">' +
@@ -2654,7 +2634,7 @@ export function createArtifactSdk(
         return;
       }
       // The clicked element's own selector, plus its diagram node's, so any click inside a node
-      // finds the node's note again. A table cell's note stays on the exact element clicked.
+      // finds the node's note again.
       const clicked = queuedAnchorSelectors.size ? context(event.target) : null;
       const node = clicked?.target?.type === "mermaid-node" ? clicked.target.selector : "";
       const selector = [clicked?.selector, node].find((candidate) => candidate && queuedAnchorSelectors.has(candidate));

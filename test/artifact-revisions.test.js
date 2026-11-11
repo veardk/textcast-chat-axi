@@ -15,8 +15,8 @@ import {
   revisionSelectorFor,
 } from "../src/artifact-revisions.js";
 
-// Hand-built DOM stubs, matching the convention in mermaid-node.test.js and
-// table-cell.test.js: the helpers duck-type what they touch, so a fake keeps
+// Hand-built DOM stubs, matching the convention in mermaid-node.test.js:
+// the helpers duck-type what they touch, so a fake keeps
 // the tests honest about which properties the browser path actually needs.
 function element(tag, attrs = {}, children = []) {
   const node = {

@@ -629,9 +629,8 @@ test("artifact SDK injects every shared mermaid node helper as a same-scope cons
 
 test("shared SDK helper modules export only functions so serializeModuleHelpers can ship them", async () => {
   const mermaid = await import("../src/mermaid-node.js");
-  const table = await import("../src/table-cell.js");
   const revisions = await import("../src/artifact-revisions.js");
-  for (const [name, value] of [...Object.entries(mermaid), ...Object.entries(table), ...Object.entries(revisions)]) {
+  for (const [name, value] of [...Object.entries(mermaid), ...Object.entries(revisions)]) {
     assert.equal(typeof value, "function", `${name} must be a function`);
   }
 });

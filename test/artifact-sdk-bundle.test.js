@@ -410,61 +410,6 @@ test("the served SDK bundle reports the artifact's own revision registry and mar
   assert.equal(message.marks[0].excerpt, "Ship faster");
 });
 
-test("the served SDK bundle queues a table-cell annotation without a missing-helper ReferenceError", () => {
-  const sdk = bootSdk();
-  const { evidence } = buildTable(sdk);
-
-  sdk.click(evidence);
-  const message = sdk.queue("Check this permission");
-
-  assert.equal(message.type, "lavish:queuePrompt");
-  assert.equal(message.prompt.prompt, "Check this permission");
-  assert.deepEqual(
-    { ...message.prompt.target },
-    {
-      type: "table-cell",
-      selector: "body > table > tbody > tr > td:nth-of-type(3)",
-      rowLabel: "Media & Apple Music",
-      columnLabel: "Database evidence",
-      text: "Drive, Neovide, Cursor",
-    },
-  );
-});
-
-test("the served SDK bundle keeps the clicked element's own identity inside a table cell", () => {
-  const sdk = bootSdk();
-  const { badge } = buildTable(sdk);
-
-  sdk.click(badge);
-  const message = sdk.queue("Rename this app");
-
-  assert.equal(message.prompt.tag, "code");
-  assert.equal(message.prompt.selector, "table > tbody > tr > td:nth-of-type(3) > code");
-  assert.equal(message.prompt.text, "Drive");
-  assert.equal(message.prompt.target.selector, "body > table > tbody > tr > td:nth-of-type(3)");
-  assert.equal(message.prompt.target.columnLabel, "Database evidence");
-});
-
-test("the annotation card names the cell it annotates when the cell itself is clicked", () => {
-  const sdk = bootSdk();
-  const { evidence } = buildTable(sdk);
-
-  sdk.click(evidence);
-
-  assert.match(sdk.card().innerHTML, /Annotate cell: Media &amp; Apple Music → Database evidence/);
-  assert.match(sdk.card().innerHTML, /about this table cell/);
-});
-
-test("the annotation card names the clicked element, not the cell, for a nested click", () => {
-  const sdk = bootSdk();
-  const { badge } = buildTable(sdk);
-
-  sdk.click(badge);
-
-  assert.match(sdk.card().innerHTML, /Annotate &lt;code&gt; in Media &amp; Apple Music → Database evidence/);
-  assert.doesNotMatch(sdk.card().innerHTML, /about this table cell/);
-});
-
 test("the served SDK bundle resolves table coordinates only for annotation clicks", () => {
   const sdk = bootSdk();
   const { evidence } = buildTable(sdk);
@@ -757,27 +702,6 @@ test("a note queued from a diagram node's label opens again from the node's shap
   const message = sdk.posted.at(-1);
   assert.equal(message.type, "lavish:editQueuedAnchor");
   assert.equal(message.selector, queued.prompt.target.selector);
-});
-
-test("a click inside a table cell opens only the note on the exact element clicked", () => {
-  const sdk = bootSdk();
-  const { evidence } = buildTable(sdk);
-  const strong = appendTo(evidence, cell("strong", "Drive"));
-  const em = appendTo(evidence, cell("em", "Cursor"));
-  sdk.click(evidence);
-  const cellNote = sdk.queue("Explain this cell");
-  sdk.click(strong);
-  const strongNote = sdk.queue("Explain this app");
-  sdk.sendChromeMessage({
-    type: "lavish:queuedAnchors",
-    selectors: [cellNote.prompt.selector, strongNote.prompt.selector],
-  });
-  const cardsBefore = sdk.cards().length;
-
-  sdk.click(em);
-
-  assert.equal(sdk.cards().length, cardsBefore + 1);
-  assert.notEqual(sdk.posted.at(-1)?.type, "lavish:editQueuedAnchor");
 });
 
 // In annotate mode a plain click on a link annotates it, so Ctrl-click (Cmd-click on macOS) is the

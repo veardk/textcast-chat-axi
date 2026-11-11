@@ -417,13 +417,6 @@ function promptAnchor(prompt, kind) {
       selector,
     );
   }
-  if (type === "table-cell") {
-    const semantic = [target.rowLabel, target.columnLabel]
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .join(" → ");
-    if (semantic) return withSelector({ kind: "cell", label: "cell", excerpt: bound(semantic, EXCERPT_MAX) }, selector);
-  }
   if (type === "mermaid-node") {
     return withSelector(
       { kind: "node", label: "node", excerpt: bound(target.label || prompt.text, EXCERPT_MAX) },
