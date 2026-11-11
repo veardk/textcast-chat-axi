@@ -50,13 +50,6 @@ SOFTWARE.
 
 The Xiaolai family (CJK glyphs) is intentionally not vendored; Excalidraw falls back to its CDN or the system font for those glyphs.
 
-## Bundled into `dist/design/` (pre-existing)
-
-| Asset                                             | License |
-| ------------------------------------------------- | ------- |
-| `daisyui.css`, `daisyui-themes.css` (daisyUI)     | MIT     |
-| `tailwindcss-browser.js` (`@tailwindcss/browser`) | MIT     |
-
 ## Pre-publication audit note
 
 Font license attributions above were compiled from each family's upstream project.

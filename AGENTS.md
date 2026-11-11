@@ -3,7 +3,7 @@
 This file is loaded every session. It keeps only rules that apply to almost every change. Detail lives in the doc that owns it.
 
 - [README.md](README.md) owns the user-facing contract: features, CLI flags, environment variables, keyboard shortcuts, export and share, and session-end etiquette.
-- CLI output owns what agents are told while using Lavish: `textcast-chat-axi --help`, `textcast-chat-axi design`, and `textcast-chat-axi playbook <id>` (`src/cli.js`, `src/design-reference.js`, `src/playbooks.js`). The generated skill (`src/skill.js` to `skills/lavish/SKILL.md`) stays a stub that points at those commands. Do not copy CLI-owned instructions into the skill.
+- CLI output owns what agents are told while using textcast-chat-axi: `textcast-chat-axi --help` and per-command help (`src/cli.js`). Textcast's own SKILL.md decides when to use it; do not copy CLI-owned instructions there.
 - [VISION.md](VISION.md) owns the acceptance policy. Change it only through the author.
 - [docs/invariants.md](docs/invariants.md) owns architecture internals, security rationale, and easy-to-reintroduce failure modes. Read the section for the area you are editing before changing it.
 - Update the owner when a contract changes. Edit this file only when an every-session rule changes.
@@ -11,9 +11,8 @@ This file is loaded every session. It keeps only rules that apply to almost ever
 ## Commands
 
 ```sh
-pnpm run check          # build, lint, format check, typecheck, tests, and skill freshness
-pnpm run build          # bundle dist/cli.mjs and copy chrome/design assets into dist
-pnpm run build:skill    # regenerate skills/lavish/SKILL.md from src/skill.js
+pnpm run check          # build, lint, format check, typecheck, and tests
+pnpm run build          # bundle dist/cli.mjs and copy chrome assets into dist
 pnpm test               # node:test runner (test/*.test.js)
 pnpm run lint           # ESLint over bin src test scripts
 pnpm run format:check   # Prettier check
@@ -23,7 +22,7 @@ pnpm run typecheck      # tsc --noEmit (checkJs)
 One file: `node --test test/server.test.js`. One name: `node --test --test-name-pattern "createOpenOutput" test/cli-output.test.js`.
 Opt-in browser suites need `chrome-devtools-axi`: `LAVISH_AXI_BROWSER_E2E=1 node --test test/layout-audit-browser.test.js test/layout-warning-inbox.browser.test.js`.
 Seven-tab pool regression: `LAVISH_AXI_BROWSER_E2E=1 node --test test/event-transport.browser.test.js`.
-`prepack` and `prepare` both run `build`. `pnpm run check` fails if `skills/lavish/SKILL.md` drifts from `createSkillMarkdown()`, or if root `plugin.json` drifts from `pnpm run build:plugin`. Release-please bumps `plugin.json` through `extra-files`.
+`prepack` and `prepare` both run `build`.
 
 ## Project conventions
 
@@ -100,11 +99,7 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - Attachment admission runs under the store lock and refuses with 507. `maxObjects` derives from the disk budget, and `removeAttachment` deletes the sidecar first. [Image attachments](docs/invariants.md#image-attachments).
 - A dedup upload's mtime refresh is never swallowed into success. Env limits floor before the bounds check and require `>= 1`, and only `0`/`off` disables one. [Image attachments](docs/invariants.md#image-attachments).
 - Attachment files and dirs are owner-only (`0600`/`0700`), set explicitly at creation and re-asserted by `ensureAttachmentDir`. [Image attachments](docs/invariants.md#image-attachments).
-- `DESIGN_PRIORITY_RULE` is stated once in `src/design-reference.js`. Do not restate it. Do not hardcode one Mermaid theme. [AXI integration](docs/invariants.md#axi-integration).
 - Poll wake-path guidance comes only from `POLL_WAKE_PATH_RULES`. [AXI integration](docs/invariants.md#axi-integration).
-- The generated skill omits a `version` frontmatter field. [AXI integration](docs/invariants.md#axi-integration).
-- `plugin.json` and `skills/lavish` stay in `package.json` `files`. Skill frontmatter stays inside `validateSkillMarkdown`'s allowed shape. An unlinkable plugin client is reported, never thrown. Do not ship `mcp.json`. [Agent Plugins packaging](docs/invariants.md#agent-plugins-packaging).
-- Plugin setup runs only on explicit invocation, drops only locations `isStalePluginLocation` attributes to this plugin, and never rewrites unparseable VS Code settings. [Agent Plugins packaging](docs/invariants.md#agent-plugins-packaging).
 - Every artifact-to-chrome message goes through `postArtifactMessage`. The artifact iframe stays sandboxed without `allow-same-origin`. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - Every `/artifact/*` response carries the CSP `sandbox` policy matching the iframe, so an escaped popup stays opaque-origin. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - SDK helpers that the browser must call are exported functions in a module `serializeModuleHelpers` inlines. No module-level constants. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).

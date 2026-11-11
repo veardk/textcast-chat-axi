@@ -2,7 +2,7 @@
 
 This file owns Lavish's architecture internals, security rationale, and easy-to-reintroduce failure modes.
 [AGENTS.md](../AGENTS.md) keeps only the every-session rules and points here.
-[README.md](../README.md) owns the user-facing contract. Runtime guidance strings in `src/cli.js`, `src/design-reference.js`, and `src/playbooks.js` own what agents are told while using Lavish.
+[README.md](../README.md) owns the user-facing contract. Runtime guidance strings in `src/cli.js` own what agents are told while using Lavish.
 [VISION.md](../VISION.md) owns the acceptance policy.
 
 When a change touches an invariant below, update this file. When it touches a user-facing contract, update the README instead.
@@ -144,19 +144,7 @@ Attachment files and dirs are created **owner-only** (`0600`/`0700`, set explici
 The CLI is built on `axi-sdk-js` (`runAxiCli`).
 The `home()` callback returns the rich object shown when the user runs `textcast-chat-axi` with no arguments - the same TOON-serialized output that lands in the agent's optional `SessionStart` hook after `textcast-chat-axi setup hooks`; top-level `--help` returns the same static guidance without dynamic sessions.
 Poll execution guidance is shared across home output, help, and `next_step` responses through `POLL_WAKE_PATH_RULES`: every harness gets the same completion-aware wake-path contract, while `detectInvokingAgent` adds an attached-turn warning when `CODEX_SANDBOX` or `CODEX_THREAD_ID` identifies Codex. The installable skill does not restate these rules; it points at `textcast-chat-axi --help`.
-Agent-facing design guidance is single-sourced in `src/design-reference.js`: `DESIGN_PRIORITY_RULE` states the design-direction priority order exactly once, and `DESIGN_SYSTEM_HINT`, the `textcast-chat-axi design` summary, and the design command help all embed it - never restate the rule on another surface (README carries only a one-sentence summary). The skill points at `textcast-chat-axi design` instead of embedding the rule.
-`src/skill.js` renders the minimal installable Agent Skill, a stub pointing to the CLI commands for live guidance. It retains non-interactive `npx -y textcast-chat-axi ...` invocation and slash-command request handling, omits live session state, and includes Hermes Agent frontmatter metadata for categorization.
-The generated skill intentionally omits a `version` frontmatter field because release-please updates `package.json` without regenerating `skills/lavish/SKILL.md`.
-`skills/lavish/SKILL.md` is the only public Agent Skill shipped through npm.
 The bare-arg form (`textcast-chat-axi some.html`) is normalized into `["open", "some.html"]` by `normalizeArgv`, which must let the SDK's `RESERVED_COMMANDS` (such as the built-in `update` self-updater) pass through untouched; otherwise the bare-arg rewrite turns `textcast-chat-axi update` into `["open", "update"]` and the inherited reserved command never reaches `runAxiCli`.
-
-### Agent Plugins packaging
-
-The published package root **is** the Agent Plugin: `plugin.json` sits beside the `skills/` directory the standard discovers, so an installed copy is a conformant plugin with nothing downloaded and no marketplace involved (README's Agent Plugin bullet owns the user-facing contract). Keeping that true is the invariant - both `plugin.json` and `skills/lavish` must stay in `package.json` `files`, and `resolvePluginRoot` resolves `../` from `src/plugin.js`, which is the package root when bundled and the repo root from source.
-Agent Plugins delegates skill validity wholesale to the Agent Skills spec and **silently skips** skills that fail it, so a frontmatter regression removes the skill from the plugin with no error anywhere. `validateSkillMarkdown` (`src/skill.js`) encodes the rules the reference validator enforces: only `ALLOWED_SKILL_FRONTMATTER_KEYS` at the top level, no YAML flow collections (`[a, b]`), and `metadata` limited to one level of string values. That is why `author` and `argument-hint` live under `metadata` and the Hermes fields are flattened rather than nested - moving any of them back to the top level silently invalidates the skill.
-Each client registers independently and a client that cannot be registered must be _reported_, never thrown: `linkCursorLocalPlugin` returns `unsupported` instead of raising so one unlinkable client cannot abort the command or the other clients. On Windows it prefers a **junction**, because a directory symlink there needs a privilege an ordinary account lacks (Developer Mode or elevation), then falls back to a directory symlink when the junction is refused, such as across volumes. Tests that assert on a real on-disk link skip when symlink creation is unavailable; the link-creation logic itself stays covered everywhere through injected operations.
-`setup plugin` registers only clients that install from a local path (VS Code, Cursor, Copilot CLI); Codex installs from marketplace sources only and is deliberately served by the SessionStart hook instead. Registration follows the same discipline as `setup hooks` - explicit invocation only (issue #43), idempotent, and path-repairing - and `isStalePluginLocation` only ever drops entries it can positively attribute to this plugin, so a user's other plugin locations survive. VS Code settings that fail to parse (they legally allow comments) are reported for manual edit, never rewritten.
-No `mcp.json` ships: the CLI itself is the agent interface, and adding one would create a second agent-facing contract to keep in sync.
 
 ### Version handshake
 

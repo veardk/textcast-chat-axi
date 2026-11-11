@@ -45,10 +45,6 @@ await chmod("dist/server.mjs", 0o755);
 
 await copyFile("src/chrome-client.js", "dist/chrome-client.js");
 await copyFile("src/chrome.css", "dist/chrome.css");
-await mkdir("dist/design", { recursive: true });
-await copyFile("node_modules/daisyui/daisyui.css", "dist/design/daisyui.css");
-await copyFile("node_modules/daisyui/themes.css", "dist/design/daisyui-themes.css");
-await copyFile("node_modules/@tailwindcss/browser/dist/index.global.js", "dist/design/tailwindcss-browser.js");
 
 // Whiteboard frame: a self-contained browser bundle (Excalidraw + the Mermaid
 // converter + its exactly-pinned mermaid + React) served from

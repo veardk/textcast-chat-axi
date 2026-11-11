@@ -80,23 +80,6 @@ import {
 
 const chromeClientUrl = new URL("./chrome-client.js", import.meta.url);
 const chromeCssUrl = new URL("./chrome.css", import.meta.url);
-const designAssetUrls = {
-  "daisyui.css": {
-    packaged: new URL("./design/daisyui.css", import.meta.url),
-    source: new URL("../node_modules/daisyui/daisyui.css", import.meta.url),
-    type: "text/css",
-  },
-  "daisyui-themes.css": {
-    packaged: new URL("./design/daisyui-themes.css", import.meta.url),
-    source: new URL("../node_modules/daisyui/themes.css", import.meta.url),
-    type: "text/css",
-  },
-  "tailwindcss-browser.js": {
-    packaged: new URL("./design/tailwindcss-browser.js", import.meta.url),
-    source: new URL("../node_modules/@tailwindcss/browser/dist/index.global.js", import.meta.url),
-    type: "application/javascript",
-  },
-};
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60_000;
 const WHITEBOARD_CHANNEL_TOKEN_TTL_MS = 5 * 60_000;
@@ -1512,19 +1495,6 @@ export async function serve({
     }
   });
 
-  app.get("/design/:asset", async (req, res, next) => {
-    try {
-      const asset = designAssetUrls[req.params.asset];
-      if (!asset) {
-        res.status(404).send("Not found");
-        return;
-      }
-      res.type(asset.type).send(await readDesignAsset(asset));
-    } catch (error) {
-      next(error);
-    }
-  });
-
   app.get("/sdk.js", async (req, res, next) => {
     try {
       const verified = await store.verifyArtifactLoad(
@@ -2372,29 +2342,6 @@ function createDeniedHtml({ title, message, workingUrl }) {
   const safeMessage = escapeHtml(message);
   const safeUrl = escapeHtml(workingUrl);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle} - Lavish Editor</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f4ef;color:#25221f;font:16px/1.5 system-ui,sans-serif}.card{width:min(560px,calc(100% - 40px));padding:32px;border:1px solid #d9d0c5;border-radius:16px;background:#fffdf9;box-shadow:0 12px 40px #25221f18}h1{margin:0 0 12px;font-size:26px}p{margin:0 0 18px}.url{display:block;padding:12px 14px;border-radius:10px;background:#f0ebe4;color:#25221f;overflow-wrap:anywhere}a{color:inherit;font-weight:700}</style></head><body><main class="card"><h1>${safeTitle}</h1><p>${safeMessage}</p><p>Open this working URL:</p><a class="url" href="${safeUrl}">${safeUrl}</a></main></body></html>`;
-}
-
-async function readDesignAsset(asset) {
-  try {
-    return await readFile(asset.packaged, "utf8");
-  } catch (error) {
-    if (error && error.code !== "ENOENT") throw error;
-    return readFile(asset.source, "utf8");
-  }
-}
-
-// Map a legacy root-absolute `/design/<asset>` reference to the packaged design file on disk
-// (falling back to the node_modules source for source runs) so an export can inline it instead
-// of pointing back at this server's `/design` route.
-export function resolveDesignAssetPath(refPath) {
-  const match = /^\/design\/([^/?#]+)(?:[?#].*)?$/.exec(refPath);
-  if (!match) return null;
-  const asset = designAssetUrls[match[1]];
-  if (!asset) return null;
-  const packaged = fileURLToPath(asset.packaged);
-  if (existsSync(packaged)) return packaged;
-  const source = fileURLToPath(asset.source);
-  return existsSync(source) ? source : null;
 }
 
 // The set of Host header hostnames this server answers to: loopback names plus

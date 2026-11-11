@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -17,15 +16,10 @@ process.env.LAVISH_AXI_LINK_HOST = "127.0.0.1";
 
 import {
   collapseHomeDirectory,
-  computeCopilotCliHookUpdate,
-  createCopilotCliAmbientContextScript,
-  createCopilotCliSessionStartHook,
-  createDesignOutput,
   createHomeOutput,
   createLibrariesOutput,
   createOpenOutput,
   createPollOutput,
-  createPlaybookOutput,
   createServerSpawnOptions,
   createUserEndedOpenOutput,
   detectInvokingAgent,
@@ -37,8 +31,6 @@ import {
   pollInterruptedText,
   pollWaitBannerText,
   pollWaitTickText,
-  resolveCopilotHookDir,
-  resolveHookHomeDir,
   serverReplacementReason,
   shutdownServerOnPort,
   shouldForceRestartForLocalBuild,
@@ -50,9 +42,6 @@ import {
   stopCommand,
   VERSION,
 } from "../src/cli.js";
-import { DESIGN_PRIORITY_RULE, DESIGN_SYSTEM_HINT } from "../src/design-reference.js";
-import { resolveVsCodeSettingsFile } from "../src/plugin.js";
-import { createSkillMarkdown } from "../src/skill.js";
 import { SELF_PAINT_WARNING } from "../src/self-paint.js";
 import { serve } from "../src/server.js";
 import { canonicalFile, sessionKey } from "../src/session-store.js";
@@ -73,13 +62,6 @@ async function waitForPollListening(base, key, timeoutMs = 10_000) {
   } finally {
     socket.close();
   }
-}
-
-/** @returns {NodeJS.ProcessEnv} */
-function setupHooksEnv(homeDir, stateDir) {
-  // eslint-disable-next-line no-unused-vars
-  const { COPILOT_HOME, ...env } = process.env;
-  return { ...env, HOME: homeDir, LAVISH_AXI_STATE_DIR: stateDir };
 }
 
 function assertObservablePollWakePath(text) {
@@ -113,99 +95,6 @@ test("home help names LAVISH_AXI_ALLOWED_HOSTS for the 403 forbidden host case",
 test("CLI version tracks package.json so release-please bumps reach the published binary", async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(VERSION, packageJson.version);
-});
-
-test("home output teaches agents when and how to use Lavish Editor", () => {
-  const output = createHomeOutput({ bin: `${os.homedir()}/.local/bin/textcast-chat-axi`, sessions: [] });
-
-  assert.equal(output.bin, "~/.local/bin/textcast-chat-axi");
-  assert.match(output.description, /Lavish Editor/);
-  assert.match(output.description, /complex response/);
-  assert.match(output.description, /consider using Lavish Editor/);
-  assert.match(output.description, /First generate an interactive HTML artifact/);
-  assert.deepEqual(output.sessions, []);
-  assert.equal("use_cases" in output, false);
-  assert.equal("example_use_cases" in output, false);
-  assert.equal("artifact_guidance" in output, false);
-  assert.ok(output.visual_guidance.length <= 6);
-  assert.ok(output.visual_guidance.some((item) => item.includes("visual hierarchy")));
-  assert.ok(
-    output.visual_guidance.some(
-      (item) =>
-        /show, don't tell/i.test(item) && /inline SVG/.test(item) && /screenshot/i.test(item) && /prose/i.test(item),
-    ),
-  );
-  assert.ok(output.visual_guidance.some((item) => item.includes("sections, cards, tables")));
-  assert.ok(output.visual_guidance.some((item) => item.includes("horizontal overflow")));
-  assert.ok(output.visual_guidance.some((item) => item.includes("minmax(0, 1fr)")));
-  assert.ok(output.visual_guidance.some((item) => /nested grid\/flex/i.test(item)));
-  assert.ok(output.visual_guidance.some((item) => /pixel or monospace fonts/i.test(item)));
-  assert.ok(!output.visual_guidance.some((item) => item.includes("test narrow viewports")));
-  assert.ok(output.playbooks.some((item) => item.id === "diagram"));
-  assert.equal(
-    output.playbooks.find((item) => item.id === "input")?.use_when,
-    "Must be used when the agent needs to collect user input on decisions, choices, preferences, triage, scope, or other structured feedback from within the artifact",
-  );
-  assert.ok(output.help.some((item) => item.includes("textcast-chat-axi <html-file>")));
-  assert.ok(output.help.some((item) => item.includes("`.lavish/`")));
-  assert.ok(output.help.some((item) => item.includes("textcast-chat-axi playbook <playbook_id>")));
-  assert.ok(output.help.some((item) => item.includes("combines several playbooks")));
-  assert.ok(output.help.some((item) => item.includes("MUST open each matching playbook")));
-  assert.ok(output.help.some((item) => item.includes("reference other filesystem assets")));
-  assert.ok(output.help.some((item) => item.includes("same directory as the HTML file")));
-  assert.ok(output.help.includes(DESIGN_SYSTEM_HINT), "home help carries the single-sourced design rule verbatim");
-  assert.ok(!output.help.some((item) => item.includes('<meta name="lavish-design" content="off">')));
-  assert.ok(!output.help.some((item) => item.includes("Known IDs")));
-  assert.ok(output.help.some((item) => item.includes("technical plan")));
-});
-
-test("the design-priority rule is single-sourced and keeps its three-step semantics", () => {
-  // Keyword-level checks on the one owner constant; every surface that needs the rule
-  // embeds DESIGN_PRIORITY_RULE, so wording changes happen here and nowhere else.
-  assert.match(DESIGN_PRIORITY_RULE, /strict priority order/);
-  assert.match(DESIGN_PRIORITY_RULE, /\(1\)[\s\S]*\(2\)[\s\S]*\(3\)/);
-  assert.match(DESIGN_PRIORITY_RULE, /user asked for a specific look or named design system/);
-  assert.match(DESIGN_PRIORITY_RULE, /project the artifact is about/);
-  assert.match(DESIGN_PRIORITY_RULE, /current working directory/);
-  assert.match(DESIGN_PRIORITY_RULE, /previews, proposes, or mocks/);
-  assert.match(DESIGN_PRIORITY_RULE, /app's own design system/);
-  assert.match(DESIGN_PRIORITY_RULE, /Tailwind CSS browser runtime v4 \+ DaisyUI v5/);
-  assert.match(DESIGN_PRIORITY_RULE, /only when both steps come up empty/);
-  assert.match(DESIGN_PRIORITY_RULE, /hand-writing styles/);
-  assert.match(DESIGN_PRIORITY_RULE, /unless explicitly instructed/);
-  assert.doesNotMatch(DESIGN_PRIORITY_RULE, /inspect the current project/i);
-
-  assert.ok(DESIGN_SYSTEM_HINT.includes(DESIGN_PRIORITY_RULE), "the home hint embeds the rule");
-  assert.match(DESIGN_SYSTEM_HINT, /does not auto-inject/);
-  assert.match(DESIGN_SYSTEM_HINT, /portable/);
-  assert.match(DESIGN_SYSTEM_HINT, /textcast-chat-axi design/);
-  assert.match(DESIGN_SYSTEM_HINT, /state which of the three design sources/);
-});
-
-test("design output is the sole emitted concise explicit-background guidance", () => {
-  const output = createDesignOutput();
-  const instruction = "Paint an explicit page background and readable text.";
-  assert.match(output.design.summary, new RegExp(instruction.replaceAll(".", "\\.")));
-  assert.equal(output.self_paint_rule, undefined);
-
-  // The diagram playbook owns the figure render-verify rule, so it is exempt from the
-  // render-verify exclusivity sweep but must still not restate the background instruction.
-  const diagramSurface = JSON.stringify(createPlaybookOutput(["diagram"]));
-  assert.ok(!diagramSurface.includes(instruction));
-  assert.match(diagramSurface, /render-verify/i);
-  const otherAgentSurfaces = [
-    JSON.stringify(createHomeOutput({ bin: "textcast-chat-axi", sessions: [] })),
-    getCommandHelp("design"),
-    createSkillMarkdown(),
-    ...createPlaybookOutput([])
-      .playbooks.map((playbook) => playbook.id)
-      .filter((id) => id !== "diagram")
-      .map((id) => JSON.stringify(createPlaybookOutput([id]))),
-  ];
-  for (const surface of otherAgentSurfaces) {
-    assert.ok(!surface.includes(instruction));
-    assert.doesNotMatch(surface, /render-verify/i);
-  }
 });
 
 test("open output flags an artifact that never paints its own page surface", () => {
@@ -257,15 +146,6 @@ test("home output warns agents that poll needs an observable wake path", () => {
   assert.doesNotMatch(pollHelp, /above 10 minutes/);
 });
 
-test("ambient and per-artifact output never nags about installing the plugin", () => {
-  // Home output loads on every session and open/poll run constantly; setup belongs in the
-  // setup surfaces only, so an install prompt here would be pure recurring token cost.
-  const home = createHomeOutput({ bin: "textcast-chat-axi", sessions: [] });
-
-  assert.doesNotMatch(JSON.stringify(home), /setup plugin/);
-  assert.doesNotMatch(JSON.stringify(home), /setup hooks/);
-});
-
 test("home output tailors poll guidance when invoked under Codex", () => {
   const output = createHomeOutput({ bin: "textcast-chat-axi", sessions: [], agent: "codex" });
   const pollHelp = output.help.find((item) => item.includes("textcast-chat-axi poll <html-file>"));
@@ -307,13 +187,11 @@ test("top-level help renders static home output without dynamic sessions", async
     );
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /playbooks\[8\]/);
-    assert.match(result.stdout, /textcast-chat-axi playbook <playbook_id>/);
+    assert.doesNotMatch(result.stdout, /playbook/);
     assert.match(result.stdout, /reference other filesystem assets/);
     assert.match(result.stdout, /same directory as the HTML file/);
-    assert.match(result.stdout, /Tailwind CSS browser runtime v4/);
-    assert.match(result.stdout, /textcast-chat-axi design/);
-    assert.match(result.stdout, /strict priority order/);
+    assert.doesNotMatch(result.stdout, /Tailwind CSS browser runtime v4/);
+    assert.doesNotMatch(result.stdout, /textcast-chat-axi design/);
     assert.match(result.stdout, /never kill it/);
     assert.match(result.stdout, /feedback remains queued until delivery/);
     assert.doesNotMatch(result.stdout, /above 10 minutes/);
@@ -323,501 +201,6 @@ test("top-level help renders static home output without dynamic sessions", async
   } finally {
     await rm(stateDir, { force: true, recursive: true });
   }
-});
-
-test("design output prints copy-pasteable CDN URLs so agents can opt in to DaisyUI", () => {
-  const output = createDesignOutput();
-
-  assert.match(output.playbook_router.instruction, /MUST open each matching playbook before writing HTML/);
-  assert.equal(output.playbook_router.playbooks.length, 8);
-  assert.equal(
-    output.playbook_router.playbooks.find((playbook) => playbook.id === "diagram")?.use_when,
-    "Explain relationships, flows, state, architecture, and concepts with illustrations",
-  );
-  assert.ok(output.design.summary.includes(DESIGN_PRIORITY_RULE), "design summary embeds the single-sourced rule");
-  assert.match(output.design.summary, /does not auto-inject/);
-  assert.match(output.design.summary, /^Use this .*fallback only if/i);
-  assert.match(output.design.summary, /no design direction/i);
-  assert.match(output.design.summary, /check first/i);
-  assert.match(output.design.summary, /start it with `<!doctype html>`/);
-  assert.match(output.design.summary, /quirks mode/);
-  assert.match(output.design.cdn_snippet, /cdn\.jsdelivr\.net\/npm\/daisyui@/);
-  assert.match(output.design.cdn_snippet, /cdn\.jsdelivr\.net\/npm\/daisyui@.*\/themes\.css/);
-  assert.match(output.design.cdn_snippet, /cdn\.jsdelivr\.net\/npm\/@tailwindcss\/browser@/);
-  assert.match(output.design.layout_safety_snippet, /min-width: 0/);
-  assert.match(output.design.layout_safety_snippet, /overflow-wrap: anywhere/);
-  assert.match(output.design.layout_safety_snippet, /max-width: 100%/);
-  assert.match(output.design.layout_safety_note, /Optional copy-paste CSS/);
-  assert.match(output.design.layout_safety_note, /never auto-injects/);
-  assert.match(
-    output.design.cdn_urls.daisyui,
-    /^https:\/\/cdn\.jsdelivr\.net\/npm\/daisyui@\d+\.\d+\.\d+\/daisyui\.css$/,
-  );
-  assert.match(
-    output.design.cdn_urls.daisyuiThemes,
-    /^https:\/\/cdn\.jsdelivr\.net\/npm\/daisyui@\d+\.\d+\.\d+\/themes\.css$/,
-  );
-  assert.match(
-    output.design.cdn_urls.tailwind,
-    /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindcss\/browser@\d+\.\d+\.\d+\/dist\/index\.global\.js$/,
-  );
-  assert.match(output.design.other_design_systems, /different design system|other design system/i);
-  assert.match(output.whiteboard_tooling.use_when, /^Opt-in only/);
-  assert.match(output.whiteboard_tooling.use_when, /asks for an editable whiteboard/);
-  assert.match(output.whiteboard_tooling.use_when, /hand-authored inline SVG per the diagram playbook/);
-  assert.match(output.whiteboard_tooling.mermaid_cdn_snippet, /cdn\.jsdelivr\.net\/npm\/mermaid@\d+\.\d+\.\d+/);
-  assert.match(output.whiteboard_tooling.mermaid_cdn_snippet, /mermaid\.initialize/);
-  assert.match(
-    output.whiteboard_tooling.cdn_urls.mermaid,
-    /^https:\/\/cdn\.jsdelivr\.net\/npm\/mermaid@\d+\.\d+\.\d+\/dist\/mermaid\.esm\.min\.mjs$/,
-  );
-  assert.equal(output.whiteboard_tooling.versions.mermaid, "11.15.0");
-  assert.equal("opt_out" in output.design, false);
-  assert.equal("rule" in output.design, false);
-  assert.equal(output.design.latest_docs, "https://daisyui.com/components/");
-  assert.equal(output.themes.length, 35);
-  assert.ok(output.themes.includes("luxury"));
-  assert.ok(output.themes.includes("silk"));
-  assert.ok(output.components.actions.includes("button"));
-  assert.ok(output.components.data_display.includes("card"));
-  assert.ok(output.components.feedback.includes("alert"));
-  assert.ok(output.reference.button.classes.includes("btn-primary"));
-  assert.match(output.reference.modal.syntax, /<dialog/);
-  assert.ok(output.reference.table.notes.some((item) => item.includes("overflow-x-auto")));
-  assert.ok(output.reference.drawer.notes.some((item) => item.includes("drawer-toggle")));
-  assert.ok(output.reference.mockup.notes.some((item) => item.includes("Keep `data-prefix` short")));
-  assert.ok(output.reference.mockup.notes.some((item) => item.includes("line numbers")));
-});
-
-test("design output recommends luxury as the default theme and warns against @apply on DaisyUI classes", () => {
-  const output = createDesignOutput();
-
-  assert.ok(output.theme_usage.some((item) => /default.*luxury|luxury.*default/i.test(item)));
-  assert.ok(output.theme_usage.some((item) => item.includes("@apply") && /daisyui/i.test(item)));
-  assert.ok(output.theme_usage.some((item) => /aborts the entire|no Tailwind styles/i.test(item)));
-});
-
-test("playbook index output lists known playbooks with concise descriptions", () => {
-  const output = createPlaybookOutput([]);
-
-  assert.equal(output.playbooks.length, 8);
-  assert.deepEqual(
-    output.playbooks.map((playbook) => playbook.id),
-    ["diagram", "table", "comparison", "plan", "code", "input", "explanation", "slides"],
-  );
-  assert.equal(
-    output.playbooks.find((playbook) => playbook.id === "plan")?.use_when,
-    "Explain a product or technical plan before implementation",
-  );
-  assert.equal(
-    output.playbooks.find((playbook) => playbook.id === "input")?.use_when,
-    "Must be used when the agent needs to collect user input on decisions, choices, preferences, triage, scope, or other structured feedback from within the artifact",
-  );
-  assert.ok(output.playbooks.every((playbook) => playbook.use_when.length > 20));
-  assert.ok(output.help.some((item) => item.includes("textcast-chat-axi playbook <playbook_id>")));
-  assert.ok(output.help.some((item) => item.includes("combines several playbooks")));
-  assert.ok(output.help.some((item) => item.includes("MUST open each matching playbook")));
-});
-
-test("explanation playbook routes understanding of existing things and separates itself from plan and comparison", () => {
-  const output = createPlaybookOutput(["explanation"]);
-
-  assert.match(output.playbook.use_when, /Explain an existing system, PR, incident, or decision/i);
-  assert.match(output.playbook.use_when, /not choosing a direction or inspecting a plan/);
-  assert.ok(
-    output.playbook.choose.some((item) => /plan playbook when the reader must inspect and approve/i.test(item)),
-  );
-  assert.ok(output.playbook.structure.some((item) => /one-sentence answer/i.test(item)));
-  assert.ok(output.playbook.structure.some((item) => /what was deliberately left out/i.test(item)));
-  assert.ok(output.playbook.pitfalls.some((item) => /restate the PR body, diff, or ticket file-by-file/i.test(item)));
-  assert.ok(
-    output.playbook.design_rules.some((item) => /diagram playbook's assume-nothing rule/i.test(item)),
-    "reader starting point is owned by the diagram playbook and only pointed at here",
-  );
-  assert.ok(output.playbook.pitfalls.some((item) => /inferred reasoning as verified fact/i.test(item)));
-});
-
-test("diagram playbook defaults to hand-authored SVG and names the anti-patterns", () => {
-  const output = createPlaybookOutput(["diagram"]);
-
-  assert.ok(output.playbook.choose.some((item) => /Default to hand-authored inline SVG/.test(item)));
-  assert.ok(output.playbook.choose.some((item) => /only when the user asks for an editable whiteboard/i.test(item)));
-  assert.ok(output.playbook.pitfalls.some((item) => /hand-build boxes-and-arrows/i.test(item)));
-  assert.ok(output.playbook.pitfalls.some((item) => /div\/flexbox/i.test(item)));
-  assert.ok(output.playbook.pitfalls.some((item) => /reach for Mermaid to save authoring effort/i.test(item)));
-});
-
-test("diagram playbook owns assume-nothing and one-concept-per-diagram guidance", async () => {
-  const output = createPlaybookOutput(["diagram"]);
-  assert.ok(
-    output.playbook.structure.some((item) => /knows nothing/i.test(item) && /from zero/i.test(item)),
-    "the diagram playbook must tell agents to explain from zero",
-  );
-  assert.ok(
-    output.playbook.structure.some((item) => /one concept per diagram/i.test(item)),
-    "the diagram playbook must prefer one concept per diagram",
-  );
-
-  const playbookIds = createPlaybookOutput([]).playbooks.map((playbook) => playbook.id);
-  const otherSurfaces = [
-    JSON.stringify(createHomeOutput({ bin: "textcast-chat-axi", sessions: [] })),
-    JSON.stringify(createDesignOutput()),
-    createSkillMarkdown(),
-    ...playbookIds.filter((id) => id !== "diagram").map((id) => JSON.stringify(createPlaybookOutput([id]).playbook)),
-  ];
-  for (const surface of otherSurfaces) {
-    assert.doesNotMatch(surface, /one concept per diagram/i);
-    assert.doesNotMatch(surface, /knows nothing/i);
-    assert.doesNotMatch(surface, /presume/i);
-  }
-
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-playbook-diagram-`);
-  try {
-    const result = spawnSync(
-      process.execPath,
-      [fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url)), "playbook", "diagram"],
-      {
-        cwd: fileURLToPath(new URL("..", import.meta.url)),
-        encoding: "utf8",
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: stateDir },
-      },
-    );
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /knows nothing/i);
-    assert.match(result.stdout, /one concept per diagram/i);
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-  }
-});
-
-test("diagram playbook routes whiteboard Mermaid through the theme-aware design snippet", () => {
-  const output = createPlaybookOutput(["diagram"]);
-
-  assert.ok(
-    output.playbook.design_rules.some(
-      (item) => /mermaid/i.test(item) && /theme-aware/i.test(item) && /`textcast-chat-axi design`/.test(item),
-    ),
-    "the whiteboard opt-in must still theme Mermaid through the design snippet instead of hardcoding one theme",
-  );
-});
-
-test("design output emits a theme-aware Mermaid init that re-renders on page-theme change", () => {
-  const snippet = createDesignOutput().whiteboard_tooling.mermaid_cdn_snippet;
-
-  // The old bug: a single hardcoded Mermaid theme that ignores the page theme.
-  assert.doesNotMatch(snippet, /theme:\s*["']base["']/);
-
-  // It must choose the Mermaid theme from the page's effective light/dark
-  // appearance, covering both a data-theme toggle and the OS preference.
-  assert.match(snippet, /prefers-color-scheme:\s*dark/);
-  assert.match(snippet, /["']dark["']/);
-  assert.match(snippet, /["']default["']/);
-  assert.match(snippet, /backgroundColor/);
-
-  // Mermaid does not restyle an already-rendered SVG, so the snippet must
-  // re-render: it drives rendering itself and reacts to theme changes.
-  assert.match(snippet, /startOnLoad:\s*false/);
-  assert.match(snippet, /mermaid\.run/);
-  assert.match(snippet, /MutationObserver/);
-  assert.match(snippet, /data-theme/);
-  assert.match(snippet, /document\.addEventListener\(["']change["'],\s*queueRender,\s*true\)/);
-  assert.match(snippet, /document\.addEventListener\(\s*["']transitionend["']/);
-  assert.match(snippet, /background-color/);
-  assert.match(snippet, /function compositeRgba/);
-  assert.match(snippet, /colorScheme/);
-  assert.match(snippet, /addEventListener\(["']change["']/);
-});
-
-test("theme-aware Mermaid snippet serializes rapid theme-change renders", async () => {
-  const snippet = createDesignOutput()
-    .whiteboard_tooling.mermaid_cdn_snippet.replace(/^<script type="module">\n/, "")
-    .replace(/\n<\/script>$/, "")
-    .replace(/^\s*import mermaid from "[^"]+";\n/m, "");
-  let dark = false;
-  let observedThemeMutations = false;
-  const observedThemeTargets = [];
-  const documentListeners = new Map();
-  const initializedThemes = [];
-  const mediaListeners = [];
-  const pendingRenders = [];
-  const loggedRenderErrors = [];
-  let nextRenderError;
-  let activeRenders = 0;
-  let maxActiveRenders = 0;
-  const renderedSources = [];
-  let bodyColor = "white";
-  let rootColor = "white";
-  let rootColorScheme = "normal";
-  const paint = {
-    color: "",
-    clearRect() {},
-    set fillStyle(color) {
-      this.color = color;
-    },
-    fillRect() {},
-    getImageData() {
-      const colors = {
-        black: [0, 0, 0, 255],
-        transparent: [0, 0, 0, 0],
-        white: [255, 255, 255, 255],
-        "white-40": [255, 255, 255, 102],
-      };
-      return { data: colors[this.color] };
-    },
-  };
-  let diagramMarkup = 'flowchart TD\\n  A["OBJECTIVE:<br/>do the thing"]';
-  const diagram = {
-    get innerHTML() {
-      return diagramMarkup;
-    },
-    set innerHTML(value) {
-      diagramMarkup = value;
-    },
-    get textContent() {
-      return diagramMarkup.replace(/<br\s*\/?\s*>/gi, "");
-    },
-    set textContent(value) {
-      diagramMarkup = value;
-    },
-    removeAttribute() {},
-  };
-  const document = {
-    body: { id: "body" },
-    documentElement: { id: "root" },
-    readyState: "complete",
-    createElement() {
-      return { getContext: () => paint };
-    },
-    querySelectorAll() {
-      return [diagram];
-    },
-    addEventListener(type, callback, capture) {
-      documentListeners.set(type, { callback, capture });
-    },
-  };
-  const darkQuery = {
-    get matches() {
-      return dark;
-    },
-    addEventListener(type, callback) {
-      assert.equal(type, "change");
-      mediaListeners.push(callback);
-    },
-  };
-  const window = {
-    matchMedia() {
-      return darkQuery;
-    },
-    addEventListener() {
-      assert.fail("the snippet should render immediately after document load");
-    },
-  };
-  class TestMutationObserver {
-    constructor() {
-      observedThemeMutations = true;
-    }
-
-    observe(target) {
-      observedThemeTargets.push(target);
-    }
-  }
-  const mermaid = {
-    initialize({ theme }) {
-      initializedThemes.push(theme);
-    },
-    run() {
-      renderedSources.push(diagram.innerHTML);
-      activeRenders += 1;
-      maxActiveRenders = Math.max(maxActiveRenders, activeRenders);
-      if (nextRenderError) {
-        const error = nextRenderError;
-        nextRenderError = undefined;
-        activeRenders -= 1;
-        return Promise.reject(error);
-      }
-      return new Promise((resolve) => {
-        pendingRenders.push(() => {
-          activeRenders -= 1;
-          resolve();
-        });
-      });
-    },
-  };
-  function finishNextRender() {
-    const finish = pendingRenders.shift();
-    if (!finish) throw new Error("expected a pending Mermaid render");
-    finish();
-  }
-
-  new Function("mermaid", "window", "document", "MutationObserver", "getComputedStyle", "console", snippet)(
-    mermaid,
-    window,
-    document,
-    TestMutationObserver,
-    (element) => ({
-      backgroundColor: element === document.body ? bodyColor : rootColor,
-      colorScheme: element === document.documentElement ? rootColorScheme : "normal",
-    }),
-    { error: (...args) => loggedRenderErrors.push(args) },
-  );
-
-  assert.equal(mediaListeners.length, 1);
-  assert.equal(observedThemeMutations, true);
-  assert.deepEqual(observedThemeTargets, [document.documentElement, document.body]);
-  const changeListener = documentListeners.get("change");
-  assert.equal(typeof changeListener?.callback, "function");
-  assert.equal(changeListener?.capture, true);
-  const transitionListener = documentListeners.get("transitionend");
-  assert.equal(typeof transitionListener?.callback, "function");
-  assert.equal(transitionListener?.capture, true);
-  assert.deepEqual(initializedThemes, ["default"]);
-  assert.deepEqual(renderedSources, ['flowchart TD\\n  A["OBJECTIVE:<br/>do the thing"]']);
-  bodyColor = "white-40";
-  rootColor = "black";
-  transitionListener.callback({ propertyName: "color" });
-  assert.deepEqual(initializedThemes, ["default"]);
-  transitionListener.callback({ propertyName: "background-color" });
-  assert.equal(maxActiveRenders, 1);
-  assert.deepEqual(initializedThemes, ["default"]);
-
-  finishNextRender();
-  await Promise.resolve();
-  assert.deepEqual(initializedThemes, ["default", "dark"]);
-  assert.equal(maxActiveRenders, 1);
-
-  finishNextRender();
-  await Promise.resolve();
-  assert.equal(activeRenders, 0);
-  assert.equal(initializedThemes.filter((entry) => entry === "dark").length, 1);
-
-  bodyColor = "transparent";
-  rootColor = "transparent";
-  rootColorScheme = "light";
-  changeListener.callback();
-  assert.deepEqual(initializedThemes, ["default", "dark", "default"]);
-  finishNextRender();
-  await Promise.resolve();
-
-  rootColorScheme = "dark";
-  transitionListener.callback({ propertyName: "background-color" });
-  assert.deepEqual(initializedThemes, ["default", "dark", "default", "dark"]);
-  finishNextRender();
-  await Promise.resolve();
-
-  const renderError = new Error("invalid Mermaid syntax");
-  nextRenderError = renderError;
-  rootColorScheme = "light";
-  transitionListener.callback({ propertyName: "background-color" });
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.deepEqual(loggedRenderErrors, [["Mermaid diagram render failed:", renderError]]);
-
-  changeListener.callback();
-  assert.equal(activeRenders, 1);
-  finishNextRender();
-  await Promise.resolve();
-});
-
-test("Mermaid after evidence embeds the shipped theme-aware snippet", async () => {
-  const evidence = await readFile(new URL("../task-evidence/mermaid-theme/after.html", import.meta.url), "utf8");
-  const start = evidence.indexOf('    <script type="module">');
-  const closingScript = evidence.indexOf("    </script>", start);
-
-  assert.notEqual(start, -1);
-  assert.notEqual(closingScript, -1);
-  assert.equal(
-    evidence.slice(start, closingScript + "    </script>".length).replace(/^ {4}/gm, ""),
-    createDesignOutput().whiteboard_tooling.mermaid_cdn_snippet,
-  );
-});
-
-test("playbook detail output returns focused Lavish-native guidance", () => {
-  const output = createPlaybookOutput(["input"]);
-
-  assert.equal(output.playbook.id, "input");
-  assert.match(output.playbook.use_when, /Must be used/);
-  assert.match(output.playbook.use_when, /collect user input/);
-  assert.ok(output.playbook.choose.some((item) => item.includes("control")));
-  assert.ok(output.playbook.structure.some((item) => item.includes("decision")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("queuePrompt")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("per-question form submit")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("radio change handlers")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("data-lavish-action")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("data-lavish-question")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("queueKey")));
-  assert.ok(output.playbook.lavish_notes.some((item) => item.includes("window.lavish.queuePrompt")));
-  assert.ok(output.playbook.lavish_notes.some((item) => item.includes("onsubmit")));
-  assert.ok(output.playbook.pitfalls.some((item) => item.includes("unclear")));
-  assert.ok(output.playbook.pitfalls.some((item) => item.includes("radio change")));
-  assert.ok(output.playbook.lavish_notes.some((item) => item.includes("Lavish")));
-});
-
-test("input playbook defines an opt-in tracked batch handoff", () => {
-  const output = createPlaybookOutput(["input"]);
-  const guidance = JSON.stringify(output.playbook);
-  const example = output.playbook.lavish_notes.find((item) => /tag: ['"]tracked-batch/.test(item));
-
-  assert.match(guidance, /multi-item/);
-  assert.match(guidance, /stable, visible ID/);
-  assert.match(guidance, /selected set/);
-  assert.match(guidance, /account for every submitted ID/);
-  assert.match(guidance, /addressed/);
-  assert.match(guidance, /deferred/);
-  assert.match(guidance, /rejected/);
-  assert.match(guidance, /receipt ID set/);
-  assert.ok(example, "the tracked-batch pattern includes a copyable example");
-  assert.match(example, /<form/);
-  assert.match(example, /type="checkbox"/);
-  assert.match(example, /onsubmit=/);
-  assert.equal(example.match(/window\.lavish\.queuePrompt/g)?.length, 1);
-  assert.match(example, /items: selected/);
-  assert.match(example, /id:/);
-  assert.match(example, /label:/);
-  assert.match(example, /disposition:/);
-});
-
-test("table playbook routes multi-row actions to the input tracked-batch pattern", () => {
-  const output = createPlaybookOutput(["table"]);
-
-  assert.ok(
-    output.playbook.lavish_notes.some(
-      (item) => item.includes("multiple rows") && item.includes("input") && item.includes("tracked batch"),
-    ),
-  );
-});
-
-test("code playbook detail output requires verified @pierre/diffs rendering", () => {
-  const output = createPlaybookOutput(["code"]);
-
-  assert.equal(output.playbook.id, "code");
-  assert.match(output.playbook.use_when, /source code/);
-  assert.ok(output.playbook.choose.some((item) => item.includes("FileDiff")));
-  assert.ok(output.playbook.choose.some((item) => item.includes("split") && item.includes("unified")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("@pierre/diffs")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("https://esm.sh/@pierre/diffs@1.2.10?bundle")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("new FileDiff")));
-  assert.ok(output.playbook.design_rules.some((item) => item.includes("Shiki theme")));
-  assert.ok(output.playbook.pitfalls.some((item) => item.includes("<pre>")));
-});
-
-test("plan playbook detail output has polished guidance copy", () => {
-  const output = createPlaybookOutput(["plan"]);
-
-  assert.ok(output.playbook.structure.some((item) => item.includes("Then describe a proposed approach")));
-  assert.ok(output.playbook.structure.every((item) => !item.includes("Then describe the a proposed approach")));
-});
-
-test("unknown playbook ids produce an actionable validation error", () => {
-  assert.throws(
-    () => createPlaybookOutput(["unknown"]),
-    (error) => {
-      assert.ok(error instanceof AxiError);
-      assert.equal(error.code, "VALIDATION_ERROR");
-      assert.match(error.message, /Unknown playbook/);
-      assert.ok(error.suggestions.some((item) => item.includes("textcast-chat-axi playbook")));
-      return true;
-    },
-  );
 });
 
 test("home directory collapse tolerates Windows mixed separators", () => {
@@ -1551,455 +934,10 @@ test("waiting next step reassures agents that re-running poll loses nothing", ()
   assert.match(output.next_step, /feedback remains queued until delivery/);
 });
 
-test("html file arguments normalize to the hidden open command", () => {
-  assert.deepEqual(normalizeArgv(["report.html"]), ["open", "report.html"]);
-  assert.deepEqual(normalizeArgv(["--no-open", "report.html"]), ["open", "--no-open", "report.html"]);
-  assert.deepEqual(normalizeArgv(["--no-gate", "report.html"]), ["open", "--no-gate", "report.html"]);
-  assert.deepEqual(normalizeArgv(["poll", "report.html"]), ["poll", "report.html"]);
-  assert.deepEqual(normalizeArgv(["setup", "hooks"]), ["setup", "hooks"]);
-  assert.deepEqual(normalizeArgv(["playbook", "diagram"]), ["playbook", "diagram"]);
-  assert.deepEqual(normalizeArgv(["design"]), ["design"]);
-  assert.deepEqual(normalizeArgv(["--help"]), ["--help"]);
-});
-
 test("SDK reserved commands pass through instead of normalizing to open", () => {
   assert.deepEqual(normalizeArgv(["update"]), ["update"]);
   assert.deepEqual(normalizeArgv(["update", "--check"]), ["update", "--check"]);
   assert.deepEqual(normalizeArgv(["update", "--help"]), ["update", "--help"]);
-});
-
-test("setup hooks resolves HOME before platform-specific user profile variables", () => {
-  assert.equal(
-    resolveHookHomeDir({ HOME: "/tmp/lavish-home", USERPROFILE: "C:\\Users\\runneradmin" }, "/fallback"),
-    "/tmp/lavish-home",
-  );
-});
-
-test("setup hooks resolves Copilot hook directory from COPILOT_HOME first", () => {
-  assert.equal(
-    resolveCopilotHookDir({ COPILOT_HOME: "/tmp/copilot-home", HOME: "/tmp/home" }),
-    path.join("/tmp/copilot-home", "hooks"),
-  );
-  assert.equal(resolveCopilotHookDir({ HOME: "/tmp/home" }), path.join("/tmp/home", ".copilot", "hooks"));
-});
-
-test("setup hooks creates a Copilot CLI hook that injects additional context", () => {
-  const hook = createCopilotCliSessionStartHook();
-  const [updated, changed] = computeCopilotCliHookUpdate(
-    {
-      version: 1,
-      hooks: {
-        sessionStart: [{ type: "command", bash: "echo keep-me" }],
-      },
-    },
-    hook,
-  );
-
-  assert.equal(changed, true);
-  assert.equal(updated.version, 1);
-  assert.equal(updated.hooks.sessionStart.length, 2);
-  assert.equal(updated.hooks.sessionStart[0].bash, "echo keep-me");
-  assert.match(updated.hooks.sessionStart[1].bash, /additionalContext/);
-  assert.match(updated.hooks.sessionStart[1].powershell, /additionalContext/);
-  assert.match(updated.hooks.sessionStart[1].bash, /textcast-chat-axi/);
-  assert.equal(updated.hooks.sessionStart[1].timeoutSec, 10);
-
-  const [unchanged, unchangedFlag] = computeCopilotCliHookUpdate(updated, hook);
-  assert.equal(unchangedFlag, false);
-  assert.equal(unchanged, updated);
-});
-
-test("Copilot CLI ambient context script wraps lavish output as hook JSON", async () => {
-  const tempDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-copilot-hook-`);
-  try {
-    const fakeCli = path.join(tempDir, "fake-lavish.js");
-    await writeFile(fakeCli, 'console.log("sessions: []");\n', "utf8");
-    const command = `"${process.execPath}" "${fakeCli}"`;
-    const result = spawnSync(process.execPath, ["-e", createCopilotCliAmbientContextScript(command)], {
-      encoding: "utf8",
-    });
-
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    const output = JSON.parse(result.stdout);
-    assert.match(output.additionalContext, /## AXI ambient context: textcast-chat-axi/);
-    assert.match(output.additionalContext, /sessions: \[\]/);
-  } finally {
-    await rm(tempDir, { force: true, recursive: true });
-  }
-});
-
-test("setup hooks installs agent session hooks explicitly", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-setup-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-setup-home-`);
-  try {
-    const result = spawnSync(
-      process.execPath,
-      [fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url)), "setup", "hooks"],
-      {
-        cwd: fileURLToPath(new URL("..", import.meta.url)),
-        encoding: "utf8",
-        env: setupHooksEnv(homeDir, stateDir),
-      },
-    );
-
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /hooks:/);
-    assert.match(result.stdout, /status: installed/);
-    assert.match(result.stdout, /GitHub Copilot CLI/);
-    assert.match(result.stdout, /Restart your agent session/);
-    assert.ok(existsSync(`${homeDir}/.claude/settings.json`));
-    assert.ok(existsSync(`${homeDir}/.copilot/hooks/textcast-chat-axi.json`));
-
-    const copilotHook = JSON.parse(await readFile(`${homeDir}/.copilot/hooks/textcast-chat-axi.json`, "utf8"));
-    assert.equal(copilotHook.version, 1);
-    assert.equal(copilotHook.hooks.sessionStart.length, 1);
-    assert.match(copilotHook.hooks.sessionStart[0].bash, /additionalContext/);
-    assert.match(copilotHook.hooks.sessionStart[0].powershell, /additionalContext/);
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-  }
-});
-
-test("setup hooks exits with an error when hook installation fails", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-setup-fail-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-setup-fail-home-`);
-  try {
-    await mkdir(`${homeDir}/.claude`, { recursive: true });
-    await writeFile(`${homeDir}/.claude/settings.json`, "{ invalid json", "utf8");
-
-    const result = spawnSync(
-      process.execPath,
-      [fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url)), "setup", "hooks"],
-      {
-        cwd: fileURLToPath(new URL("..", import.meta.url)),
-        encoding: "utf8",
-        env: setupHooksEnv(homeDir, stateDir),
-      },
-    );
-
-    const output = `${result.stdout}\n${result.stderr}`;
-    assert.notEqual(result.status, 0, result.stdout);
-    assert.match(output, /hook/i);
-    assert.doesNotMatch(result.stdout, /status: installed/);
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-  }
-});
-
-// `copilot` is a real binary on developer machines; an empty PATH keeps `setup plugin`
-// from registering the plugin into the tester's own Copilot CLI.
-function setupPluginEnv(homeDir, stateDir, pathDir) {
-  const env = setupHooksEnv(homeDir, stateDir);
-  delete env.APPDATA;
-  delete env.XDG_CONFIG_HOME;
-  return { ...env, PATH: pathDir, Path: pathDir };
-}
-
-function runSetupPlugin(homeDir, stateDir, pathDir) {
-  return spawnSync(
-    process.execPath,
-    [fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url)), "setup", "plugin"],
-    {
-      cwd: fileURLToPath(new URL("..", import.meta.url)),
-      encoding: "utf8",
-      env: setupPluginEnv(homeDir, stateDir, pathDir),
-    },
-  );
-}
-
-async function writeCopilotCommandStub(pathDir, options) {
-  const source = `
-const fs = require("node:fs");
-const options = ${JSON.stringify(options)};
-const args = process.argv.slice(2);
-const command = args.slice(0, 2).join(" ");
-if (command === "plugins list") {
-  if (options.invalidList) {
-    process.stdout.write("not json\\n");
-  } else {
-    const records = [{ kind: "plugin", name: "textcast-chat-axi-tools", source: "direct" }];
-    if (options.installedSource && fs.existsSync(options.installedSource)) {
-      records.push(options.listSourcePath
-        ? { kind: "plugin", name: "textcast-chat-axi", sourcePath: fs.readFileSync(options.installedSource, "utf8") }
-        : { kind: "plugin", name: "textcast-chat-axi", source: "direct" });
-    }
-    process.stdout.write(JSON.stringify(records));
-  }
-  process.exit(0);
-}
-if (command === "plugin install") {
-  if (options.installFails) {
-    process.stderr.write("replacement failed\\n");
-    process.exit(1);
-  }
-  const pluginRoot = args[2];
-  if (options.installedSource) fs.writeFileSync(options.installedSource, pluginRoot);
-  if (options.copilotConfig) {
-    fs.writeFileSync(options.copilotConfig, JSON.stringify({
-      installedPlugins: [{ name: "textcast-chat-axi", source: { source: "local", path: pluginRoot } }],
-    }));
-  }
-  if (options.installLog) fs.appendFileSync(options.installLog, "install\\n");
-  process.exit(0);
-}
-process.exit(1);
-`;
-  if (process.platform === "win32") {
-    const script = path.join(pathDir, "copilot-stub.cjs");
-    await writeFile(script, source, "utf8");
-    await writeFile(path.join(pathDir, "copilot.cmd"), `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`, "utf8");
-    return;
-  }
-  await writeFile(path.join(pathDir, "copilot"), `#!${process.execPath}\n${source}`, {
-    encoding: "utf8",
-    mode: 0o755,
-  });
-}
-
-test("setup plugin registers the installed package in the clients that are present", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-path-`);
-  try {
-    await mkdir(`${homeDir}/.cursor`, { recursive: true });
-
-    const result = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /name: textcast-chat-axi/);
-    assert.match(result.stdout, /cursor,registered/);
-    // No VS Code settings and no copilot binary in this environment.
-    assert.match(result.stdout, /vscode,absent/);
-    assert.match(result.stdout, /copilot,absent/);
-
-    // The registered slot points at the package root, which is where plugin.json lives.
-    const linked = await realpath(`${homeDir}/.cursor/plugins/local/textcast-chat-axi`);
-    assert.equal(linked, await realpath(fileURLToPath(new URL("..", import.meta.url))));
-    assert.ok(existsSync(`${linked}/plugin.json`));
-    assert.ok(existsSync(`${linked}/skills/lavish/SKILL.md`));
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup plugin registers VS Code without disturbing existing settings", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-vs-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-vs-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-vs-path-`);
-  const settingsFile = resolveVsCodeSettingsFile({}, homeDir);
-  try {
-    await mkdir(path.dirname(settingsFile), { recursive: true });
-    await writeFile(settingsFile, JSON.stringify({ "editor.fontSize": 13 }), "utf8");
-
-    const first = runSetupPlugin(homeDir, stateDir, pathDir);
-    assert.equal(first.status, 0, first.stderr || first.stdout);
-    assert.match(first.stdout, /vscode,registered/);
-
-    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
-    assert.equal(settings["editor.fontSize"], 13, "unrelated settings survive");
-    const registered = Object.keys(settings["chat.pluginLocations"]);
-    assert.equal(registered.length, 1);
-    assert.ok(existsSync(`${registered[0]}/plugin.json`));
-
-    // Re-running is a no-op rather than a duplicate registration.
-    const second = runSetupPlugin(homeDir, stateDir, pathDir);
-    assert.equal(second.status, 0, second.stderr || second.stdout);
-    assert.match(second.stdout, /vscode,current/);
-    assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")), settings);
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup plugin creates VS Code settings for a fresh installation", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-vs-fresh-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-vs-fresh-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-vs-fresh-path-`);
-  const settingsFile = resolveVsCodeSettingsFile({}, homeDir);
-  try {
-    await mkdir(path.dirname(settingsFile), { recursive: true });
-
-    const result = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /vscode,registered/);
-    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
-    const registered = Object.keys(settings["chat.pluginLocations"]);
-    assert.equal(registered.length, 1);
-    assert.ok(existsSync(`${registered[0]}/plugin.json`));
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup plugin leaves unparseable VS Code settings alone", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-jsonc-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-jsonc-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-jsonc-path-`);
-  const settingsFile = resolveVsCodeSettingsFile({}, homeDir);
-  const original = '{\n  // VS Code settings allow comments\n  "editor.fontSize": 13,\n}\n';
-  try {
-    await mkdir(path.dirname(settingsFile), { recursive: true });
-    await writeFile(settingsFile, original, "utf8");
-
-    const result = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /vscode,manual/);
-    assert.equal(await readFile(settingsFile, "utf8"), original, "settings are not rewritten");
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup plugin repairs Copilot registration without trusting list text", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-path-`);
-  const installedSource = path.join(homeDir, "copilot-installed-source");
-  const installLog = path.join(homeDir, "copilot-install-log");
-  const copilotConfig = path.join(homeDir, ".copilot", "config.json");
-  try {
-    await mkdir(path.dirname(copilotConfig), { recursive: true });
-    await writeFile(copilotConfig, '{"installedPlugins":[]}');
-    await writeCopilotCommandStub(pathDir, { installedSource, installLog, copilotConfig });
-
-    const first = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(first.status, 0, first.stderr || first.stdout);
-    assert.match(first.stdout, /copilot,registered/);
-    const pluginRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)));
-    assert.equal(await realpath(await readFile(installedSource, "utf8")), pluginRoot);
-
-    const second = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(second.status, 0, second.stderr || second.stdout);
-    assert.match(second.stdout, /copilot,current/);
-    assert.equal(await realpath(await readFile(installedSource, "utf8")), pluginRoot);
-    assert.equal(await readFile(installLog, "utf8"), "install\n");
-
-    await writeFile(installedSource, "/stale/textcast-chat-axi");
-    await writeFile(
-      copilotConfig,
-      '{"installedPlugins":[{"name":"textcast-chat-axi","source":{"source":"local","path":"/stale/textcast-chat-axi"}}]}',
-    );
-    const repaired = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(repaired.status, 0, repaired.stderr || repaired.stdout);
-    assert.match(repaired.stdout, /copilot,registered/);
-    assert.equal(await realpath(await readFile(installedSource, "utf8")), pluginRoot);
-    assert.equal(await readFile(installLog, "utf8"), "install\ninstall\n");
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup plugin preserves Copilot registration when replacement fails", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-failure-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-failure-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-failure-path-`);
-  const installedSource = path.join(homeDir, "copilot-installed-source");
-  const originalSource = "/working/textcast-chat-axi";
-  try {
-    await writeFile(installedSource, originalSource);
-    await writeCopilotCommandStub(pathDir, { installedSource, listSourcePath: true, installFails: true });
-
-    const result = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /copilot,failed/);
-    assert.equal(await readFile(installedSource, "utf8"), originalSource);
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup plugin does not install when Copilot records are invalid", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-invalid-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-invalid-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-copilot-invalid-path-`);
-  const installLog = path.join(homeDir, "copilot-install-log");
-  try {
-    await writeCopilotCommandStub(pathDir, { invalidList: true, installLog });
-
-    const result = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /copilot,manual/);
-    assert.equal(existsSync(installLog), false);
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup plugin isolates a client it cannot register from the ones it can", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-iso-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-iso-home-`);
-  const pathDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-plugin-iso-path-`);
-  const settingsFile = resolveVsCodeSettingsFile({}, homeDir);
-  try {
-    // A real directory in Cursor's slot is unregisterable - the same reported (not thrown)
-    // path a Windows box without Developer Mode takes when link creation is refused.
-    const occupied = `${homeDir}/.cursor/plugins/local/textcast-chat-axi`;
-    await mkdir(occupied, { recursive: true });
-    await writeFile(`${occupied}/keep.txt`, "user content", "utf8");
-    await mkdir(path.dirname(settingsFile), { recursive: true });
-    await writeFile(settingsFile, JSON.stringify({ "editor.fontSize": 13 }), "utf8");
-
-    const result = runSetupPlugin(homeDir, stateDir, pathDir);
-
-    assert.equal(result.status, 0, "an unregisterable client never fails the command");
-    assert.match(result.stdout, /cursor,manual/);
-    assert.match(result.stdout, /vscode,registered/, "the other client is still registered");
-
-    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
-    assert.equal(Object.keys(settings["chat.pluginLocations"]).length, 1);
-    assert.equal(await readFile(`${occupied}/keep.txt`, "utf8"), "user content", "user content survives");
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-    await rm(pathDir, { force: true, recursive: true });
-  }
-});
-
-test("setup rejects an unknown action and names both supported ones", async () => {
-  const stateDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-setup-unknown-state-`);
-  const homeDir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-setup-unknown-home-`);
-  try {
-    const result = spawnSync(
-      process.execPath,
-      [fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url)), "setup", "everything"],
-      {
-        cwd: fileURLToPath(new URL("..", import.meta.url)),
-        encoding: "utf8",
-        env: setupHooksEnv(homeDir, stateDir),
-      },
-    );
-
-    assert.notEqual(result.status, 0);
-    const output = `${result.stdout}\n${result.stderr}`;
-    assert.match(output, /setup hooks/);
-    assert.match(output, /setup plugin/);
-  } finally {
-    await rm(stateDir, { force: true, recursive: true });
-    await rm(homeDir, { force: true, recursive: true });
-  }
 });
 
 test("server spawn options detach without inheriting invalid streams", () => {
@@ -2191,29 +1129,6 @@ test("shutdownServerOnPort ignores unidentified health responders", async () => 
   assert.equal(shutdowns, 0);
   assert.equal(kills, 0);
   assert.deepEqual(output, { server: { status: "not-lavish", port: 4397 } });
-});
-
-test("open can resume a session without opening another browser window", () => {
-  assert.equal(shouldOpenBrowser(["--no-open", "artifact.html"], {}), false);
-  assert.equal(shouldOpenBrowser(["artifact.html", "--no-open"], {}), false);
-  assert.equal(shouldOpenBrowser(["--no-gate", "artifact.html"], {}), true);
-  assert.equal(shouldOpenBrowser(["artifact.html"], { LAVISH_AXI_NO_OPEN: "1" }), false);
-  assert.equal(shouldOpenBrowser(["artifact.html"], {}), true);
-  assert.match(getCommandHelp("open"), /--no-open/);
-  assert.match(getCommandHelp("open"), /--no-gate/);
-  assert.match(getCommandHelp("open"), /--reopen/);
-  assert.match(getCommandHelp("playbook"), /diagram/);
-  assert.match(getCommandHelp("playbook"), /code/);
-  assert.match(getCommandHelp("playbook"), /input/);
-  assert.doesNotMatch(getCommandHelp("playbook"), new RegExp(`${"di"}ff, input`));
-  assert.doesNotMatch(getCommandHelp("playbook"), /interactive/);
-  assert.match(getCommandHelp("design"), /DaisyUI/);
-  assert.match(getCommandHelp("design"), /textcast-chat-axi design/);
-  assert.match(getCommandHelp("design"), /portable/);
-  assert.ok(getCommandHelp("design").includes(DESIGN_PRIORITY_RULE), "design help embeds the single-sourced rule");
-  assert.match(getCommandHelp("design"), /fallback, not the default/i);
-  assert.match(getCommandHelp("design"), /inspect the subject project/i);
-  assert.doesNotMatch(getCommandHelp("design"), /auto-injects/);
 });
 
 test("polling a file without an active session tells the agent to open it first", () => {
@@ -2514,20 +1429,36 @@ test("libraries help documents the command and the directory", () => {
   assert.equal(normalizeArgv(["libraries"])[0], "libraries");
 });
 
-test("design output owns the library icon directive and the diagram playbook points at it", () => {
-  const icons = createDesignOutput().whiteboard_tooling.library_icons;
-  assert.match(icons.use_when, /textcast-chat-axi libraries/);
-  assert.equal(icons.syntax, "%% lavish-icon <node-id> <library-id>/<item name>");
-  assert.match(icons.example, /^flowchart /);
-  assert.match(icons.example, /%% lavish-icon api /);
-  assert.match(icons.notes, /plain node/);
-  assert.match(icons.notes, /Added library item/);
+test("html file arguments normalize to the hidden open command", () => {
+  assert.deepEqual(normalizeArgv(["report.html"]), ["open", "report.html"]);
+  assert.deepEqual(normalizeArgv(["--no-open", "report.html"]), ["open", "--no-open", "report.html"]);
+  assert.deepEqual(normalizeArgv(["--no-gate", "report.html"]), ["open", "--no-gate", "report.html"]);
+  assert.deepEqual(normalizeArgv(["poll", "report.html"]), ["poll", "report.html"]);
+  assert.deepEqual(normalizeArgv(["--help"]), ["--help"]);
+});
 
-  const diagram = JSON.stringify(createPlaybookOutput(["diagram"]));
-  assert.match(diagram, /whiteboard_tooling\.library_icons/);
-  assert.doesNotMatch(diagram, /%% lavish-icon/, "the syntax has one owner surface");
-  assert.doesNotMatch(
-    JSON.stringify(createHomeOutput({ bin: "textcast-chat-axi", sessions: [] })),
-    /lavish-icon|libraries/,
-  );
+test("open can resume a session without opening another browser window", () => {
+  assert.equal(shouldOpenBrowser(["--no-open", "artifact.html"], {}), false);
+  assert.equal(shouldOpenBrowser(["artifact.html", "--no-open"], {}), false);
+  assert.equal(shouldOpenBrowser(["--no-gate", "artifact.html"], {}), true);
+  assert.equal(shouldOpenBrowser(["artifact.html"], { LAVISH_AXI_NO_OPEN: "1" }), false);
+  assert.equal(shouldOpenBrowser(["artifact.html"], {}), true);
+  assert.match(getCommandHelp("open"), /--no-open/);
+  assert.match(getCommandHelp("open"), /--no-gate/);
+  assert.match(getCommandHelp("open"), /--reopen/);
+});
+
+test("home output teaches agents to review Textcast pages", () => {
+  const output = createHomeOutput({ bin: `${os.homedir()}/.local/bin/textcast-chat-axi`, sessions: [] });
+
+  assert.equal(output.bin, "~/.local/bin/textcast-chat-axi");
+  assert.match(output.description, /Textcast reading page/);
+  assert.match(output.description, /span#seg<N>-<src\|tgt>-<mode>/);
+  assert.match(output.description, /details#topic-<N>/);
+  assert.deepEqual(output.sessions, []);
+  assert.equal("visual_guidance" in output, false);
+  assert.equal("playbooks" in output, false);
+  assert.ok(output.help.some((item) => item.includes("textcast-chat-axi <html-file>")));
+  assert.ok(!output.help.some((item) => item.includes("playbook")));
+  assert.ok(!output.help.some((item) => item.includes("`.lavish/`")));
 });

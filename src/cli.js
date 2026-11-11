@@ -1,14 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import {
-  closeSync,
-  createReadStream,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  realpathSync,
-  writeFileSync,
-} from "node:fs";
+import { closeSync, createReadStream, existsSync, openSync, readFileSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { get as httpGet } from "node:http";
 import { isIP } from "node:net";
@@ -16,9 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { AxiError, installSessionStartHooks, RESERVED_COMMANDS, runAxiCli } from "axi-sdk-js";
+import { AxiError, RESERVED_COMMANDS, runAxiCli } from "axi-sdk-js";
 
-import { createDesignOutput, DESIGN_PRIORITY_RULE, DESIGN_SYSTEM_HINT } from "./design-reference.js";
 import { localInterfaceAddresses } from "./local-address.js";
 import {
   clientHost,
@@ -32,41 +22,19 @@ import {
   stateFile,
   stateId,
 } from "./paths.js";
-import {
-  computeVsCodePluginLocationsUpdate,
-  linkCursorLocalPlugin,
-  readPluginManifest,
-  resolveCursorLocalPluginsDir,
-  resolvePluginRoot,
-  resolveVsCodeSettingsFile,
-  spawnPluginClientSync,
-  writeTextFileAtomically,
-} from "./plugin.js";
-import { findPlaybook, listPlaybooks, playbookIds, PLAYBOOK_ROUTER_HELP } from "./playbooks.js";
 import { analyzeSelfPaint, SELF_PAINT_WARNING } from "./self-paint.js";
 import { serve } from "./server.js";
 import { isHtmlPath } from "./artifact-path.js";
 import { canonicalFile, sessionKey, SessionStore } from "./session-store.js";
 import { excalidrawLibrariesDir, loadExcalidrawLibraries } from "./whiteboard-library-store.js";
 
-const COMMANDS = new Set([
-  "open",
-  "poll",
-  "reply",
-  "end",
-  "stop",
-  "server",
-  "playbook",
-  "design",
-  "setup",
-  "libraries",
-]);
+const COMMANDS = new Set(["open", "poll", "reply", "end", "stop", "server", "libraries"]);
 // SDK-reserved built-ins (e.g. `update`) must reach runAxiCli untouched; otherwise
 // the bare-arg normalization below would rewrite them into the hidden `open` command.
 const RESERVED = new Set(RESERVED_COMMANDS);
 const DESCRIPTION =
-  "Lavish Editor helps agents turn rich HTML artifacts into collaborative human review surfaces. Whenever you are about to give user a complex response that will be easier to understand via a rich / interactive page, consider using Lavish Editor. " +
-  "First generate an interactive HTML artifact according to user request, then run `textcast-chat-axi <html-file>` so the user can visually review it, annotate elements or selected text, queue prompts, and send feedback back through `textcast-chat-axi poll`.";
+  "textcast-chat-axi opens a published Textcast reading page in a local review window, where the reader can ask about or annotate any sentence or topic card and send it back to the agent. " +
+  "Run `textcast-chat-axi <html-file>` on the page, then `textcast-chat-axi poll <html-file>` to receive the reader's notes; each note's selector names the segment (`span#seg<N>-<src|tgt>-<mode>`) or topic card (`details#topic-<N>`) it points at.";
 export const POLL_WAKE_PATH_RULES = Object.freeze([
   "Keep the poll in the foreground by default and let it return the feedback directly to the agent.",
   "A background poll is allowed only through a harness-native tracked background-job facility whose completion result is guaranteed to resume or notify the same agent.",
@@ -196,9 +164,6 @@ export async function run(argv) {
       reply: replyCommand,
       end: endCommand,
       stop: stopCommand,
-      playbook: playbookCommand,
-      design: designCommand,
-      setup: setupCommand,
       server: serverCommand,
       libraries: librariesCommand,
     },
@@ -245,17 +210,8 @@ export function createHomeOutput({ bin, sessions, includeSessions = true, agent 
           })),
         }
       : {}),
-    visual_guidance: [
-      "Use visual hierarchy to make the most important decisions, risks, tradeoffs, and next actions obvious at a glance",
-      "Show, don't tell: explain concepts, flows, relationships, and comparisons with labeled illustrations - hand-authored inline SVG, per the diagram playbook - and show existing UI or state with screenshots of the real pages (run the app read-only if needed); reserve prose for what cannot be shown, such as rationale, trade-offs, and open questions",
-      "Structure the prose that remains with sections, cards, tables, annotated snippets, and side-by-side comparisons instead of long paragraphs",
-      "Choose typography, spacing, color, and layout deliberately so the artifact has a clear point of view",
-      "Prevent horizontal overflow at every nesting level: nested grid/flex children also need minmax(0, 1fr) tracks and min-width: 0, especially when badges, labels, or status text use wide pixel or monospace fonts; wrap, truncate, or contain long unbreakable text deliberately",
-    ],
-    playbooks: listPlaybooks(),
     help: [
       "Run `textcast-chat-axi <html-file>` to open or resume a Lavish Editor session. If the user explicitly ended the session from the browser, this refuses to reopen it and explains why instead of reopening uninvited - pass `--reopen` only when the user asks for further review or something important needs their visual attention",
-      "Unless the user specifies another location, create HTML artifacts in the current working directory under `.lavish/`",
       "Lavish serves the html file through a local express.js server. If your html needs to reference other filesystem assets such as images, CSS, fonts, and local scripts, copy them into the same directory as the HTML file, then reference them with relative paths from that directory. Never prepend `/` to those asset paths - root paths won't work",
       `Run \`textcast-chat-axi poll <html-file>\` to wait for user feedback. It long-polls and stays silent until the user sends feedback, ends the session, or leaves every review window disconnected past the reconnect grace period, so leave it running - never kill it. Detected layout issues never return this poll: the browser files them in the user's Layout issues inbox in the Lavish top bar, and they arrive as an ordinary tag "layout-warnings" prompt only when the user selects them and queues the fixes. Never edit the artifact to chase a layout issue the user has not queued. The only exception is a fatal artifact_failures response, which means the review surface itself could not be used. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}`,
       'Run `textcast-chat-axi reply <html-file> --agent-reply "<message>"` to show a concise reply and exit once Lavish Editor accepts it, when you are handing a result back and are not about to long-poll. The board stops showing Working only after this command exits 0. Use `textcast-chat-axi poll <html-file> --agent-reply "<message>"` when that reply should be followed by another wait for feedback. A longer reply uses `--agent-reply-file <path>` (`-` reads stdin) on either command. Run `textcast-chat-axi reply --help` for the receipt contract',
@@ -263,30 +219,8 @@ export function createHomeOutput({ bin, sessions, includeSessions = true, agent 
       "Run `textcast-chat-axi end <html-file>` to end a session as the agent - ending it this way still allows a plain reopen later. When the user ends it from the browser instead, a later `textcast-chat-axi <html-file>` refuses to reopen it without `--reopen`",
       "A request under a hostname Lavish does not answer to (a reverse-proxy name, a LAN IP) gets 403 `forbidden host`. Set `LAVISH_AXI_ALLOWED_HOSTS` in the environment that starts the server, running `textcast-chat-axi stop` first if one is already up. See README's Allowed hosts section for the rules",
       "Run `textcast-chat-axi stop` to shut down the background server (it also self-stops when idle or after the last session ends with nothing connected)",
-      `Run \`textcast-chat-axi playbook <playbook_id>\` for focused artifact guidance. ${PLAYBOOK_ROUTER_HELP}`,
-      DESIGN_SYSTEM_HINT,
-      "Use textcast-chat-axi when the user asks for a visual artifact, HTML explainer, interactive prototype, review surface, product or technical plan, comparison, report, or browser-based feedback loop",
     ],
   };
-}
-
-export function createPlaybookOutput(args) {
-  const id = args[0];
-  if (!id) {
-    return {
-      playbooks: listPlaybooks(),
-      help: ["Run `textcast-chat-axi playbook <playbook_id>` for focused artifact guidance", PLAYBOOK_ROUTER_HELP],
-    };
-  }
-
-  const playbook = findPlaybook(id);
-  if (!playbook) {
-    throw new AxiError(`Unknown playbook: ${id}`, "VALIDATION_ERROR", [
-      `Run \`textcast-chat-axi playbook\` to list known IDs: ${playbookIds().join(", ")}`,
-    ]);
-  }
-
-  return { playbook };
 }
 
 export function createOpenOutput({
@@ -737,375 +671,6 @@ export function createLibrariesOutput({ dir, libraries, skipped, search = "", li
     "To show an item as a node icon in a whiteboard flowchart, see `whiteboard_tooling.library_icons` in `textcast-chat-axi design`",
   ];
   return output;
-}
-
-async function playbookCommand(args) {
-  return createPlaybookOutput(args);
-}
-
-async function designCommand() {
-  return createDesignOutput();
-}
-
-async function setupCommand(args) {
-  if (args.length !== 1 || (args[0] !== "hooks" && args[0] !== "plugin")) {
-    throw new AxiError("Unknown setup action", "VALIDATION_ERROR", [
-      "Run `textcast-chat-axi setup hooks`",
-      "Run `textcast-chat-axi setup plugin`",
-    ]);
-  }
-
-  if (args[0] === "plugin") return setupPluginCommand();
-
-  const errors = [];
-  installSessionStartHooks({
-    marker: "textcast-chat-axi",
-    binaryNames: ["textcast-chat-axi"],
-    distEntrypoints: ["dist/cli.mjs", "bin/textcast-chat-axi.js"],
-    homeDir: resolveHookHomeDir(),
-    onError: (message) => errors.push(message),
-  });
-  installCopilotCliSessionStartHook({
-    hookDir: resolveCopilotHookDir(process.env, resolveHookHomeDir()),
-    onError: (message) => errors.push(message),
-  });
-
-  if (errors.length > 0) {
-    throw new AxiError("Failed to install textcast-chat-axi agent hooks", "SERVER_ERROR", errors);
-  }
-
-  return {
-    hooks: { status: "installed", integrations: "Claude Code, Codex, OpenCode, GitHub Copilot CLI" },
-    help: [
-      "Restart your agent session to receive textcast-chat-axi ambient context",
-      "Run `textcast-chat-axi setup plugin` to also register the Agent Plugin in VS Code, Cursor, and GitHub Copilot CLI",
-    ],
-  };
-}
-
-/**
- * Register this installed package as an Agent Plugin in every supported client that is
- * present. The package directory itself is the plugin root, so nothing is downloaded and
- * no marketplace is involved - clients read the same files `npm install` already wrote.
- *
- * Like `setup hooks`, this only ever runs from an explicit user invocation.
- *
- * @returns {Promise<Record<string, unknown>>} structured per-client outcome
- */
-async function setupPluginCommand() {
-  const pluginRoot = resolvePluginRoot();
-  const manifest = readPluginManifest(pluginRoot);
-  if (!manifest) {
-    throw new AxiError("No plugin.json found in the textcast-chat-axi package", "SERVER_ERROR", [
-      `Expected a manifest at ${path.join(pluginRoot, "plugin.json")}`,
-      "Reinstall textcast-chat-axi, or run `npm run build:plugin` when working from a source checkout",
-    ]);
-  }
-
-  const clients = [
-    registerVsCodePlugin(pluginRoot, manifest.name),
-    registerCursorPlugin(pluginRoot, manifest.name),
-    registerCopilotPlugin(pluginRoot, manifest.name),
-  ];
-
-  const help = ["Restart or reload each client so it discovers the plugin"];
-  if (clients.some((client) => client.status === "absent")) {
-    help.push("Absent clients are skipped; re-run `textcast-chat-axi setup plugin` after installing one");
-  }
-  if (clients.some((client) => client.status === "manual")) {
-    help.push(`Register the plugin root manually where noted: ${pluginRoot}`);
-  }
-
-  return { plugin: { name: manifest.name, root: collapseHome(pluginRoot) }, clients, help };
-}
-
-/** @param {string} target absolute path @returns {string} path with $HOME collapsed to ~ */
-function collapseHome(target) {
-  const home = resolveHookHomeDir();
-  return home && target.startsWith(home) ? `~${target.slice(home.length)}` : target;
-}
-
-/**
- * @param {string} pluginRoot absolute plugin root
- * @param {string} pluginName manifest name
- * @returns {{ client: string, status: string, detail: string }} outcome row
- */
-function registerVsCodePlugin(pluginRoot, pluginName) {
-  const settingsFile = resolveVsCodeSettingsFile(process.env, resolveHookHomeDir());
-  const settingsDir = path.dirname(settingsFile);
-  const hasSettingsFile = existsSync(settingsFile);
-  if (!hasSettingsFile && !existsSync(settingsDir)) {
-    return { client: "vscode", status: "absent", detail: "no VS Code user configuration found" };
-  }
-
-  let settings = {};
-  if (hasSettingsFile) {
-    try {
-      settings = JSON.parse(readFileSync(settingsFile, "utf8"));
-    } catch {
-      // VS Code settings may legally contain comments or trailing commas. Rewriting a file
-      // we cannot faithfully parse would destroy the user's configuration, so we bail out
-      // and tell them the one line to add instead.
-      return {
-        client: "vscode",
-        status: "manual",
-        detail: `add "chat.pluginLocations": {"${pluginRoot}": true} to ${collapseHome(settingsFile)}`,
-      };
-    }
-  }
-
-  const [updated, changed] = computeVsCodePluginLocationsUpdate(settings, pluginRoot, pluginName);
-  if (!changed) return { client: "vscode", status: "current", detail: collapseHome(settingsFile) };
-
-  try {
-    const writeTarget = hasSettingsFile ? realpathSync(settingsFile) : settingsFile;
-    writeTextFileAtomically(writeTarget, `${JSON.stringify(updated, null, 2)}\n`);
-  } catch (error) {
-    return { client: "vscode", status: "failed", detail: String(error instanceof Error ? error.message : error) };
-  }
-  return { client: "vscode", status: "registered", detail: collapseHome(settingsFile) };
-}
-
-/**
- * @param {string} pluginRoot absolute plugin root
- * @param {string} pluginName manifest name
- * @returns {{ client: string, status: string, detail: string }} outcome row
- */
-function registerCursorPlugin(pluginRoot, pluginName) {
-  const cursorDir = path.join(resolveHookHomeDir(), ".cursor");
-  if (!existsSync(cursorDir)) {
-    return { client: "cursor", status: "absent", detail: "no ~/.cursor directory found" };
-  }
-
-  try {
-    const { status, target, reason } = linkCursorLocalPlugin(
-      resolveCursorLocalPluginsDir(resolveHookHomeDir()),
-      pluginRoot,
-      pluginName,
-    );
-    if (status === "occupied") {
-      return { client: "cursor", status: "manual", detail: `${collapseHome(target)} exists and is not a symlink` };
-    }
-    if (status === "unsupported") {
-      // Windows without Developer Mode is the common case. Say what to do instead of
-      // leaking a bare EPERM, and leave the other clients registered.
-      return {
-        client: "cursor",
-        status: "manual",
-        detail: `cannot link ${collapseHome(target)} (${reason}); link it to ${pluginRoot} manually, or enable Developer Mode on Windows`,
-      };
-    }
-    return {
-      client: "cursor",
-      status: status === "current" ? "current" : "registered",
-      detail: collapseHome(target),
-    };
-  } catch (error) {
-    return { client: "cursor", status: "failed", detail: String(error instanceof Error ? error.message : error) };
-  }
-}
-
-/**
- * @param {string} pluginRoot absolute plugin root
- * @param {string} pluginName manifest name
- * @returns {{ client: string, status: string, detail: string }} outcome row
- */
-function registerCopilotPlugin(pluginRoot, pluginName) {
-  const listed = spawnPluginClientSync("copilot", ["plugins", "list", "--scope", "user", "--kind", "plugin", "--json"]);
-  if (listed.error) {
-    return { client: "copilot", status: "absent", detail: "copilot CLI not found on PATH" };
-  }
-  if (listed.status !== 0) {
-    const detail = String(listed.stderr || listed.stdout || `exit ${listed.status}`).trim();
-    return {
-      client: "copilot",
-      status: "manual",
-      detail: `could not verify installed plugins: ${detail.split("\n")[0]}`,
-    };
-  }
-
-  const records = parseCopilotPluginRecords(listed.stdout);
-  if (!records) {
-    return { client: "copilot", status: "manual", detail: "could not parse installed plugin records" };
-  }
-
-  const existing = records.find((record) => record.name === pluginName && (!record.kind || record.kind === "plugin"));
-  if (existing) {
-    const source = copilotPluginSourcePath(existing) || installedCopilotPluginSourcePath(pluginName);
-    if (!source) {
-      return { client: "copilot", status: "manual", detail: "could not verify the installed plugin source" };
-    }
-    if (sameResolvedPath(source, pluginRoot)) {
-      return { client: "copilot", status: "current", detail: collapseHome(pluginRoot) };
-    }
-  }
-
-  const installed = spawnPluginClientSync("copilot", ["plugin", "install", pluginRoot]);
-  if (installed.status !== 0) {
-    const detail = String(installed.stderr || installed.stdout || `exit ${installed.status}`).trim();
-    return { client: "copilot", status: "failed", detail: detail.split("\n")[0] };
-  }
-  return { client: "copilot", status: "registered", detail: "copilot plugin install" };
-}
-
-/** @param {unknown} output @returns {Record<string, any>[] | null} */
-function parseCopilotPluginRecords(output) {
-  try {
-    const parsed = JSON.parse(String(output));
-    const records = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.plugins) ? parsed.plugins : parsed?.items;
-    return Array.isArray(records) && records.every((record) => record && typeof record === "object") ? records : null;
-  } catch {
-    return null;
-  }
-}
-
-/** @param {string} pluginName @returns {string | null} */
-function installedCopilotPluginSourcePath(pluginName) {
-  const configDir = process.env.COPILOT_HOME || path.join(resolveHookHomeDir(), ".copilot");
-  try {
-    const config = JSON.parse(readFileSync(path.join(configDir, "config.json"), "utf8"));
-    const record = Array.isArray(config.installedPlugins)
-      ? config.installedPlugins.find((candidate) => candidate?.name === pluginName)
-      : null;
-    return record ? copilotPluginSourcePath(record) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** @param {Record<string, any>} record @returns {string | null} */
-function copilotPluginSourcePath(record) {
-  const candidates = [
-    record.sourcePath,
-    record.source_path,
-    record.pluginRoot,
-    record.plugin_root,
-    record.path,
-    record.source?.path,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate !== "string") continue;
-    if (candidate.startsWith("file:")) {
-      try {
-        return fileURLToPath(candidate);
-      } catch {
-        continue;
-      }
-    }
-    if (path.isAbsolute(candidate)) return candidate;
-  }
-  return null;
-}
-
-/** @param {string} left @param {string} right @returns {boolean} */
-function sameResolvedPath(left, right) {
-  try {
-    return realpathSync(left) === realpathSync(right);
-  } catch {
-    return path.resolve(left) === path.resolve(right);
-  }
-}
-
-export function resolveHookHomeDir(env = process.env, fallback = os.homedir()) {
-  return env.HOME || fallback;
-}
-
-export function resolveCopilotHookDir(env = process.env, homeDir = resolveHookHomeDir(env)) {
-  return path.join(env.COPILOT_HOME || path.join(homeDir, ".copilot"), "hooks");
-}
-
-export function createCopilotCliAmbientContextScript(command = "textcast-chat-axi") {
-  return [
-    'const { spawnSync } = require("node:child_process");',
-    `const command = ${JSON.stringify(command)};`,
-    'const result = spawnSync(command, [], { encoding: "utf8", shell: true });',
-    'const detail = result.error ? result.error.message : (result.stderr || result.stdout || "exit " + (result.status ?? "unknown"));',
-    "const text = String(result.status === 0 ? result.stdout : detail).trim();",
-    'if (!text) { console.log("{}"); process.exit(0); }',
-    'const prefix = result.status === 0 ? "## AXI ambient context: textcast-chat-axi\\n" : "## AXI ambient context: textcast-chat-axi\\nerror: textcast-chat-axi ambient context failed: ";',
-    "console.log(JSON.stringify({ additionalContext: prefix + text }));",
-  ].join(" ");
-}
-
-export function createCopilotCliSessionStartHook(command = "textcast-chat-axi", timeoutSec = 10) {
-  const script = createCopilotCliAmbientContextScript(command);
-  return {
-    type: "command",
-    bash: `node -e ${quoteForPosixShell(script)}`,
-    powershell: `node -e ${quoteForPowerShell(script)}`,
-    timeoutSec,
-  };
-}
-
-export function computeCopilotCliHookUpdate(settings, hook = createCopilotCliSessionStartHook()) {
-  const updated = structuredClone(settings && typeof settings === "object" ? settings : {});
-  let changed = false;
-
-  if (updated.version !== 1) {
-    updated.version = 1;
-    changed = true;
-  }
-  if (!updated.hooks || typeof updated.hooks !== "object" || Array.isArray(updated.hooks)) {
-    updated.hooks = {};
-    changed = true;
-  }
-
-  const current = Array.isArray(updated.hooks.sessionStart) ? updated.hooks.sessionStart : [];
-  const unmanaged = current.filter((entry) => !isManagedCopilotCliHook(entry));
-  const next = [...unmanaged, hook];
-
-  if (!deepEqual(current, next)) {
-    updated.hooks.sessionStart = next;
-    changed = true;
-  }
-
-  return [changed ? updated : settings, changed];
-}
-
-export function installCopilotCliSessionStartHook({
-  hookDir = resolveCopilotHookDir(),
-  command = "textcast-chat-axi",
-  timeoutSec = 10,
-  onError = undefined,
-} = {}) {
-  const target = path.join(hookDir, "textcast-chat-axi.json");
-  try {
-    mkdirSync(path.dirname(target), { recursive: true });
-    const current = existsSync(target) ? JSON.parse(readFileSync(target, "utf8")) : {};
-    const [updated, changed] = computeCopilotCliHookUpdate(
-      current,
-      createCopilotCliSessionStartHook(command, timeoutSec),
-    );
-    if (changed) {
-      writeFileSync(target, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    onError?.(`${target}: ${message}`);
-  }
-}
-
-function isManagedCopilotCliHook(entry) {
-  return (
-    entry &&
-    typeof entry === "object" &&
-    (typeof entry.bash === "string" || typeof entry.powershell === "string" || typeof entry.command === "string") &&
-    [entry.bash, entry.powershell, entry.command].some(
-      (value) => typeof value === "string" && value.includes("textcast-chat-axi"),
-    )
-  );
-}
-
-function quoteForPosixShell(value) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-function quoteForPowerShell(value) {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
-function deepEqual(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 async function serverCommand(args) {
@@ -2020,7 +1585,7 @@ export function getCommandHelp(command, { agent = "generic" } = {}) {
 }
 
 function createTopLevelHelp({ agent = "generic" } = {}) {
-  return `textcast-chat-axi - Lavish Editor AXI\n\nUsage:\n  textcast-chat-axi\n  textcast-chat-axi <html-file> [--no-open] [--no-gate] [--reopen]\n  textcast-chat-axi poll <html-file> [--owner <label>] [--takeover] [--agent-reply "..."] [--agent-reply-file <path>]\n  textcast-chat-axi reply <html-file> (--agent-reply "..." | --agent-reply-file <path>)\n  textcast-chat-axi end <html-file>\n  textcast-chat-axi stop\n  textcast-chat-axi playbook [playbook_id]\n  textcast-chat-axi design\n  textcast-chat-axi libraries [--search <text>] [--library <id>]\n  textcast-chat-axi setup hooks\n  textcast-chat-axi setup plugin\n\n${DESIGN_SYSTEM_HINT}\n\nNote: poll long-polls until the user sends feedback, ends the session, or leaves every review window disconnected past the reconnect grace period, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the Lavish top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE} Use \`textcast-chat-axi reply\` when handing a result back without waiting for more feedback: it exits 0 only after the server accepts the reply, so the board stops showing Working. \`poll --agent-reply\` posts a reply and then keeps waiting.\n\n`;
+  return `textcast-chat-axi - Lavish Editor AXI\n\nUsage:\n  textcast-chat-axi\n  textcast-chat-axi <html-file> [--no-open] [--no-gate] [--reopen]\n  textcast-chat-axi poll <html-file> [--owner <label>] [--takeover] [--agent-reply "..."] [--agent-reply-file <path>]\n  textcast-chat-axi reply <html-file> (--agent-reply "..." | --agent-reply-file <path>)\n  textcast-chat-axi end <html-file>\n  textcast-chat-axi stop\n  textcast-chat-axi libraries [--search <text>] [--library <id>]\n\nNote: poll long-polls until the user sends feedback, ends the session, or leaves every review window disconnected past the reconnect grace period, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the Lavish top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE} Use \`textcast-chat-axi reply\` when handing a result back without waiting for more feedback: it exits 0 only after the server accepts the reply, so the board stops showing Working. \`poll --agent-reply\` posts a reply and then keeps waiting.\n\n`;
 }
 
 function createCommandHelp({ agent = "generic" } = {}) {
@@ -2030,12 +1595,7 @@ function createCommandHelp({ agent = "generic" } = {}) {
     reply: `Usage: textcast-chat-axi reply <html-file> (--agent-reply "..." | --agent-reply-file <path>)\n\nPost an agent reply to the open Lavish Editor session and exit once the server confirms it was accepted. Exit 0 only when the server answers that the reply was sent, which is when the board stops showing Working. If that answer does not arrive within ${AGENT_REPLY_RECEIPT_TIMEOUT_MS / 1000} seconds, exit non-zero with a timeout error. Use this when you are handing a result back and are not about to wait for more feedback. A reply also marks every note the poll delivered to you as Done in the reviewer's panel, so reply once you have handled them.\n\nUse \`textcast-chat-axi poll <html-file> --agent-reply "..."\` instead when the reply should be followed by a long-poll. That command posts the reply and then keeps waiting, so it does not exit when the reply is accepted.\n\nPass exactly one of --agent-reply or --agent-reply-file. ${POLL_AGENT_REPLY_RULE} ${POLL_AGENT_REPLY_HELP_POINTER} Do not combine the two flags. An empty reply is refused.\n\nExamples:\n  textcast-chat-axi reply report.html --agent-reply "Renamed the payment step."\n  textcast-chat-axi reply report.html --agent-reply-file reply.md\n  textcast-chat-axi reply report.html --agent-reply-file -\n`,
     end: `Usage: textcast-chat-axi end <html-file>\n\nEnd a Lavish Editor session as the agent. A session ended this way still reopens normally on the next \`textcast-chat-axi <html-file>\`, unlike a user ending it from the browser, which requires --reopen.\n`,
     stop: `Usage: textcast-chat-axi stop [--port <port>]\n\nShut down the background Lavish Editor server. The server also stops itself when no browser or poll has been connected for a while (LAVISH_AXI_IDLE_TIMEOUT_MS, default 30m) and immediately when the last session ends with nothing connected.\n`,
-    playbook: `Usage: textcast-chat-axi playbook [playbook_id]\n\nList focused artifact guidance playbooks, or show one playbook by ID. Known IDs: diagram, table, comparison, plan, code, input, explanation, slides.\n\n${PLAYBOOK_ROUTER_HELP}\n\nExamples:\n  textcast-chat-axi playbook\n  textcast-chat-axi playbook diagram\n  textcast-chat-axi playbook input\n`,
     libraries: `Usage: textcast-chat-axi libraries [--search <text>] [--library <id>]\n\nList the Excalidraw libraries (.excalidrawlib files) the user copied into ~/.textcast-chat-axi/excalidraw-libraries, or LAVISH_AXI_STATE_DIR/excalidraw-libraries when set. Their items appear in every whiteboard's library panel. --search lists item refs whose ref contains every search word; --library lists one library's item refs. Lavish only reads this directory and never downloads libraries.\n\nExamples:\n  textcast-chat-axi libraries\n  textcast-chat-axi libraries --search lambda\n  textcast-chat-axi libraries --library aws-architecture-icons\n`,
-    design: `Usage: textcast-chat-axi design\n\nShow a copy-pasteable CDN snippet for Tailwind CSS browser runtime v4 + DaisyUI v5 + themes, the whiteboard (Mermaid) opt-in snippet, a content-to-playbook router, an optional layout safety CSS snippet, plus technical reference for DaisyUI components. ${PLAYBOOK_ROUTER_HELP} Lavish artifacts stay portable HTML. This CDN snippet is the design fallback, not the default: inspect the subject project before falling back, and paste the layout safety CSS only when useful for dense nested grid/flex layouts, badges, wide fonts, or local media. ${DESIGN_PRIORITY_RULE}\n`,
-    setup: `Usage: textcast-chat-axi setup hooks\n       textcast-chat-axi setup plugin\n\nhooks: install or repair agent SessionStart hooks for textcast-chat-axi ambient context in Claude Code, Codex, OpenCode, and GitHub Copilot CLI. Restart your agent session afterward to receive the context. This is the primary integration - it carries live session state.\n\nplugin: register the installed textcast-chat-axi package as an Agent Plugin (agent-plugins.org) in VS Code, Cursor, and GitHub Copilot CLI. The installed package directory is itself the plugin root, so nothing is downloaded and no marketplace is involved. Reload each client afterward. Codex users should use \`setup hooks\` instead.\n\nBoth actions are explicit opt-in, idempotent, and repair a stale path after a reinstall.\n`,
     server: `Usage: textcast-chat-axi server [--port 4397] [--verbose] [--also-listen <host>...]\n\nRun the local Lavish Editor server. Pass --verbose (or set LAVISH_AXI_DEBUG=1) to log session and watcher events to stderr. Detached server output is appended to ~/.textcast-chat-axi/server.log, or LAVISH_AXI_STATE_DIR/server.log when set, for startup and crash diagnostics.\n\nBy default Lavish binds to 127.0.0.1 and, when Tailscale is running, this machine's Tailscale IPv4. Any explicit LAVISH_AXI_HOST overrides automatic Tailscale binding; wildcard values such as 0.0.0.0 or :: are restricted to loopback. An explicit non-wildcard LAVISH_AXI_HOST sets the bind address, and the server also listens on 127.0.0.1 so every local CLI finds it; --also-listen adds further concrete addresses (the CLI passes it when it replaces a server, to keep every address the old one served). An address that cannot be bound is retried in the background and reported as network_warning. Binding beyond loopback exposes an unauthenticated server that can read and serve arbitrary local files to anything that can reach it, so only do so on a trusted network. With automatic binding enabled, a successfully bound Tailscale listener uses its MagicDNS name in generated session links; otherwise LAVISH_AXI_LINK_HOST can set the link hostname. See README's Allowed hosts section for Host allowlisting and LAVISH_AXI_ALLOWED_HOSTS. LAVISH_AXI_NO_OPEN=1 (or --no-open) suppresses the local browser launch.\n`,
   };
 }
-
-export { createDesignOutput };
