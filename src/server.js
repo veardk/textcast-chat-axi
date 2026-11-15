@@ -25,7 +25,7 @@ import {
 import * as artifactRevisions from "./artifact-revisions.js";
 import { serializeChat, serializeChatAckIds, serializeChatSync } from "./chat-messages.js";
 import { formatServerLogLine, serverStdioIsTimestamped } from "./server-log.js";
-import { chromeLocale, chromeStrings, makeTranslator } from "./chrome-i18n.js";
+import { chromeLangAttrs, chromeLocale, chromeStrings, makeTranslator } from "./chrome-i18n.js";
 import { injectTextcastSdk } from "./html-transform.js";
 import {
   bindHost,
@@ -2568,7 +2568,7 @@ export function createChromeHtml(
   // string can close the script element.
   const translatorJs = `window.__textcastT=(${makeTranslator.toString()})(${JSON.stringify(strings).replace(/</g, "\\u003c")});`;
   return `<!doctype html>
-<html lang="${locale === "zh" ? "zh-CN" : "en"}">
+<html lang="${chromeLangAttrs(locale).lang}" dir="${chromeLangAttrs(locale).dir}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
