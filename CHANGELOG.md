@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/veardk/textcast-chat-axi/compare/v0.1.2...v0.1.3) (2026-11-15)
+
+
+### Miscellaneous Chores
+
+* release 0.1.3 ([#5](https://github.com/veardk/textcast-chat-axi/issues/5)) ([04a3b37](https://github.com/veardk/textcast-chat-axi/commit/04a3b37bf5999aeddfb44874dba490232da0da52))
+
 ## [0.1.2](https://github.com/veardk/textcast-chat-axi/compare/v0.1.1...v0.1.2) (2026-11-15)
 
 
