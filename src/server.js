@@ -2642,6 +2642,7 @@ export function createSdkJs(
     maxAttachmentBytes: Number.isFinite(maxAttachmentBytes) ? maxAttachmentBytes : undefined,
     acceptedImageMime: acceptedImageMime.map(String),
     strings: chromeStrings(locale),
+    dir: chromeLangAttrs(locale).dir,
   };
   return `(() => {
 const key=${JSON.stringify(key)};
