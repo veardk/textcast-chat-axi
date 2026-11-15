@@ -68,6 +68,11 @@ test("the chrome page declares its language and direction", () => {
   const arabic = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" }, { locale: "ar" });
   assert.match(arabic, /<html lang="ar" dir="rtl">/);
   assert.match(arabic, /<h2>المحادثة<\/h2>/);
+  const arabicSdk = createSdkJs("abc", 0, "", { locale: "ar" });
+  assert.match(arabicSdk, /"dir":"rtl"/);
+  // The card's `:host{all:initial}` resets direction, so the SDK has to add it back for RTL pages.
+  assert.match(arabicSdk, /options\.dir === "rtl"\) style\.textContent \+= ":host\{direction:rtl\}"/);
+  assert.match(createSdkJs("abc", 0, "", { locale: "ja" }), /"dir":"ltr"/);
   const japanese = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" }, { locale: "ja" });
   assert.match(japanese, /<html lang="ja" dir="ltr">/);
   assert.match(japanese, /id="send" type="button">送信<\/button>/);

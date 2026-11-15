@@ -29,6 +29,7 @@ Seven-tab pool regression: `TEXTCAST_CHAT_AXI_BROWSER_E2E=1 node --test test/eve
 - Use TDD for bug fixes and new features (see the `test-driven-development` skill).
 - Run `pnpm run check` before opening or updating a Pull Request.
 - Do not hand-edit `CHANGELOG.md` or `.release-please-manifest.json`. Release-please owns them.
+- PR titles are Conventional Commits written for users: PRs are squash-merged under their title, and release-please turns each title into one CHANGELOG line and the version bump. `feat:` and `fix:` appear and release (0.x bumps the patch), `feat!:` bumps the minor, and `docs:`, `chore:`, `test:` and `ci:` neither appear nor release.
 - External contributors should open an Issue before writing a patch. Pull Requests are currently limited to repository collaborators; [CONTRIBUTING.md](CONTRIBUTING.md) owns the contribution workflow.
 - Tests that start the server set `TEXTCAST_CHAT_AXI_STATE_DIR` and use an ephemeral port.
 - `run()` returns on `--version` / `-v` / `-V` before `ensureStateDir` (`test/cli-version.test.js`). New startup work goes after that short-circuit.
