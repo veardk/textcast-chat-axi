@@ -5533,7 +5533,10 @@ test("a review follows links to other pages of its Textcast site, and only those
     assert.equal((await toIndex.json()).page, path.join(site, "index.html"));
     assert.match(await shown(key), /INDEX/);
     // The chrome speaks the language of the page now on screen.
-    assert.match(await fetch(`${base}/session/${key}`).then((response) => response.text()), /<html lang="zh-CN">/);
+    assert.match(
+      await fetch(`${base}/session/${key}`).then((response) => response.text()),
+      /<html lang="zh-CN" dir="ltr">/,
+    );
 
     // Links resolve against the page on screen, not the session's file.
     assert.equal((await go(key, "talk/summary.html")).status, 200);

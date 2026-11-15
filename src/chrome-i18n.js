@@ -1,3 +1,7 @@
+import { CJK_STRINGS } from "./chrome-locales/cjk.js";
+import { EUROPEAN_STRINGS } from "./chrome-locales/european.js";
+import { OTHER_STRINGS } from "./chrome-locales/other.js";
+
 // The chrome and the in-page Ask card speak the page's language. The server reads the artifact's
 // `<html lang>`, picks a locale here, and hands its strings to both. English is the source text and
 // the key: a locale only lists what it translates, so a missing entry falls back to English instead
@@ -6,6 +10,9 @@
 
 /** @type {Record<string, Record<string, string>>} */
 const CHROME_STRINGS = {
+  ...CJK_STRINGS,
+  ...EUROPEAN_STRINGS,
+  ...OTHER_STRINGS,
   zh: {
     // Panel and launcher
     Conversation: "对话",
@@ -172,9 +179,14 @@ const CHROME_STRINGS = {
   },
 };
 
+/** Locales written right to left; the chrome mirrors its layout for them. */
+const RTL_LOCALES = new Set(["ar"]);
+
 /**
- * The supported locale for a page language tag, or "en". Traditional Chinese stays English until it
- * has its own strings rather than showing a reader Simplified characters.
+ * The supported locale for a page language tag, or "en". Chinese splits by script: Traditional
+ * (`zh-Hant`, `zh-TW`, `zh-HK`, `zh-MO`) and Simplified (everything else). Other tags match on their
+ * primary subtag, so `pt-BR` and `es-419` find `pt` and `es`. These are the same languages a
+ * Textcast page can be written in.
  * @param {string} lang
  */
 export function chromeLocale(lang) {
@@ -182,8 +194,21 @@ export function chromeLocale(lang) {
     .trim()
     .toLowerCase()
     .replace(/_/g, "-");
-  if (/^zh(-(hans|cn|sg|my))?(-|$)/.test(tag) && !/-(hant|tw|hk|mo)(-|$)/.test(tag)) return "zh";
-  return "en";
+  const primary = tag.split("-")[0];
+  if (primary === "zh") return /-(hant|tw|hk|mo)(-|$)/.test(tag) ? "zh-Hant" : "zh";
+  return Object.hasOwn(CHROME_STRINGS, primary) ? primary : "en";
+}
+
+/**
+ * The `lang` and `dir` attributes the chrome page declares for a locale.
+ * @param {string} locale
+ */
+export function chromeLangAttrs(locale) {
+  const known = locale === "en" || Object.hasOwn(CHROME_STRINGS, locale);
+  return {
+    lang: !known ? "en" : locale === "zh" ? "zh-CN" : locale,
+    dir: RTL_LOCALES.has(locale) ? "rtl" : "ltr",
+  };
 }
 
 /** @param {string} locale */
