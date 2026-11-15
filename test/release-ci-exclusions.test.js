@@ -204,11 +204,7 @@ test("every pull_request workflow ignores the full release-output set", () => {
     prWorkflows.push({ name, filter: pullRequestFilterCoverage(on.pull_request) });
   }
 
-  assert.deepEqual(prWorkflows.map((w) => w.name).sort(), [
-    "ci.yml",
-    "guard-generated-files.yml",
-    "no-mistakes-required.yml",
-  ]);
+  assert.deepEqual(prWorkflows.map((w) => w.name).sort(), ["ci.yml", "guard-generated-files.yml"]);
 
   const failures = [];
   for (const { name, filter } of prWorkflows) {
@@ -231,12 +227,8 @@ test("does not attach path filters to non-pull_request triggers on ci.yml", () =
   assert.equal(on.workflow_dispatch, undefined);
 });
 
-test("keeps bot author exemptions on guard and no-mistakes jobs", () => {
+test("keeps generated-file guard exemptions", () => {
   const guard = readFileSync(join(workflowsDir, "guard-generated-files.yml"), "utf8");
-  const nmr = readFileSync(join(workflowsDir, "no-mistakes-required.yml"), "utf8");
   assert.match(guard, /github-actions\[bot\]/);
   assert.match(guard, /release-please\[bot\]/);
-  assert.match(nmr, /github-actions\[bot\]/);
-  assert.match(nmr, /dependabot\[bot\]/);
-  assert.match(nmr, /release-please\[bot\]/);
 });

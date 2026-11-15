@@ -1,9 +1,16 @@
 /* global document, location, window */
 
-const sessionDataElement = document.getElementById("lavish-session");
+const sessionDataElement = document.getElementById("textcast-session");
 const sessionData = JSON.parse(sessionDataElement?.textContent || "{}");
+// The page-language translator the server inlines (src/chrome-i18n.js). It takes the formatted
+// English, so every string below stays written in English; without it the chrome is English.
+const chromeTranslator = /** @type {Record<string, any>} */ (/** @type {unknown} */ (window)).__textcastT;
+/** @type {(text: string) => string} */
+const t = typeof chromeTranslator === "function" ? chromeTranslator : (text) => String(text);
 const key = String(sessionData.key || "");
 const filePath = String(sessionData.file || "");
+// The page on screen: the session's file, or another page of its site the reader followed a link to.
+let currentPage = String(sessionData.page || filePath);
 const queueStorageKey = "textcast-chat-axi:queued:" + key;
 const terminalStorageKey = "textcast-chat-axi:terminal:" + key;
 // Review-chrome state that must survive a browser refresh. Keyed per session so one review's
@@ -12,12 +19,12 @@ const terminalStorageKey = "textcast-chat-axi:terminal:" + key;
 // destroy it unless the chrome persists what the SDK reports. Keyed per session like the queue,
 // so a draft can never reappear over a different artifact.
 const reviewStateStorageKey = "textcast-chat-axi:review-state:" + key;
-// Drafts Lavish could not replay. The text outlives the draft that carried it, so the user can
+// Drafts Textcast Chat could not replay. The text outlives the draft that carried it, so the user can
 // still read and copy it after the anchor it was written against is gone for good.
 const retiredDraftStorageKey = "textcast-chat-axi:retired-drafts:" + key;
 /** @type {any[]} */
 const retiredDraftNodes = [];
-const internalQueueKeyField = "_lavishQueueKey";
+const internalQueueKeyField = "_textcastQueueKey";
 const promptIdentityField = "prompt_id";
 const PROMPT_IDENTITY_MAX = 128;
 const PROMPT_IDENTITY_RE = /^[A-Za-z0-9_-]+$/;
@@ -83,19 +90,19 @@ function describeAttachmentRejection(rejected, caps) {
     parts.push("images exceed the " + formatByteLimit(caps.maxPromptBytes) + " per-prompt limit");
   }
   if (reasons.has("too-many") && caps && caps.maxPerPrompt) {
-    parts.push("more than " + caps.maxPerPrompt + " images on one prompt");
+    parts.push(t("more than " + caps.maxPerPrompt + " images on one prompt"));
   }
   if (reasons.has("too-many-in-request")) {
-    parts.push("too many images queued at once");
+    parts.push(t("too many images queued at once"));
   }
   if (reasons.has("malformed")) {
-    parts.push("an image attachment was malformed");
+    parts.push(t("an image attachment was malformed"));
   }
   if (reasons.has("not-found")) {
-    parts.push("an image is no longer available");
+    parts.push(t("an image is no longer available"));
   }
-  const detail = parts.length ? parts.join("; ") : "some attachments could not be delivered";
-  return "Not sent — " + detail + ". Remove or fix the image, then send again.";
+  const detail = parts.length ? parts.join("; ") : t("some attachments could not be delivered");
+  return t("Not sent — " + detail + ". Remove or fix the image, then send again.");
 }
 
 function isModeToggleHotkeyEvent(event) {
@@ -116,7 +123,9 @@ const chatAttachmentNotice = /** @type {HTMLSpanElement} */ (document.getElement
 const panel = /** @type {HTMLElement} */ (document.getElementById("panel"));
 const panelHead = /** @type {HTMLDivElement} */ (document.getElementById("panelHead"));
 const panelSummary = /** @type {HTMLSpanElement} */ (document.getElementById("panelSummary"));
-const panelToggle = /** @type {HTMLButtonElement} */ (document.getElementById("panelToggle"));
+const panelClose = /** @type {HTMLButtonElement} */ (document.getElementById("panelClose"));
+const launcherPeek = /** @type {HTMLButtonElement} */ (document.getElementById("launcherPeek"));
+const launcherPeekText = /** @type {HTMLSpanElement} */ (document.getElementById("launcherPeekText"));
 const panelScrim = /** @type {HTMLDivElement} */ (document.getElementById("panelScrim"));
 const sidebarToggle = /** @type {HTMLButtonElement} */ (document.getElementById("sidebarToggle"));
 const sidebarToggleCount = /** @type {HTMLSpanElement} */ (document.getElementById("sidebarToggleCount"));
@@ -139,12 +148,11 @@ const outdatedText = /** @type {HTMLSpanElement} */ (document.getElementById("ou
 const outdatedReloadButton = /** @type {HTMLButtonElement} */ (document.getElementById("outdatedReload"));
 const outdatedDismissButton = /** @type {HTMLButtonElement} */ (document.getElementById("outdatedDismiss"));
 const endedOverlay = /** @type {HTMLDivElement} */ (document.getElementById("endedOverlay"));
-const layoutGateOverlay = /** @type {HTMLDivElement} */ (document.getElementById("layoutGateOverlay"));
-const layoutGateTitle = /** @type {HTMLDivElement} */ (document.getElementById("layoutGateTitle"));
-const layoutGateCopy = /** @type {HTMLParagraphElement} */ (document.getElementById("layoutGateCopy"));
-const layoutGateAction = /** @type {HTMLButtonElement} */ (document.getElementById("layoutGateAction"));
-const layoutGateBypass = /** @type {HTMLButtonElement} */ (document.getElementById("layoutGateBypass"));
-const layoutGateEscape = /** @type {any} */ (window).__lavishLayoutGateEscape;
+const loadNotice = /** @type {HTMLDivElement} */ (document.getElementById("loadNotice"));
+const loadNoticeTitle = /** @type {HTMLDivElement} */ (document.getElementById("loadNoticeTitle"));
+const loadNoticeCopy = /** @type {HTMLParagraphElement} */ (document.getElementById("loadNoticeCopy"));
+const loadNoticeAction = /** @type {HTMLButtonElement} */ (document.getElementById("loadNoticeAction"));
+const loadNoticeDismiss = /** @type {HTMLButtonElement} */ (document.getElementById("loadNoticeDismiss"));
 const revisionsWrap = /** @type {HTMLDivElement} */ (document.getElementById("revisionsWrap"));
 const revisionsButton = /** @type {HTMLButtonElement} */ (document.getElementById("revisionsButton"));
 const revisionsCount = /** @type {HTMLSpanElement} */ (document.getElementById("revisionsCount"));
@@ -161,11 +169,6 @@ let annotationOverridden = false;
 let annotationDefaultReceived = false;
 let ended = false;
 let agentPresence = "waiting";
-const configuredLayoutGateMaxHoldMs = Number(sessionData.layoutGateMaxHoldMs);
-const layoutGateMaxHoldMs =
-  Number.isFinite(configuredLayoutGateMaxHoldMs) && configuredLayoutGateMaxHoldMs > 0
-    ? Math.min(configuredLayoutGateMaxHoldMs, 60_000)
-    : 12_000;
 let chromeOutdatedReason = "";
 let chromeOutdatedGeneration = 0;
 let outdatedReloadInFlight = false;
@@ -182,16 +185,12 @@ let unreachableDismissed = false;
 /** @type {{ selector: string, revision: number } | null} */
 let unrestorableDraftMiss = null;
 let retiredDrafts = loadRetiredDrafts();
-let layoutGateVisible = false;
-let layoutGateManuallyBypassed = false;
-let layoutGateFailureActive = false;
-// A failure only the user can retire. The artifact-load card clears itself once a load succeeds;
-// the server-replacement card must not, because the page is still running the pre-upgrade client
-// against the replacement server and nothing else would tell the user that.
-let layoutGateFailureSticky = false;
-let layoutGateCycle = 0;
-/** @type {ReturnType<typeof setTimeout> | undefined} */
-let layoutGateTimer;
+let loadNoticeActive = false;
+// A failure only the user can retire. The artifact-load notice clears itself once a load
+// succeeds; the server-replacement notice must not, because the page is still running the
+// pre-upgrade client against the replacement server and nothing else would tell the user that.
+let loadNoticeSticky = false;
+let loadNoticeCycle = 0;
 /** @typedef {{ done: Promise<boolean>, finish: (succeeded: boolean) => void }} FeedbackPreparation */
 /** @typedef {{ prompts: any[], inFlight: boolean, order: number }} TerminalSubmission */
 /** @type {Map<string, { action: "copy" | "submit", prompts?: any[], chatAtRequest?: any[], endAfter?: boolean, terminal?: TerminalSubmission | null, acknowledgement?: object, order?: number, timeout?: ReturnType<typeof setTimeout> }>} */
@@ -226,8 +225,7 @@ let editingPromptId = "";
 let editingDraft = "";
 let editFocusPending = false;
 // The selector list last told to the artifact, so a render that changes nothing stays quiet.
-let postedQueuedAnchors = "[]";
-// In-iframe review context (an open annotation card's unsent text, Lavish-owned question
+// In-iframe review context (an open annotation card's unsent text, textcast-owned question
 // answers). The sandbox means the chrome cannot read it back after a reload, so the SDK reports
 // it as it changes and the chrome replays it once the new document is up. It is persisted per
 // session so a full page reload replays it too.
@@ -262,15 +260,19 @@ const TERMINAL_PREPARATION_TIMEOUT_MS = 5000;
 // If the artifact frame navigated away from the injected SDK (or otherwise stopped
 // answering), deliver those words without a snapshot instead of waiting forever.
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 5000;
-const SEND_STALLED_COPY =
-  "Still trying to send. Your feedback is saved in this tab. Keep this tab open while Lavish catches up, and check that the server is running.";
-const SEND_FAILED_COPY =
-  "Could not send. Your feedback is still queued in this tab. Check that Lavish is running, then click Send to Agent to retry.";
-const TERMINAL_SEND_FAILED_COPY =
-  "Could not send. Your terminal feedback is still queued in this tab. Check that Lavish is running, then click Send & End to retry the same batch.";
-const HEALTH_NO_ANSWER_TITLE = "Lavish did not answer.";
-const HEALTH_NO_ANSWER_COPY =
-  "Lavish did not answer the check, so this page cannot tell whether it is running. Try again in a moment.";
+const SEND_STALLED_COPY = t(
+  "Still trying to send. Your feedback is saved in this tab. Keep this tab open while Textcast Chat catches up, and check that the server is running.",
+);
+const SEND_FAILED_COPY = t(
+  "Could not send. Your feedback is still queued in this tab. Check that Textcast Chat is running, then click Send to Agent to retry.",
+);
+const TERMINAL_SEND_FAILED_COPY = t(
+  "Could not send. Your terminal feedback is still queued in this tab. Check that Textcast Chat is running, then click Send & End to retry the same batch.",
+);
+const HEALTH_NO_ANSWER_TITLE = t("Textcast Chat did not answer.");
+const HEALTH_NO_ANSWER_COPY = t(
+  "Textcast Chat did not answer the check, so this page cannot tell whether it is running. Try again in a moment.",
+);
 let artifactLoadToken = "";
 let artifactLoadRevision = Number(sessionData.initialArtifactRevision) || 0;
 let artifactLoadRequestSequence = Number(sessionData.initialArtifactLoadSequence) || 0;
@@ -299,8 +301,22 @@ function artifactFrameSrcForLoad(load) {
     "artifact_revision=" +
     encodeURIComponent(load.revision) +
     "&artifact_load_token=" +
-    encodeURIComponent(load.token)
+    encodeURIComponent(load.token) +
+    "&textcast_theme=" +
+    encodeURIComponent(currentChromeTheme() || "light")
   );
+}
+
+// The inline head script (CHROME_THEME_BOOT_JS) owns applying and storing the page palette; the
+// client only forwards the SDK's reports and asks which theme the next page load should open in.
+function chromeThemeApi() {
+  return /** @type {{ apply?: (raw: unknown, persist: boolean) => unknown, current?: () => string } | undefined} */ (
+    /** @type {Record<string, any>} */ (/** @type {unknown} */ (window)).__textcastTheme
+  );
+}
+
+function currentChromeTheme() {
+  return String(chromeThemeApi()?.current?.() || "");
 }
 
 function escapeHtml(value) {
@@ -519,7 +535,7 @@ function anchorHtml(anchor) {
 // `prompt` (`text` is the element's excerpt); a transcript entry keeps them in `text`.
 function attachmentOnlyText(entry) {
   if (!attachmentCount(entry)) return "";
-  return entry.tag === "message" || entry.kind === "message" ? "Image message" : "Image annotation";
+  return entry.tag === "message" || entry.kind === "message" ? t("Image message") : t("Image annotation");
 }
 
 function userBubbleTextHtml(entry, text) {
@@ -539,12 +555,16 @@ function queuedBubbleHtml(prompt, index) {
     '<div class="bubble user queued" data-index="' +
     index +
     '"><small>' +
-    (sending ? "Sending\u2026" : "Queued") +
-    ' <button class="queued-edit" type="button" aria-label="Edit queued prompt" data-index="' +
+    escapeHtml(t(sending ? "Sending\u2026" : "Queued")) +
+    ' <button class="queued-edit" type="button" aria-label="' +
+    escapeHtml(t("Edit queued prompt")) +
+    '" data-index="' +
     index +
     '">' +
     EDIT_ICON_SVG +
-    '</button><button class="queued-remove" type="button" aria-label="Remove queued prompt" data-index="' +
+    '</button><button class="queued-remove" type="button" aria-label="' +
+    escapeHtml(t("Remove queued prompt")) +
+    '" data-index="' +
     index +
     '">' +
     REMOVE_ICON_SVG +
@@ -562,14 +582,21 @@ function queuedEditorHtml(prompt, index) {
   return (
     '<div class="bubble user queued editing" data-index="' +
     index +
-    '"><small>Editing</small>' +
+    '"><small>' +
+    escapeHtml(t("Editing")) +
+    "</small>" +
     anchorHtml(promptAnchor(prompt)) +
-    '<textarea class="queued-edit-input" aria-label="Edit queued prompt" data-index="' +
+    '<textarea class="queued-edit-input" aria-label="' +
+    escapeHtml(t("Edit queued prompt")) +
+    '" data-index="' +
     index +
     '">' +
     escapeHtml(editingDraft) +
-    '</textarea><div class="queued-edit-actions"><button class="queued-edit-cancel" type="button">Cancel</button>' +
-    '<button class="queued-edit-save" type="button">Save</button></div>' +
+    '</textarea><div class="queued-edit-actions"><button class="queued-edit-cancel" type="button">' +
+    escapeHtml(t("Cancel")) +
+    '</button><button class="queued-edit-save" type="button">' +
+    escapeHtml(t("Save")) +
+    "</button></div>" +
     bubbleAttachmentsHtml(prompt) +
     "</div>"
   );
@@ -634,7 +661,6 @@ function render() {
       }
     }
   }
-  postQueuedAnchors();
   updateSendState();
   scrollPanelToBottom();
   renderSheetSummary();
@@ -663,7 +689,7 @@ const BUBBLE_THUMBNAIL_LIMIT = 4;
 
 // Thumbnails for a note's images, served straight from the same-origin attachment endpoint (the
 // ids are already server-vetted at upload time). The bubble has room for only a few, but the
-// per-prompt cap is configurable (LAVISH_AXI_MAX_ATTACHMENTS_PER_PROMPT), so a note can
+// per-prompt cap is configurable (TEXTCAST_CHAT_AXI_MAX_ATTACHMENTS_PER_PROMPT), so a note can
 // legitimately carry more than fit: the remainder collapses into a +N badge rather than being
 // dropped from the preview, which would make the queue look like it lost the extra images (W-A).
 function bubbleAttachmentsHtml(entry) {
@@ -691,9 +717,7 @@ function bubbleAttachmentsHtml(entry) {
       .join("") +
     (hidden > 0
       ? '<span class="bubble-attachment-more" title="' +
-        hidden +
-        " more image" +
-        (hidden === 1 ? "" : "s") +
+        escapeHtml(t(hidden + " more image" + (hidden === 1 ? "" : "s"))) +
         '">+' +
         hidden +
         "</span>"
@@ -713,18 +737,21 @@ function replaceExpiredThumbnail(event) {
     return;
   const expired = document.createElement("span");
   expired.className = "bubble-attachment bubble-attachment-expired";
-  expired.textContent = "Image expired";
+  expired.textContent = t("Image expired");
   expired.title = String(image.alt || "image");
   image.replaceWith(expired);
 }
 
 chatLog.addEventListener("error", replaceExpiredThumbnail, true);
 
-const UNSENT_OWNERSHIP_COPY =
-  "Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.";
-const DEFAULT_SEND_HINT = "Nothing queued in this tab. " + UNSENT_OWNERSHIP_COPY;
+const UNSENT_OWNERSHIP_COPY = t(
+  "Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.",
+);
+const DEFAULT_SEND_HINT = t(
+  "Nothing queued in this tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.",
+);
 const EMPTY_SEND_HINT_HOLD_MS = 9000;
-const EMPTY_END_HINT = "Nothing to send. To end without feedback, use End session in the More menu (⋮).";
+const EMPTY_END_HINT = t("Nothing to send. To end without feedback, use End session in the More menu (⋮).");
 
 function showSendHint(message = DEFAULT_SEND_HINT, holdMs = 2600, focusInput = true) {
   sendHint.textContent = message;
@@ -838,14 +865,18 @@ async function copyText(text) {
 function chatBubbleHtml(entry) {
   if (entry.role === "agent") {
     return (
-      "<small>Agent</small>" +
+      "<small>" +
+      escapeHtml(t("Agent")) +
+      "</small>" +
       (typeof entry.html === "string" && entry.html
         ? '<div class="chat-md">' + entry.html + "</div>"
         : '<div class="bubble-text">' + escapeHtml(entry.text) + "</div>")
     );
   }
   return (
-    "<small>You</small>" +
+    "<small>" +
+    escapeHtml(t("You")) +
+    "</small>" +
     anchorHtml(entry.anchor) +
     userBubbleTextHtml(entry, entry.text) +
     bubbleAttachmentsHtml(entry) +
@@ -870,7 +901,7 @@ function receiptTime(at) {
 
 function receiptStepHtml(label, at) {
   const ticked = Boolean(at);
-  const text = ticked ? label + " " + receiptTime(at) : label + ": not yet";
+  const text = ticked ? t(label) + " " + receiptTime(at) : t(label + ": not yet");
   return (
     '<span class="receipt-step' +
     (ticked ? " is-done" : "") +
@@ -888,9 +919,9 @@ function receiptStepHtml(label, at) {
 // that will take the note within milliseconds, and `working` or an external listener is an agent
 // whose next poll will take it.
 function receiptNoteText() {
-  if (agentPresence === "waiting") return "No agent is listening";
-  if (agentPresence === "listening") return "Delivering";
-  return "Agent is busy; delivered on its next poll";
+  if (agentPresence === "waiting") return t("No agent is listening");
+  if (agentPresence === "listening") return t("Delivering");
+  return t("Agent is busy; delivered on its next poll");
 }
 
 // A transcript entry from before receipts existed (`receipt: "none"`, marked by the server once at
@@ -912,7 +943,7 @@ function receiptHtml(entry) {
 }
 
 // Only the pre-Seen line names the live presence, so a presence change rewrites that line alone.
-// Rebuilding the bubble would also rebuild its thumbnails and undo an "Image expired" placeholder.
+// Rebuilding the bubble would also rebuild its thumbnails and undo an t("Image expired") placeholder.
 function refreshUnseenReceipts() {
   for (const note of chatLog.querySelectorAll(".receipt-note")) note.textContent = receiptNoteText();
 }
@@ -1093,16 +1124,22 @@ function setHandoffSuperseded(visible) {
 }
 
 // The server this page was connected to went away. What is true beyond that depends on why, so
-// the shutdown names its reason and each one gets its own line - a page told "Lavish was updated"
+// the shutdown names its reason and each one gets its own line - a page told "Textcast Chat was updated"
 // after a deliberate stop is being told something false. An unnamed reason (SIGTERM, or any
 // caller that names none) claims neither.
 function chromeOutdatedCopy(reason) {
-  if (reason === "upgrade") return "Lavish was updated. This page is running the previous version.";
+  if (reason === "upgrade") return t("Textcast Chat was updated. This page is running the previous version.");
   if (reason === "local-build") {
-    return "Lavish was restarted to pick up a local build. This page is running the copy the previous server sent.";
+    return t(
+      "Textcast Chat was restarted to pick up a local build. This page is running the copy the previous server sent.",
+    );
   }
-  if (reason === "stop") return "Lavish was stopped. Reload after you start it again.";
-  return "The Lavish server this page was connected to is no longer running. Reloading will work once it is running again.";
+  if (reason === "restart")
+    return t("Textcast Chat was restarted. This page is running the copy the previous server sent.");
+  if (reason === "stop") return t("Textcast Chat was stopped. Reload after you start it again.");
+  return t(
+    "The Textcast Chat server this page was connected to is no longer running. Reloading will work once it is running again.",
+  );
 }
 
 // Say so where the user can dismiss it, and never reload on their behalf - a forced reload
@@ -1157,7 +1194,7 @@ function discardUnrestorableDraft(selector) {
   setReviewState({ ...lastReviewState, card: null });
 }
 
-// Retiring a draft ends Lavish's ability to replay it, so the text itself is handed back to the
+// Retiring a draft ends Textcast Chat's ability to replay it, so the text itself is handed back to the
 // user before it goes: it is written to the conversation panel verbatim, where it is selectable,
 // nothing overwrites what they may already be typing, and no control can discard it by accident.
 // It is persisted per session so a reload does not take the last copy with it.
@@ -1181,7 +1218,15 @@ function renderRetiredDraft(text, stored = true) {
   const el = document.createElement("div");
   el.className = "bubble note";
   el.innerHTML =
-    "<small>Unsent annotation</small><div>The artifact removed or replaced what this note was attached to, so Lavish could not keep it open. Your text is kept here:</div>" +
+    "<small>" +
+    escapeHtml(t("Unsent annotation")) +
+    "</small><div>" +
+    escapeHtml(
+      t(
+        "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:",
+      ),
+    ) +
+    "</div>" +
     '<div class="note-draft">' +
     escapeHtml(text) +
     "</div>" +
@@ -1215,12 +1260,12 @@ function scrollPanelToBottom() {
 }
 
 // ---- Phone-width conversation sheet ----
-// Below this width chrome.css turns the conversation panel into a dock the user raises as a
-// bottom sheet over the artifact. This controller owns intent, accessibility state, gestures,
-// visual-viewport measurements, and the dock summary; CSS owns the geometry. The query must match
+// Below this width chrome.css turns the conversation panel into a bottom sheet the launcher raises
+// over the artifact. This controller owns intent, accessibility state, the drag-to-close gesture,
+// visual-viewport measurements, and the status line; CSS owns the geometry. The query must match
 // the one chrome.css lays the sheet out under.
 const MOBILE_SHEET_MEDIA = "(max-width: 860px)";
-// How far a drag on the dock must travel before it counts as a gesture rather than a tap.
+// How far a drag on the sheet's head must travel before it closes the sheet.
 const SHEET_DRAG_THRESHOLD_PX = 48;
 const sheetStorageKey = "textcast-chat-axi:sheet-open:" + key;
 const sheetMedia = typeof window.matchMedia === "function" ? window.matchMedia(MOBILE_SHEET_MEDIA) : null;
@@ -1232,7 +1277,6 @@ let sheetOpen = readSheetOpen();
 let unreadAgentReply = "";
 /** @type {{ pointerId: any, startY: number, moved: boolean } | null} */
 let sheetDrag = null;
-let suppressSheetClick = false;
 
 function readSheetOpen() {
   try {
@@ -1269,30 +1313,23 @@ function applySheetState() {
   const mobile = isMobileSheet();
   const open = mobile && sheetOpen;
   document.body.classList.toggle("sheet-open", open);
-  const docked = mobile && !open;
-  panelScroll.inert = ended || docked;
-  chatComposer.inert = ended || docked;
-  const activeElement = document.activeElement;
-  if (docked && activeElement && (panelScroll.contains(activeElement) || chatComposer.contains(activeElement))) {
-    panelToggle.focus();
-  }
-  panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
-  panelToggle.setAttribute("aria-label", open ? "Hide conversation" : "Show conversation");
-  renderSheetSummary();
+  panelScroll.inert = ended;
+  chatComposer.inert = ended;
+  applyConversationVisibility();
 }
 
-// What the closed dock says. One line, most actionable state first: work the user has queued,
+// The head's status line. One line, most actionable state first: work the user has queued,
 // then a reply they have not seen, then whether the agent is there to receive a send.
 function sheetSummary() {
-  if (ended) return { text: "Session ended", accent: false, unread: false };
+  if (ended) return { text: t("Session ended"), accent: false, unread: false };
   if (queued.length > 0) {
-    return { text: queued.length === 1 ? "1 queued" : queued.length + " queued", accent: true, unread: false };
+    return { text: t(queued.length + " queued"), accent: true, unread: false };
   }
   if (unreadAgentReply) return { text: unreadAgentReply, accent: false, unread: true };
-  if (agentPresence === "working") return { text: "Agent is working…", accent: false, unread: false };
-  if (agentPresence === "external") return { text: "External listener active", accent: false, unread: false };
-  if (agentPresence === "listening") return { text: "Agent listening", accent: false, unread: false };
-  return { text: "Agent not listening", accent: false, unread: false };
+  if (agentPresence === "working") return { text: t("Agent is working…"), accent: false, unread: false };
+  if (agentPresence === "external") return { text: t("External listener active"), accent: false, unread: false };
+  if (agentPresence === "listening") return { text: t("Agent listening"), accent: false, unread: false };
+  return { text: t("Agent not listening"), accent: false, unread: false };
 }
 
 function renderSheetSummary() {
@@ -1300,22 +1337,28 @@ function renderSheetSummary() {
   panelSummary.textContent = summary.text;
   panelSummary.classList.toggle("is-accent", summary.accent);
   panelSummary.classList.toggle("is-unread", summary.unread);
+  panelSummary.dataset.presence = ended ? "ended" : agentPresence;
   renderSidebarToggle();
 }
 
-// A brief pulse on the dock when something the user should notice lands while the sheet is
-// closed: a prompt they queued from the artifact, or an agent reply.
+// A brief pulse on the launcher when something the user should notice lands while the
+// conversation is closed: a prompt they queued from the artifact, or an agent reply.
 function pulseSheetDock() {
-  if (!isMobileSheet() || sheetOpen) return;
-  panelHead.classList.remove("is-fresh");
+  if (!isConversationHidden()) return;
+  sidebarToggle.classList.remove("is-fresh");
   // Restart the animation even when the previous pulse is still running.
-  void panelHead.offsetWidth;
-  panelHead.classList.add("is-fresh");
+  void sidebarToggle.offsetWidth;
+  sidebarToggle.classList.add("is-fresh");
 }
 
 function noteAgentReply(text) {
   if (!isConversationHidden()) return;
-  unreadAgentReply = String(text || "");
+  // A one-line preview: the reply is Markdown, so drop its markup characters before showing it.
+  unreadAgentReply = String(text || "")
+    .replace(/[#*_`>|]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
   renderSheetSummary();
   pulseSheetDock();
 }
@@ -1350,43 +1393,44 @@ function finishSheetDrag(event) {
   const offset = sheetDragOffset(event);
   const moved = sheetDrag.moved;
   clearSheetDrag();
-  if (!moved) return;
-  // The click that follows a completed drag must not undo what the drag decided.
-  suppressSheetClick = true;
-  if (sheetOpen && offset > SHEET_DRAG_THRESHOLD_PX) setSheetOpen(false);
-  else if (!sheetOpen && offset < -SHEET_DRAG_THRESHOLD_PX) setSheetOpen(true);
+  if (moved && sheetOpen && offset > SHEET_DRAG_THRESHOLD_PX) setSheetOpen(false);
 }
 
-panelHead.addEventListener("click", () => {
-  if (!isMobileSheet()) return;
-  if (suppressSheetClick) {
-    suppressSheetClick = false;
-    return;
-  }
-  setSheetOpen(!sheetOpen);
-});
+// The head's own tools (revisions, menu, minimize) keep their clicks; only the bare head drags.
+function isPanelToolEvent(event) {
+  const target = /** @type {Element | null} */ (event.target);
+  return Boolean(target && typeof target.closest === "function" && target.closest(".panel-tools"));
+}
+
 panelScrim.addEventListener("click", () => setSheetOpen(false));
 panelHead.addEventListener("pointerdown", (event) => {
-  if (!isMobileSheet() || event.button) return;
+  if (event.button || isPanelToolEvent(event)) return;
+  if (!isMobileSheet()) {
+    if (!panelCollapsed) beginFloatDrag("panel", panel, panelHead, event);
+    return;
+  }
+  if (!sheetOpen) return;
   sheetDrag = { pointerId: event.pointerId, startY: Number(event.clientY), moved: false };
   if (typeof panelHead.setPointerCapture === "function") panelHead.setPointerCapture(event.pointerId);
 });
 panelHead.addEventListener("pointermove", (event) => {
+  if (moveFloatDrag(event)) return;
   if (!sheetDrag || event.pointerId !== sheetDrag.pointerId) return;
   const offset = sheetDragOffset(event);
   if (Math.abs(offset) > 6) sheetDrag.moved = true;
   if (!sheetDrag.moved) return;
   panel.classList.add("is-dragging");
-  // Follow the finger: an open sheet only moves down, a closed dock only up.
-  panel.style.transform = sheetOpen
-    ? "translateY(" + Math.max(0, offset) + "px)"
-    : "translateY(calc(100% - var(--dock-h) - env(safe-area-inset-bottom, 0px) + " + Math.min(0, offset) + "px))";
+  // Follow the finger down; the sheet only closes by dragging.
+  panel.style.transform = "translateY(" + Math.max(0, offset) + "px)";
 });
-panelHead.addEventListener("pointerup", finishSheetDrag);
+panelHead.addEventListener("pointerup", (event) => {
+  if (endFloatDrag(event)) return;
+  finishSheetDrag(event);
+});
 panelHead.addEventListener("pointercancel", (event) => {
+  if (endFloatDrag(event)) return;
   if (!sheetDrag || event.pointerId !== sheetDrag.pointerId) return;
   clearSheetDrag();
-  suppressSheetClick = false;
 });
 if (sheetMedia && typeof sheetMedia.addEventListener === "function") {
   sheetMedia.addEventListener("change", (event) => {
@@ -1403,6 +1447,7 @@ if (sheetMedia && typeof sheetMedia.addEventListener === "function") {
     if (!isConversationHidden()) unreadAgentReply = "";
     applySheetState();
     applyPanelCollapsed();
+    applyFloatPositions();
   });
 }
 if (window.visualViewport && typeof window.visualViewport.addEventListener === "function") {
@@ -1412,20 +1457,20 @@ if (window.visualViewport && typeof window.visualViewport.addEventListener === "
 window.addEventListener("resize", syncVisualViewport);
 syncVisualViewport();
 
-// ---- Desktop conversation panel collapse ----
-// Above the phone breakpoint the conversation is a fixed side column; the bar's sidebar toggle
-// hides it so the artifact gets the full width. The choice is a per-viewer preference rather than
-// per-review state, so it lives in localStorage under one key for every session. chrome.css only
-// honours `panel-collapsed` outside the phone breakpoint, and this controller never sets it there,
-// so a stored preference cannot hide the phone dock.
+// ---- Desktop floating conversation panel ----
+// Above the phone breakpoint the conversation is a floating card the round launcher opens and
+// minimizes, so the page keeps its whole width. The choice is a per-viewer preference rather than
+// per-review state, so it lives in localStorage under one key for every session, and a first visit
+// starts minimized. chrome.css only honours `panel-collapsed` outside the phone breakpoint, and
+// this controller never sets it there, so a stored preference cannot hide the phone sheet.
 const panelCollapsedStorageKey = "textcast-chat-axi:panel-collapsed";
 let panelCollapsed = readPanelCollapsed();
 
 function readPanelCollapsed() {
   try {
-    return localStorage.getItem(panelCollapsedStorageKey) === "1";
+    return localStorage.getItem(panelCollapsedStorageKey) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -1439,11 +1484,15 @@ function revealConversation() {
   else if (panelCollapsed) setPanelCollapsed(false);
 }
 
+function hideConversation() {
+  if (isMobileSheet()) setSheetOpen(false);
+  else setPanelCollapsed(true);
+}
+
 function setPanelCollapsed(collapsed) {
   panelCollapsed = Boolean(collapsed);
   try {
-    if (panelCollapsed) localStorage.setItem(panelCollapsedStorageKey, "1");
-    else localStorage.removeItem(panelCollapsedStorageKey);
+    localStorage.setItem(panelCollapsedStorageKey, panelCollapsed ? "1" : "0");
   } catch {
     // Storage refused only means the preference does not survive a reload.
   }
@@ -1453,32 +1502,479 @@ function setPanelCollapsed(collapsed) {
 }
 
 function applyPanelCollapsed() {
-  const collapsed = panelCollapsed && !isMobileSheet();
-  document.body.classList.toggle("panel-collapsed", collapsed);
-  // Focus inside a panel that just went display:none would be lost to the document body.
-  const activeElement = document.activeElement;
-  if (collapsed && activeElement && panel.contains(activeElement)) sidebarToggle.focus();
-  sidebarToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-  renderSidebarToggle();
+  document.body.classList.toggle("panel-collapsed", panelCollapsed && !isMobileSheet());
+  applyConversationVisibility();
 }
 
-// While collapsed the toggle stands in for the panel: it counts queued notes (the thing still to
-// send) or, failing that, marks an agent reply that arrived out of sight.
+// One place derives what a hidden conversation means in either layout: the panel leaves the tab
+// order, focus inside it returns to the launcher, and the launcher says which way it points.
+function applyConversationVisibility() {
+  const hidden = isConversationHidden();
+  panel.inert = hidden;
+  const activeElement = document.activeElement;
+  if (hidden && activeElement && panel.contains(activeElement)) sidebarToggle.focus();
+  document.body.classList.toggle("conversation-open", !hidden);
+  sidebarToggle.setAttribute("aria-expanded", hidden ? "false" : "true");
+  renderSheetSummary();
+}
+
+// While hidden the launcher stands in for the panel: it counts queued notes (the thing still to
+// send) or, failing that, marks an agent reply that arrived out of sight and previews it.
 function renderSidebarToggle() {
-  const collapsed = panelCollapsed && !isMobileSheet();
-  const count = collapsed ? queued.length : 0;
-  const unread = collapsed && count === 0 && Boolean(unreadAgentReply);
+  const hidden = isConversationHidden();
+  const count = hidden ? queued.length : 0;
+  const reply = hidden ? unreadAgentReply : "";
+  const unread = count === 0 && Boolean(reply);
   sidebarToggleCount.textContent = count > 0 ? String(count) : "";
   sidebarToggleCount.hidden = count === 0;
   sidebarToggle.classList.toggle("is-unread", unread);
-  let label = collapsed ? "Show conversation" : "Hide conversation";
-  if (count > 0) label += count === 1 ? " (1 queued)" : " (" + count + " queued)";
-  else if (unread) label += " (new reply)";
+  let label = t(hidden ? "Show conversation" : "Hide conversation");
+  if (count > 0) label += t(" (" + count + " queued)");
+  else if (unread) label += t(" (new reply)");
   sidebarToggle.setAttribute("aria-label", label);
   sidebarToggle.title = label;
+  // The reply preview shows even beside a queued count: an answer is worth seeing either way.
+  launcherPeekText.textContent = reply;
+  launcherPeek.hidden = !reply;
 }
 
-sidebarToggle.addEventListener("click", () => setPanelCollapsed(!panelCollapsed));
+sidebarToggle.addEventListener("click", () => {
+  // The click that ends a drag is not a request to open or close the conversation.
+  if (suppressLauncherClick) {
+    suppressLauncherClick = false;
+    return;
+  }
+  if (isConversationHidden()) revealConversation();
+  else hideConversation();
+});
+panelClose.addEventListener("click", () => hideConversation());
+launcherPeek.addEventListener("click", () => revealConversation());
+
+// ---- Dragging the launcher and the floating panel (desktop only) ----
+// Both can be moved off whatever part of the page they cover. A position is a per-viewer
+// preference like the minimized state, so it lives in localStorage for every session. The launcher
+// snaps to the nearer side edge; a panel that was never dragged itself sits beside the launcher, so
+// moving the launcher takes it along. The phone sheet keeps its fixed layout: every inline position
+// is cleared under the phone breakpoint.
+const FLOAT_DRAG_THRESHOLD_PX = 5;
+const FLOAT_MARGIN_PX = 8;
+const FLOAT_GAP_PX = 12;
+const LAUNCHER_EDGE_PX = 20;
+const launcherPosStorageKey = "textcast-chat-axi:launcher-pos";
+const panelPosStorageKey = "textcast-chat-axi:panel-pos";
+let launcherPos = readFloatPos(launcherPosStorageKey);
+let panelPos = readFloatPos(panelPosStorageKey);
+/** @type {{ kind: string, el: HTMLElement, handle: HTMLElement, pointerId: any, startX: number, startY: number, originX: number, originY: number, moved: boolean } | null} */
+let floatDrag = null;
+let suppressLauncherClick = false;
+
+function readFloatPos(storageKey) {
+  try {
+    const value = JSON.parse(localStorage.getItem(storageKey) || "null");
+    if (value && Number.isFinite(value.x) && Number.isFinite(value.y)) return { x: value.x, y: value.y };
+  } catch {
+    // An unreadable position falls back to the default corner.
+  }
+  return null;
+}
+
+function writeFloatPos(storageKey, pos) {
+  try {
+    if (pos) localStorage.setItem(storageKey, JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) }));
+    else localStorage.removeItem(storageKey);
+  } catch {
+    // Storage refused only means the position does not survive a reload.
+  }
+}
+
+function canPlaceFloats() {
+  return !isMobileSheet() && typeof sidebarToggle.getBoundingClientRect === "function" && window.innerWidth > 0;
+}
+
+// Keeps a floating element whole inside the viewport, however the window was resized since.
+function clampFloatPos(pos, el) {
+  const rect = el.getBoundingClientRect();
+  const maxX = Math.max(FLOAT_MARGIN_PX, window.innerWidth - rect.width - FLOAT_MARGIN_PX);
+  const maxY = Math.max(FLOAT_MARGIN_PX, window.innerHeight - rect.height - FLOAT_MARGIN_PX);
+  return {
+    x: Math.min(Math.max(FLOAT_MARGIN_PX, pos.x), maxX),
+    y: Math.min(Math.max(FLOAT_MARGIN_PX, pos.y), maxY),
+  };
+}
+
+function setFloatStyle(el, pos) {
+  el.style.left = pos ? pos.x + "px" : "";
+  el.style.top = pos ? pos.y + "px" : "";
+  el.style.right = pos ? "auto" : "";
+  el.style.bottom = pos ? "auto" : "";
+}
+
+function launcherOnRight() {
+  const rect = sidebarToggle.getBoundingClientRect();
+  return rect.left + rect.width / 2 >= window.innerWidth / 2;
+}
+
+// Where an undragged panel goes once the launcher has moved: above it, on the launcher's side,
+// below it when there is no room above, or beside it when neither fits.
+function panelPosBesideLauncher() {
+  const launcher = sidebarToggle.getBoundingClientRect();
+  const size = panel.getBoundingClientRect();
+  const onRight = launcherOnRight();
+  let x = onRight ? launcher.right - size.width : launcher.left;
+  let y = launcher.top - FLOAT_GAP_PX - size.height;
+  if (y < FLOAT_MARGIN_PX) {
+    y = launcher.bottom + FLOAT_GAP_PX;
+    if (y + size.height > window.innerHeight - FLOAT_MARGIN_PX) {
+      // No room above or below: open beside the launcher instead of over it.
+      x = onRight ? launcher.left - FLOAT_GAP_PX - size.width : launcher.right + FLOAT_GAP_PX;
+      y = launcher.bottom - size.height;
+    }
+  }
+  return clampFloatPos({ x, y }, panel);
+}
+
+function placeLauncherPeek() {
+  const style = launcherPeek.style;
+  if (!launcherPos) {
+    style.left = style.right = style.bottom = "";
+    return;
+  }
+  const launcher = sidebarToggle.getBoundingClientRect();
+  const onRight = launcherOnRight();
+  style.left = onRight ? "auto" : launcher.right + FLOAT_GAP_PX + "px";
+  style.right = onRight ? window.innerWidth - launcher.left + FLOAT_GAP_PX + "px" : "auto";
+  style.bottom = window.innerHeight - launcher.bottom + 4 + "px";
+}
+
+function placePanel() {
+  if (panelPos) panelPos = clampFloatPos(panelPos, panel);
+  setFloatStyle(panel, panelPos || (launcherPos ? panelPosBesideLauncher() : null));
+}
+
+function applyFloatPositions() {
+  if (!canPlaceFloats()) {
+    setFloatStyle(sidebarToggle, null);
+    setFloatStyle(panel, null);
+    setFloatStyle(playerDock, null);
+    launcherPeek.style.left = launcherPeek.style.right = launcherPeek.style.bottom = "";
+    return;
+  }
+  if (launcherPos) launcherPos = clampFloatPos(launcherPos, sidebarToggle);
+  setFloatStyle(sidebarToggle, launcherPos);
+  placePanel();
+  placeLauncherPeek();
+  placePlayer();
+}
+
+function beginFloatDrag(kind, el, handle, event) {
+  if (!canPlaceFloats()) return;
+  const rect = el.getBoundingClientRect();
+  floatDrag = {
+    kind,
+    el,
+    handle,
+    pointerId: event.pointerId,
+    startX: Number(event.clientX),
+    startY: Number(event.clientY),
+    originX: rect.left,
+    originY: rect.top,
+    moved: false,
+  };
+  if (typeof handle.setPointerCapture === "function") handle.setPointerCapture(event.pointerId);
+}
+
+function moveFloatDrag(event) {
+  if (!floatDrag || event.pointerId !== floatDrag.pointerId) return false;
+  const dx = Number(event.clientX) - floatDrag.startX;
+  const dy = Number(event.clientY) - floatDrag.startY;
+  if (!floatDrag.moved && Math.hypot(dx, dy) < FLOAT_DRAG_THRESHOLD_PX) return true;
+  if (!floatDrag.moved) {
+    floatDrag.moved = true;
+    document.body.classList.add("is-float-dragging");
+  }
+  const pos = clampFloatPos({ x: floatDrag.originX + dx, y: floatDrag.originY + dy }, floatDrag.el);
+  if (floatDrag.kind === "launcher") {
+    launcherPos = pos;
+    setFloatStyle(sidebarToggle, launcherPos);
+    placePanel();
+    placeLauncherPeek();
+  } else if (floatDrag.kind === "player") {
+    playerPos = pos;
+    setFloatStyle(playerDock, playerPos);
+  } else {
+    panelPos = pos;
+    setFloatStyle(panel, panelPos);
+  }
+  return true;
+}
+
+function endFloatDrag(event) {
+  if (!floatDrag || event.pointerId !== floatDrag.pointerId) return false;
+  const drag = floatDrag;
+  floatDrag = null;
+  if (!drag.moved) return true;
+  document.body.classList.remove("is-float-dragging");
+  if (drag.kind === "launcher") {
+    // Settle against the nearer side edge, at the height it was dropped.
+    const rect = sidebarToggle.getBoundingClientRect();
+    const x = launcherOnRight() ? window.innerWidth - rect.width - LAUNCHER_EDGE_PX : LAUNCHER_EDGE_PX;
+    launcherPos = clampFloatPos({ x, y: rect.top }, sidebarToggle);
+    writeFloatPos(launcherPosStorageKey, launcherPos);
+    applyFloatPositions();
+    suppressLauncherClick = true;
+    window.setTimeout(() => {
+      suppressLauncherClick = false;
+    }, 0);
+  } else if (drag.kind === "player") {
+    writeFloatPos(playerPosStorageKey, playerPos);
+  } else {
+    writeFloatPos(panelPosStorageKey, panelPos);
+  }
+  return true;
+}
+
+sidebarToggle.addEventListener("pointerdown", (event) => {
+  if (event.button) return;
+  beginFloatDrag("launcher", sidebarToggle, sidebarToggle, event);
+});
+sidebarToggle.addEventListener("pointermove", (event) => moveFloatDrag(event));
+sidebarToggle.addEventListener("pointerup", (event) => endFloatDrag(event));
+sidebarToggle.addEventListener("pointercancel", (event) => endFloatDrag(event));
+
+// ---- The video player for Textcast pages ----
+// A Textcast page sends `textcast:play` with only the video's identity and a start second; the chrome
+// builds the embed URL itself from a fixed pattern per site, so the page cannot point this
+// unsandboxed frame anywhere else. It floats bottom-left by default, away from the launcher, drags
+// by the grip at its top, and grows from its corner grip; the default size is the smallest.
+const playerDock = /** @type {HTMLElement} */ (document.getElementById("playerDock"));
+const playerGrip = /** @type {HTMLElement} */ (document.getElementById("playerGrip"));
+const playerSlot = /** @type {HTMLElement} */ (document.getElementById("playerSlot"));
+const playerClose = /** @type {HTMLButtonElement} */ (document.getElementById("playerClose"));
+const playerResizers = /** @type {HTMLElement[]} */ (Array.from(playerDock.querySelectorAll(".player-resize")));
+const playerSwitch = /** @type {HTMLButtonElement} */ (document.getElementById("videoSwitch"));
+const playerEnabledStorageKey = "textcast-chat-axi:video-on-click";
+const playerPosStorageKey = "textcast-chat-axi:player-pos";
+const playerWidthStorageKey = "textcast-chat-axi:player-width";
+const PLAYER_MIN_WIDTH_PX = 400;
+let playerPos = readFloatPos(playerPosStorageKey);
+let playerWidth = readPlayerWidth();
+let playerEnabled = readPlayerEnabled();
+/** @type {{ edge: string, handle: HTMLElement, pointerId: any, startX: number, startY: number, rect: { left: number, top: number, right: number, bottom: number, width: number } } | null} */
+let playerResizeDrag = null;
+
+function readPlayerEnabled() {
+  try {
+    return localStorage.getItem(playerEnabledStorageKey) !== "0";
+  } catch {
+    return true;
+  }
+}
+/** @type {HTMLIFrameElement | null} */
+let playerFrame = null;
+
+function playerEmbedUrl(msg) {
+  const start = Math.max(0, Math.floor(Number(msg.start) || 0));
+  const id = String(msg.id || "");
+  if (msg.kind === "youtube" && /^[\w-]{6,20}$/.test(id)) {
+    return "https://www.youtube.com/embed/" + id + "?start=" + start + "&autoplay=1&rel=0";
+  }
+  if (msg.kind === "bilibili" && /^BV[0-9A-Za-z]{8,12}$/.test(id)) {
+    const page = Math.min(999, Math.max(1, Math.floor(Number(msg.page) || 1)));
+    return (
+      "https://player.bilibili.com/player.html?bvid=" +
+      id +
+      "&p=" +
+      page +
+      "&t=" +
+      start +
+      "&autoplay=1&high_quality=1&danmaku=0"
+    );
+  }
+  return "";
+}
+
+function readPlayerWidth() {
+  try {
+    const value = Number(localStorage.getItem(playerWidthStorageKey));
+    if (Number.isFinite(value) && value > PLAYER_MIN_WIDTH_PX) return value;
+  } catch {
+    // An unreadable size falls back to the default.
+  }
+  return 0;
+}
+
+// The widest the player can be with its 16:9 height still inside the window.
+function playerMaxWidth() {
+  const byWidth = window.innerWidth - 2 * FLOAT_MARGIN_PX;
+  const byHeight = ((window.innerHeight - 2 * FLOAT_MARGIN_PX) * 16) / 9;
+  return Math.max(0, Math.min(byWidth, byHeight));
+}
+
+function setPlayerWidth(width) {
+  playerDock.style.width = width > PLAYER_MIN_WIDTH_PX ? Math.round(width) + "px" : "";
+}
+
+function placePlayer() {
+  if (playerDock.hidden) return;
+  if (!canPlaceFloats()) {
+    setFloatStyle(playerDock, null);
+    setPlayerWidth(0);
+    return;
+  }
+  setPlayerWidth(playerWidth ? Math.min(playerWidth, Math.max(PLAYER_MIN_WIDTH_PX, playerMaxWidth())) : 0);
+  if (playerPos) playerPos = clampFloatPos(playerPos, playerDock);
+  setFloatStyle(playerDock, playerPos);
+}
+
+function playVideo(msg) {
+  const url = playerEmbedUrl(msg);
+  if (!url || !playerEnabled) return;
+  if (!playerFrame) {
+    playerFrame = /** @type {HTMLIFrameElement} */ (document.createElement("iframe"));
+    playerFrame.className = "player-frame";
+    playerFrame.setAttribute("allow", "autoplay; encrypted-media; picture-in-picture; fullscreen");
+    playerFrame.setAttribute("allowfullscreen", "");
+    playerFrame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    playerSlot.appendChild(playerFrame);
+  }
+  playerFrame.src = url;
+  playerDock.hidden = false;
+  placePlayer();
+}
+
+function closePlayer() {
+  playerDock.hidden = true;
+  if (playerFrame) playerFrame.remove();
+  playerFrame = null;
+}
+
+playerClose.addEventListener("click", closePlayer);
+// The grip sits over the video, so the video's frame stops taking the pointer from the press on;
+// otherwise the first move lands in the frame and the drag never starts.
+playerGrip.addEventListener("pointerdown", (event) => {
+  if (event.button || !canPlaceFloats()) return;
+  document.body.classList.add("is-float-dragging");
+  beginFloatDrag("player", playerDock, playerGrip, event);
+});
+playerGrip.addEventListener("pointermove", (event) => {
+  if (!event.buttons) endPlayerDrag(event);
+  else moveFloatDrag(event);
+});
+function endPlayerDrag(event) {
+  endFloatDrag(event);
+  document.body.classList.remove("is-float-dragging");
+}
+playerGrip.addEventListener("pointerup", endPlayerDrag);
+playerGrip.addEventListener("pointercancel", endPlayerDrag);
+playerGrip.addEventListener("lostpointercapture", endPlayerDrag);
+
+// Every edge and corner resizes, keeping 16:9: the opposite edge (or corner) stays put while the
+// one held moves. The default size is the smallest; the window is the largest.
+function beginPlayerResize(handle, event) {
+  if (event.button || !canPlaceFloats()) return;
+  const rect = playerDock.getBoundingClientRect();
+  playerPos = { x: rect.left, y: rect.top };
+  setFloatStyle(playerDock, playerPos);
+  playerResizeDrag = {
+    edge: String(handle.getAttribute("data-edge") || "se"),
+    handle,
+    pointerId: event.pointerId,
+    startX: Number(event.clientX),
+    startY: Number(event.clientY),
+    rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width },
+  };
+  document.body.classList.add("is-float-dragging");
+  if (typeof handle.setPointerCapture === "function") handle.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
+
+function movePlayerResize(event) {
+  const drag = playerResizeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  // A release the grip never heard about (it can land outside the window) ends the resize here,
+  // so merely passing over the grip afterwards can never keep resizing.
+  if (!event.buttons) {
+    endPlayerResize(event);
+    return;
+  }
+  const { edge, rect } = drag;
+  const dx = Number(event.clientX) - drag.startX;
+  const dy = Number(event.clientY) - drag.startY;
+  const byX = edge.includes("e") ? dx : edge.includes("w") ? -dx : null;
+  const byY = edge.includes("s") ? (dy * 16) / 9 : edge.includes("n") ? (-dy * 16) / 9 : null;
+  const grow = byX === null ? byY || 0 : byY === null ? byX : Math.max(byX, byY);
+  // A held edge stops at the window and the edge across from it never moves. Holding a side edge
+  // also grows the other axis; that one has no edge held, so it slides back inside the window.
+  const fromLeft = edge.includes("w");
+  const fromTop = edge.includes("n");
+  const roomX = fromLeft ? rect.right - FLOAT_MARGIN_PX : window.innerWidth - FLOAT_MARGIN_PX - rect.left;
+  const roomY = fromTop ? rect.bottom - FLOAT_MARGIN_PX : window.innerHeight - FLOAT_MARGIN_PX - rect.top;
+  const room = Math.min(playerMaxWidth(), byX === null ? Infinity : roomX, byY === null ? Infinity : (roomY * 16) / 9);
+  const floor = Math.min(PLAYER_MIN_WIDTH_PX, window.innerWidth - 2 * FLOAT_MARGIN_PX);
+  playerWidth = Math.max(floor, Math.min(rect.width + grow, room));
+  setPlayerWidth(playerWidth);
+  const height = (playerWidth * 9) / 16;
+  const x = fromLeft ? rect.right - playerWidth : rect.left;
+  const y = fromTop ? rect.bottom - height : rect.top;
+  playerPos = clampFloatPos({ x, y }, playerDock);
+  setFloatStyle(playerDock, playerPos);
+}
+
+function endPlayerResize(event) {
+  const drag = playerResizeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  playerResizeDrag = null;
+  document.body.classList.remove("is-float-dragging");
+  if (typeof drag.handle.releasePointerCapture === "function") {
+    try {
+      drag.handle.releasePointerCapture(event.pointerId);
+    } catch {
+      // Already released.
+    }
+  }
+  if (playerWidth <= PLAYER_MIN_WIDTH_PX) playerWidth = 0;
+  try {
+    if (playerWidth) localStorage.setItem(playerWidthStorageKey, String(Math.round(playerWidth)));
+    else localStorage.removeItem(playerWidthStorageKey);
+  } catch {
+    // Storage refused only means the size does not survive a reload.
+  }
+  writeFloatPos(playerPosStorageKey, playerPos);
+}
+
+for (const handle of playerResizers) {
+  handle.addEventListener("pointerdown", (event) => beginPlayerResize(handle, event));
+  handle.addEventListener("pointermove", movePlayerResize);
+  handle.addEventListener("pointerup", endPlayerResize);
+  handle.addEventListener("pointercancel", endPlayerResize);
+  handle.addEventListener("lostpointercapture", endPlayerResize);
+}
+
+// "Play the video when a line is clicked", in the More menu, shown only on a page with a video.
+// Off, a click on the transcript plays nothing: the chrome ignores the page's request, and the
+// page, which only opens a tab when no review window is around to ask, never falls back to one.
+function applyPlayerSwitch() {
+  playerSwitch.setAttribute("aria-pressed", String(playerEnabled));
+}
+
+function showPlayerSwitch(pageHasVideo) {
+  playerSwitch.hidden = !pageHasVideo;
+}
+
+playerSwitch.addEventListener("click", () => {
+  playerEnabled = !playerEnabled;
+  try {
+    localStorage.setItem(playerEnabledStorageKey, playerEnabled ? "1" : "0");
+  } catch {
+    // Storage refused only means the choice does not survive a reload.
+  }
+  applyPlayerSwitch();
+  if (!playerEnabled) closePlayer();
+});
+applyPlayerSwitch();
+
+window.addEventListener("resize", applyFloatPositions);
+applyFloatPositions();
 
 function scrollElementIntoView(el) {
   el.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -1509,7 +2005,7 @@ function editQueuedPrompt(index, { reveal = true } = {}) {
   editFocusPending = true;
   revealConversation();
   render();
-  if (reveal && prompt.selector) postToFrame({ type: "lavish:revealElement", selector: String(prompt.selector) });
+  if (reveal && prompt.selector) postToFrame({ type: "textcast:revealElement", selector: String(prompt.selector) });
 }
 
 function endQueuedEdit() {
@@ -1545,47 +2041,6 @@ function saveQueuedEdit() {
 function cancelQueuedEdit() {
   endQueuedEdit();
   render();
-}
-
-// A click on an element the artifact knows carries a queued note. The artifact names only the
-// selector, so the most a forged message can do is open one of the user's own notes for editing.
-function editQueuedAnchor(selector) {
-  if (!selector) return;
-  for (let index = queued.length - 1; index >= 0; index--) {
-    if (isElementAnchoredPrompt(queued[index]) && queuedAnchorSelectorsOf(queued[index]).includes(selector)) {
-      if (isPromptEditable(queued[index])) {
-        editQueuedPrompt(index, { reveal: false });
-        return;
-      }
-      break;
-    }
-  }
-  // The note is already on its way, or gone: the click still deserves the card it would have had.
-  postToFrame({ type: "lavish:annotateElement", selector });
-}
-
-// Notes that point at a whole element, cell, or diagram node, which a later click on that same
-// target can find again. A text selection's note is about the words, not the element around them.
-function isElementAnchoredPrompt(prompt) {
-  const kind = promptAnchor(prompt)?.kind;
-  return Boolean(prompt.selector) && (kind === "element" || kind === "cell" || kind === "node");
-}
-
-// A note answers to the exact element it was queued on.
-function queuedAnchorSelectorsOf(prompt) {
-  return [String(prompt.selector)];
-}
-
-// Tells the artifact which element selectors carry a queued note. Only selectors cross into the
-// frame: the artifact is agent-authored, and the note text stays in the chrome.
-function postQueuedAnchors(force = false) {
-  const selectors = [
-    ...new Set(queued.filter((prompt) => isElementAnchoredPrompt(prompt)).flatMap(queuedAnchorSelectorsOf)),
-  ];
-  const signature = JSON.stringify(selectors);
-  if (!force && signature === postedQueuedAnchors) return;
-  postedQueuedAnchors = signature;
-  postToFrame({ type: "lavish:queuedAnchors", selectors });
 }
 
 queuedLog.addEventListener("click", (event) => {
@@ -1644,6 +2099,10 @@ function enqueuePrompt(rawPrompt, /** @type {FeedbackPreparation | null} */ prep
   // The sandboxed iframe is untrusted: never accept a caller-supplied settlement identity.
   const prompt = adoptQueuedPrompt(rawPrompt, false);
   if (!prompt) return false;
+  // The page it was written on is the chrome's to say, not the frame's, and only worth saying
+  // once the reader has left the session's own file.
+  delete prompt.page;
+  if (currentPage !== filePath) prompt.page = currentPage;
 
   const queueKey = promptQueueKey(prompt);
   if (queueKey) {
@@ -1697,7 +2156,7 @@ function requestSnapshot(action, prompts = [], endAfter = false, terminal = null
   pendingAcknowledgements.add(request.acknowledgement);
   armSendAcknowledgementWarning();
   request.timeout = setTimeout(() => completeSnapshotRequest(requestId, ""), SNAPSHOT_REQUEST_TIMEOUT_MS);
-  postToFrame({ type: "lavish:requestSnapshot", snapshot_request_id: requestId });
+  postToFrame({ type: "textcast:requestSnapshot", snapshot_request_id: requestId });
 }
 
 function takeSnapshotRequest(requestId) {
@@ -1736,17 +2195,19 @@ function createChatAttachmentsController() {
   function renderAttachments() {
     chatAttachments.innerHTML = items
       .map((item) => {
-        const status = item.status === "uploading" ? "Uploading…" : item.status === "error" ? item.error : "";
+        const status = item.status === "uploading" ? t("Uploading…") : item.status === "error" ? t(item.error) : "";
         const preview = item.preview
           ? '<img class="chat-attachment-thumb" src="' + escapeHtml(item.preview) + '" alt="">'
           : "";
         const retry =
           item.status === "error" && item.file
-            ? '<button type="button" aria-label="Retry ' +
-              escapeHtml(item.name) +
+            ? '<button type="button" aria-label="' +
+              escapeHtml(t("Retry " + item.name)) +
               '" data-chat-attachment-retry="' +
               item.localId +
-              '">Retry</button>'
+              '">' +
+              escapeHtml(t("Retry")) +
+              "</button>"
             : "";
         const errorData = item.errorCode ? ' data-error="' + escapeHtml(item.errorCode) + '"' : "";
         return (
@@ -1762,10 +2223,10 @@ function createChatAttachmentsController() {
           (status ? '<span class="chat-attachment-status" aria-live="polite">' + escapeHtml(status) + "</span>" : "") +
           "</span>" +
           retry +
-          '<button type="button" aria-label="Remove ' +
-          escapeHtml(item.name) +
-          '" title="Remove ' +
-          escapeHtml(item.name) +
+          '<button type="button" aria-label="' +
+          escapeHtml(t("Remove " + item.name)) +
+          '" title="' +
+          escapeHtml(t("Remove " + item.name)) +
           '" data-chat-attachment-remove="' +
           item.localId +
           '">×</button></div>'
@@ -1786,11 +2247,11 @@ function createChatAttachmentsController() {
     if (!pending && !errored) sendBlocked = false;
     chatAttachmentNotice.textContent =
       sendBlocked && pending
-        ? "Waiting for an image to finish uploading…"
+        ? t("Waiting for an image to finish uploading…")
         : sendBlocked && errored
-          ? "An image couldn't be attached. Retry or remove it before sending."
+          ? t("An image couldn't be attached. Retry or remove it before sending.")
           : capRejected
-            ? "You can attach up to " + attachmentMaxCount + " image" + (attachmentMaxCount === 1 ? "" : "s") + "."
+            ? t("You can attach up to " + attachmentMaxCount + " image" + (attachmentMaxCount === 1 ? "" : "s") + ".")
             : "";
   }
 
@@ -1812,7 +2273,7 @@ function createChatAttachmentsController() {
             item.id = result.id;
           } else {
             item.status = "error";
-            item.error = String(result.error || "Upload failed");
+            item.error = String(result.error || t("Upload failed"));
           }
           renderAttachments();
         },
@@ -1847,7 +2308,7 @@ function createChatAttachmentsController() {
         name: String(file.name || "image"),
         preview: tooLarge ? "" : URL.createObjectURL(file),
         status: tooLarge ? "error" : "uploading",
-        error: tooLarge ? "Image is larger than the " + formatByteLimit(attachmentMaxBytes) + " limit" : "",
+        error: tooLarge ? t("Image is larger than the " + formatByteLimit(attachmentMaxBytes) + " limit") : "",
         errorCode: "",
         id: "",
         abortController: /** @type {AbortController | null} */ (null),
@@ -1870,7 +2331,7 @@ function createChatAttachmentsController() {
         name: String(file.name || "file"),
         preview: "",
         status: "error",
-        error: "Unsupported file type. Use " + CHAT_ATTACHMENT_LABELS + ".",
+        error: t("Unsupported file type. Use " + CHAT_ATTACHMENT_LABELS + "."),
         errorCode: "UNSUPPORTED_TYPE",
         id: "",
         abortController: /** @type {AbortController | null} */ (null),
@@ -1944,6 +2405,7 @@ function sendQueued(endAfter) {
     const attachments = chatAttachmentController.collectReady();
     if (text || attachments.length) {
       const prompt = { uid: "", prompt: text, selector: "", tag: "message", text: "Freeform message" };
+      if (currentPage !== filePath) prompt.page = currentPage;
       if (attachments.length) prompt.attachments = attachments;
       assignPromptIdentity(prompt, false);
       queued.push(prompt);
@@ -1990,7 +2452,9 @@ function finishTerminalPreparation(terminal, preparations) {
     if (terminalSubmission !== terminal || ended) return;
     for (const preparation of preparations) preparation.finish(false);
     showPersistentSendFailure(
-      "Could not finish preparing all feedback within 5 seconds. This review remains open, and existing queued feedback is still editable.",
+      t(
+        "Could not finish preparing all feedback within 5 seconds. This review remains open, and existing queued feedback is still editable.",
+      ),
       false,
       { kind: "preparation", operation: terminal, preparationType: "terminal" },
     );
@@ -2132,7 +2596,9 @@ async function submitQueuedOnce(submission, preserveFailureState = false) {
   if (!response.ok) {
     if (response.status === 413) {
       showQueuedSendFailure(
-        "Could not send because this feedback is too large. It is still queued. Remove some feedback or attachments, then try again.",
+        t(
+          "Could not send because this feedback is too large. It is still queued. Remove some feedback or attachments, then try again.",
+        ),
         { kind: "submission", operation: submission },
       );
       if (submission.terminal) releaseTerminalSubmission(submission.terminal);
@@ -2226,60 +2692,39 @@ function settleAcknowledgementGuidance(submission, preserveFailureState) {
   clearPersistentSendFailure();
 }
 
-function clearLayoutGateTimer() {
-  layoutGateEscape?.cancel?.();
-  if (layoutGateTimer) clearTimeout(layoutGateTimer);
-  layoutGateTimer = undefined;
-}
-
-function setLayoutGateCard() {
-  if (!layoutGateTitle || !layoutGateCopy) return;
-  layoutGateTitle.textContent = "Opening the page.";
-  layoutGateCopy.textContent = "One moment while the page loads.";
-}
-
-function setLayoutGateActive(active) {
-  layoutGateVisible = active;
-  if (layoutGateOverlay) layoutGateOverlay.hidden = !active;
-  document.body?.classList?.toggle("layout-gate-active", active);
-}
-
-// Terminal, user-recoverable failure state for the one thing the chrome cannot work around on
-// its own: the artifact never loaded and retrying stopped helping. The overlay is reused because
-// it already covers the empty artifact area; without this the user is left looking at either a
-// spinner that never resolves or a blank frame, with nothing explaining it and nothing to click.
-// Bumping the cycle invalidates the previous timer; setLayoutGateFailure immediately replaces it
-// with a fresh hold timer so the card cannot strand the visual gate.
-function setLayoutGateFailure(title, copy, actionLabel = "Reload", onAction, { sticky = false } = {}) {
+// The few failures the chrome cannot work around on its own: the page never loaded and retrying
+// stopped helping, the server did not come back after a restart, or another tab owns a review
+// this tab never showed. The notice floats over the page without covering it, and the reader can
+// always dismiss it, so no failure ever stands between the reader and the page.
+function showLoadNotice(title, copy, actionLabel = t("Reload"), onAction, { sticky = false } = {}) {
   if (ended) return;
-  // A sticky card is the user's to retire, and that has to hold against being overwritten as
+  // A sticky notice is the user's to retire, and that has to hold against being overwritten as
   // well as against being cleared: the version-skew warning is the only thing telling this page
   // it is running the pre-upgrade client, and a later ordinary load failure must not replace it.
-  if (layoutGateFailureActive && layoutGateFailureSticky && !sticky) return;
-  layoutGateFailureActive = true;
-  layoutGateFailureSticky = sticky;
-  layoutGateCycle += 1;
-  // Failure copy must not disable the visual gate's own recovery paths. Keep a fresh hold timer
-  // over the card so a server replacement or any other failure cannot strand the artifact behind
-  // a sticky message forever.
-  if (layoutGateTitle) layoutGateTitle.textContent = title;
-  if (layoutGateCopy) layoutGateCopy.textContent = copy;
-  if (layoutGateAction) {
-    layoutGateAction.disabled = false;
-    layoutGateAction.textContent = actionLabel;
-    layoutGateAction.onclick = onAction || (() => location.reload());
+  if (loadNoticeActive && loadNoticeSticky && !sticky) return;
+  loadNoticeActive = true;
+  loadNoticeSticky = sticky;
+  loadNoticeCycle += 1;
+  if (loadNoticeTitle) loadNoticeTitle.textContent = title;
+  if (loadNoticeCopy) loadNoticeCopy.textContent = copy;
+  if (loadNoticeAction) {
+    loadNoticeAction.disabled = false;
+    loadNoticeAction.textContent = actionLabel;
+    loadNoticeAction.onclick = onAction || (() => location.reload());
   }
-  if (layoutGateBypass) {
-    layoutGateBypass.hidden = false;
-    layoutGateBypass.onclick = () => forceRevealLayoutGate("manual");
-  }
-  setLayoutGateActive(true);
-  armLayoutGateTimer();
+  if (loadNotice) loadNotice.hidden = false;
 }
 
-// Every failure card in this feature is raised in a state where the server may not be listening,
-// so none of them may navigate on trust: a reload into a dead port replaces a recoverable page
-// with the browser's own connection-error page. Ask first, and say so when nothing answers.
+function hideLoadNotice() {
+  loadNoticeActive = false;
+  loadNoticeSticky = false;
+  loadNoticeCycle += 1;
+  if (loadNotice) loadNotice.hidden = true;
+}
+
+// Every notice in this feature is raised in a state where the server may not be listening, so
+// none of them may navigate on trust: a reload into a dead port replaces a recoverable page with
+// the browser's own connection-error page. Ask first, and say so when nothing answers.
 // Title and body are written together: a probe that timed out establishes neither that the server
 // is running nor that it is gone, so a heading naming a definite cause may not stand over a line
 // saying the cause is unknown.
@@ -2288,11 +2733,11 @@ function checkServerThenReload(failureTitle, stillDownCopy) {
   return async () => {
     if (checking) return;
     checking = true;
-    if (layoutGateAction) layoutGateAction.disabled = true;
-    // The card this click was made on. A probe can take until HEALTH_PROBE_TIMEOUT_MS, and the
-    // overlay may have moved on to a different card - or back to the checking gate - by then; its
-    // copy is not this probe's to overwrite.
-    const cycle = layoutGateCycle;
+    if (loadNoticeAction) loadNoticeAction.disabled = true;
+    // The notice this click was made on. A probe can take until HEALTH_PROBE_TIMEOUT_MS, and the
+    // notice may have moved on to a different failure, or gone, by then; its copy is not this
+    // probe's to overwrite.
+    const cycle = loadNoticeCycle;
     let outcome = "not-running";
     let navigating = false;
     try {
@@ -2306,83 +2751,21 @@ function checkServerThenReload(failureTitle, stillDownCopy) {
       // out or threw: a button that stays disabled is worse than the reload it was guarding.
       if (!navigating) {
         checking = false;
-        if (layoutGateAction) layoutGateAction.disabled = false;
-        if (cycle === layoutGateCycle) {
+        if (loadNoticeAction) loadNoticeAction.disabled = false;
+        if (cycle === loadNoticeCycle) {
           const answered = outcome !== "no-answer";
-          if (layoutGateTitle) layoutGateTitle.textContent = answered ? failureTitle : HEALTH_NO_ANSWER_TITLE;
-          if (layoutGateCopy) layoutGateCopy.textContent = answered ? stillDownCopy : HEALTH_NO_ANSWER_COPY;
+          if (loadNoticeTitle) loadNoticeTitle.textContent = answered ? failureTitle : HEALTH_NO_ANSWER_TITLE;
+          if (loadNoticeCopy) loadNoticeCopy.textContent = answered ? stillDownCopy : HEALTH_NO_ANSWER_COPY;
         }
       }
     }
   };
 }
 
-// A load attempt that gets going again retires the failure card. This runs even when the gate is
-// disabled or the user already bypassed it, because otherwise the card would keep covering an
-// artifact that has since loaded.
-function clearLayoutGateFailure() {
-  if (!layoutGateFailureActive || layoutGateFailureSticky) return;
-  layoutGateFailureActive = false;
-  if (layoutGateAction) {
-    layoutGateAction.textContent = "Show anyway";
-    layoutGateAction.onclick = () => forceRevealLayoutGate("manual");
-  }
-  if (layoutGateBypass) layoutGateBypass.hidden = true;
-  revealLayoutGate();
-}
-
-function revealLayoutGate() {
-  clearLayoutGateTimer();
-  layoutGateEscape?.reveal?.();
-  setLayoutGateActive(false);
-}
-
-function forceRevealLayoutGate(reason) {
-  if (ended) return;
-  if (reason === "manual") {
-    layoutGateManuallyBypassed = true;
-    layoutGateEscape?.manualReveal?.();
-  }
-  revealLayoutGate();
-}
-
-function armLayoutGateTimer() {
-  clearLayoutGateTimer();
-  if (layoutGateEscape?.arm) {
-    layoutGateEscape.arm(layoutGateMaxHoldMs, () => forceRevealLayoutGate("timeout"));
-    return;
-  }
-  const cycle = layoutGateCycle;
-  layoutGateTimer = setTimeout(() => {
-    if (cycle !== layoutGateCycle || !layoutGateVisible || ended) return;
-    forceRevealLayoutGate("timeout");
-  }, layoutGateMaxHoldMs);
-  layoutGateTimer?.unref?.();
-}
-
-function startLayoutGateCycle() {
-  clearLayoutGateFailure();
-  if (layoutGateManuallyBypassed || ended) return;
-
-  layoutGateCycle += 1;
-  setLayoutGateActive(true);
-  // A sticky failure owns the card copy, but never the reveal. Do not repaint it as a checking
-  // card, and do arm a fresh timer for reloads that happen while the sticky card is present.
-  if (!layoutGateFailureSticky) setLayoutGateCard();
-  armLayoutGateTimer();
-}
-
-// The cover lifts as soon as the artifact's SDK reports that the document is ready.
-function handleLayoutGatePass() {
-  if (ended || !layoutGateVisible) return;
-  revealLayoutGate();
-}
-
-function initializeLayoutGate() {
-  if (layoutGateEscape?.isManuallyBypassed?.()) layoutGateManuallyBypassed = true;
-  if (layoutGateAction) layoutGateAction.onclick = () => forceRevealLayoutGate("manual");
-  if (layoutGateBypass) layoutGateBypass.onclick = () => forceRevealLayoutGate("manual");
-  startLayoutGateCycle();
+// A load attempt that gets going again retires an ordinary failure notice, never a sticky one.
+function clearLoadNotice() {
+  if (!loadNoticeActive || loadNoticeSticky) return;
+  hideLoadNotice();
 }
 
 async function reportArtifactFailures(failures, loadToken = artifactLoadToken) {
@@ -2439,9 +2822,9 @@ async function probeArtifactAvailability(loadToken) {
 // Revision legend
 //
 // The agent declares what it changed in the artifact HTML itself (a
-// `data-lavish-revisions` registry plus `data-lavish-revision` marks); the SDK
+// `data-textcast-revisions` registry plus `data-textcast-revision` marks); the SDK
 // reads it and posts it here. The legend lives entirely in the chrome, so the
-// served artifact still matches the file on disk - Lavish never paints the
+// served artifact still matches the file on disk - Textcast Chat never paints the
 // change indicator into the page. Reveal uses the SDK's transient marker, and
 // only when the reader asks for it.
 
@@ -2639,8 +3022,8 @@ function buildRevisionRow(entry) {
     reveal.type = "button";
     reveal.className = "revision-reveal";
     const position = (revisionRevealCursor.get(entry.id) || 0) % entry.marks.length;
-    reveal.textContent = entry.marks.length === 1 ? "Reveal" : "Reveal " + (position + 1) + "/" + entry.marks.length;
-    reveal.setAttribute("aria-label", "Reveal the next block changed in " + entry.label);
+    reveal.textContent = t(entry.marks.length === 1 ? "Reveal" : "Reveal " + (position + 1) + "/" + entry.marks.length);
+    reveal.setAttribute("aria-label", t("Reveal the next block changed in " + entry.label));
     // Bound per row rather than delegated from the list: the rows are rebuilt
     // on every render anyway, so there is no listener to accumulate, and the
     // button carries the revision it belongs to without a data attribute round
@@ -2689,7 +3072,7 @@ function revealNextRevisionMark(id) {
   const entry = revisionEntries.find((candidate) => candidate.id === id);
   if (!entry || entry.marks.length === 0) return;
   const position = (revisionRevealCursor.get(id) || 0) % entry.marks.length;
-  postToFrame({ type: "lavish:revealElement", selector: entry.marks[position].selector });
+  postToFrame({ type: "textcast:revealElement", selector: entry.marks[position].selector });
   revisionRevealCursor.set(id, (position + 1) % entry.marks.length);
   renderRevisionLegend();
 }
@@ -2720,22 +3103,19 @@ function markSessionEnded() {
   if (presenceBanner) presenceBanner.hidden = true;
   if (handoffBanner) handoffBanner.hidden = true;
   if (outdatedBanner) outdatedBanner.hidden = true;
-  layoutGateManuallyBypassed = true;
-  layoutGateFailureSticky = false;
-  revealLayoutGate();
-  layoutGateEscape?.end?.();
-  postToFrame({ type: "lavish:setAnnotationMode", enabled: false });
+  hideLoadNotice();
+  postToFrame({ type: "textcast:setAnnotationMode", enabled: false });
   endedOverlay.hidden = false;
 }
 
 function copyFilePath() {
-  copyText(filePath);
+  copyText(currentPage);
   copyHint.classList.add("copied");
-  copyHintText.textContent = "Copied";
+  copyHintText.textContent = t("Copied");
   clearTimeout(copyHintTimer);
   copyHintTimer = setTimeout(() => {
     copyHint.classList.remove("copied");
-    copyHintText.textContent = "Copy";
+    copyHintText.textContent = t("Copy");
   }, 1600);
 }
 
@@ -2779,13 +3159,13 @@ async function replaceArtifactFrame({ recoveryRetry = false } = {}) {
     // Only clear it here, right before the frame is actually replaced - a preserved
     // load (superseded/out-of-order/exhausted retries below) must leave it intact.
     resetRevisionLegend();
-    startLayoutGateCycle();
+    clearLoadNotice();
     const currentSrc = frame.src || "about:blank";
-    frame.src = currentSrc + (currentSrc.includes("?") ? "&" : "?") + "lavish_reload=" + Date.now();
+    frame.src = currentSrc + (currentSrc.includes("?") ? "&" : "?") + "textcast_reload=" + Date.now();
     return true;
   }
   const requestSequence = ++artifactLoadRequestSequence;
-  const requestId = `lavish-load-${Date.now().toString(36)}-${requestSequence}-${Math.random().toString(36).slice(2)}`;
+  const requestId = `textcast-load-${Date.now().toString(36)}-${requestSequence}-${Math.random().toString(36).slice(2)}`;
   const previousToken = artifactLoadToken;
   const preservePreviousLoad = () => {
     if (
@@ -2812,13 +3192,15 @@ async function replaceArtifactFrame({ recoveryRetry = false } = {}) {
     // Out of retries. Only say so when there is nothing on screen to say it over: a chrome that
     // already shows an artifact keeps showing it rather than losing a usable review.
     if (!artifactLoadToken) {
-      setLayoutGateFailure(
-        "Lavish could not load this artifact.",
-        "The Lavish server did not answer this review's load request. It usually restarted while this page was opening. Check and reload to reconnect.",
-        "Check and reload",
+      showLoadNotice(
+        t("Textcast Chat could not load this artifact."),
+        t(
+          "The Textcast Chat server did not answer this review's load request. It usually restarted while this page was opening. Check and reload to reconnect.",
+        ),
+        t("Check and reload"),
         checkServerThenReload(
-          "Lavish could not load this artifact.",
-          "Lavish is still not answering. Start it again with your agent, then use Check and reload.",
+          t("Textcast Chat could not load this artifact."),
+          t("Textcast Chat is still not answering. Start it again with your agent, then use Check and reload."),
         ),
       );
     }
@@ -2857,16 +3239,15 @@ async function replaceArtifactFrame({ recoveryRetry = false } = {}) {
         }
         if (status === "superseded") {
           setHandoffSuperseded(true);
-          // The takeover banner sits in the conversation panel, which the layout gate overlay
-          // covers whenever the gate is enabled. A chrome that never loaded the artifact would
-          // otherwise show the checking spinner until the gate's max hold expires and then
-          // reveal an empty frame, with the only recovery control hidden the whole time. Say it
-          // on the overlay instead. Still no background retry: the reload is the user's to make.
+          // The takeover banner sits in the conversation panel, which may be minimized. A chrome
+          // that never loaded the artifact would otherwise show an empty page with its only
+          // recovery control out of sight, so say it on the notice as well. Still no background
+          // retry: the reload is the user's to make.
           if (!artifactLoadToken) {
-            setLayoutGateFailure(
-              "This review is already open in another tab.",
+            showLoadNotice(
+              t("This review is already open in another tab."),
               UNSENT_OWNERSHIP_COPY,
-              "Take over here",
+              t("Take over here"),
             );
           }
           return preservePreviousLoad();
@@ -2897,7 +3278,7 @@ async function replaceArtifactFrame({ recoveryRetry = false } = {}) {
   artifactSpokeToken = "";
   annotationDefaultReceived = false;
   setHandoffSuperseded(false);
-  startLayoutGateCycle();
+  clearLoadNotice();
   // The next document reports its own registry once it loads; until then the
   // previous revision's legend would point at blocks that may no longer exist.
   resetRevisionLegend();
@@ -2920,6 +3301,42 @@ function loadFrame() {
 function reloadArtifact() {
   closeMenus();
   resetFrame();
+}
+
+// A link the page asked the chrome to follow (`textcast:navigate`). The server decides whether it is
+// a page of this site; a refusal leaves the current page as it is.
+let navigationInFlight = false;
+async function navigateArtifact(href) {
+  if (ended || navigationInFlight || typeof href !== "string" || !href) return;
+  navigationInFlight = true;
+  try {
+    const response = await fetch("/api/" + key + "/page", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ href }),
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (typeof data.page !== "string" || !data.page) return;
+    currentPage = data.page;
+    showCurrentPagePath(data);
+    // The tab names the page now on screen, as the server would on a fresh load of it.
+    if (typeof data.title === "string" && data.title) loadTimeTitle = data.title + " · Textcast Chat";
+    document.title = loadTimeTitle;
+    await resetFrame();
+  } catch {
+    // The link stays unfollowed; the page on screen is still the review's page.
+  } finally {
+    navigationInFlight = false;
+  }
+}
+
+function showCurrentPagePath(data) {
+  copyPathButton.title = copyPathButton.title.replace(/ · .*$/, " · " + currentPage);
+  const head = typeof copyPathButton.querySelector === "function" ? copyPathButton.querySelector(".path-head") : null;
+  const tail = typeof copyPathButton.querySelector === "function" ? copyPathButton.querySelector(".path-tail") : null;
+  if (head) head.textContent = String(data.path_head || "");
+  if (tail) tail.textContent = String(data.path_tail || "");
 }
 
 async function reloadAfterServerRestart(reason) {
@@ -2947,7 +3364,7 @@ async function probeChromeHealth() {
 // The replacement server usually binds within a second, but it is a fresh node process competing
 // with whatever else the machine is doing, and several `textcast-chat-axi` invocations can be racing for
 // the same port. Reloading on a fixed short deadline regardless of whether anything is listening
-// trades a recoverable page for the browser's connection-error page, which no Lavish code can
+// trades a recoverable page for the browser's connection-error page, which no Textcast Chat code can
 // recover from. So wait for the port to answer, and if it never does, say so instead.
 async function reloadChromeAfterServerRestart(reason = "") {
   let sawOutage = false;
@@ -2981,13 +3398,15 @@ async function reloadChromeAfterServerRestart(reason = "") {
 
   if (!healthy) {
     chromeRestartReloadPromise = null;
-    setLayoutGateFailure(
-      "Lavish is not running.",
-      "The Lavish server restarted and did not come back. Start it again with your agent, then check and reload this page.",
-      "Check and reload",
+    showLoadNotice(
+      t("Textcast Chat is not running."),
+      t(
+        "The Textcast Chat server restarted and did not come back. Start it again with your agent, then check and reload this page.",
+      ),
+      t("Check and reload"),
       checkServerThenReload(
-        "Lavish is not running.",
-        "Lavish is still not running. Start it again with your agent, then use Check and reload.",
+        t("Textcast Chat is not running."),
+        t("Textcast Chat is still not running. Start it again with your agent, then use Check and reload."),
       ),
       { sticky: true },
     );
@@ -3033,7 +3452,7 @@ async function reloadChromeForOutdatedBanner() {
         outdatedText.textContent =
           outcome === "no-answer"
             ? HEALTH_NO_ANSWER_COPY
-            : "Lavish is still not running. Start it again, then use Check and reload.";
+            : t("Textcast Chat is still not running. Start it again, then use Check and reload.");
       }
     }
   }
@@ -3042,12 +3461,12 @@ async function reloadChromeForOutdatedBanner() {
 // ---- Tab title and icon from the artifact ----
 // The server stamps the tab from the artifact's <head> once, when the chrome is served. A page that
 // changes after that (a live dashboard) can ask the chrome to follow it with
-// window.lavish.setDocumentMeta. The page is untrusted, so the chrome clamps the title and takes
+// window.textcast.setDocumentMeta. The page is untrusted, so the chrome clamps the title and takes
 // only a bounded SVG data: icon, which cannot run script or fetch anything as a tab icon.
 const DOCUMENT_TITLE_MAX_CHARS = 120;
 const DOCUMENT_ICON_MAX_CHARS = 8192;
 const DOCUMENT_ICON_RE = /^data:image\/svg\+xml[;,]/i;
-const loadTimeTitle = document.title;
+let loadTimeTitle = document.title;
 const loadTimeIconLink = document.querySelector?.('link[rel~="icon"]');
 const loadTimeIconHref = loadTimeIconLink ? loadTimeIconLink.getAttribute("href") : null;
 
@@ -3060,7 +3479,7 @@ function applyDocumentMeta(msg) {
       .trim()
       .slice(0, DOCUMENT_TITLE_MAX_CHARS)
       .trim();
-    document.title = title ? title + " · Lavish" : loadTimeTitle;
+    document.title = title ? title + " · Textcast Chat" : loadTimeTitle;
   }
   if (msg.icon === null) setDocumentIcon(loadTimeIconHref);
   else if (
@@ -3091,56 +3510,63 @@ window.addEventListener("message", (event) => {
   if (messageToken !== artifactLoadToken) {
     // A ready report can be stamped by the load that just lost a token race. Ask the current
     // artifact document to report again instead of consuming the only report for this cycle.
-    if (msg.type === "lavish:ready") postToFrame({ type: "lavish:requestReady" });
+    if (msg.type === "textcast:ready") postToFrame({ type: "textcast:requestReady" });
     return;
   }
   artifactSpokeToken = messageToken;
   clearTimeout(artifactSilenceTimer);
-  if (msg.type === "lavish:ready") {
-    handleLayoutGatePass();
+  // The document's first word after it parsed; its theme report comes just before it.
+  if (msg.type === "textcast:ready") {
+    showPlayerSwitch(msg.has_video === true);
     return;
   }
   // The artifact spoke, so it rendered and ran its SDK - there is nothing fatal to probe for.
-  if (msg.type === "lavish:annotationMode" && typeof msg.enabled === "boolean" && !annotationDefaultReceived) {
+  if (msg.type === "textcast:annotationMode" && typeof msg.enabled === "boolean" && !annotationDefaultReceived) {
     annotationDefaultReceived = true;
     if (!annotationOverridden && !ended && !terminalSubmission) annotation = msg.enabled;
     annotationSwitch.setAttribute("aria-pressed", String(annotation && !ended));
     // Reconcile even if frame load replayed the old mode before this report arrived.
-    postToFrame({ type: "lavish:setAnnotationMode", enabled: annotation && !ended });
+    postToFrame({ type: "textcast:setAnnotationMode", enabled: annotation && !ended });
   }
-  if (msg.type === "lavish:queuePrompt") {
+  if (msg.type === "textcast:queuePrompt") {
     enqueuePrompt(msg.prompt);
     // Queued from inside the artifact, where the closed dock is the only sign it landed.
     pulseSheetDock();
   }
-  if (msg.type === "lavish:snapshot") {
+  if (msg.type === "textcast:snapshot") {
     completeSnapshotRequest(msg.snapshot_request_id, msg.snapshot || "");
   }
-  if (msg.type === "lavish:documentMeta") applyDocumentMeta(msg);
-  if (msg.type === "lavish:scroll") {
+  if (msg.type === "textcast:documentMeta") applyDocumentMeta(msg);
+  if (msg.type === "textcast:theme") chromeThemeApi()?.apply?.(msg, true);
+  if (msg.type === "textcast:play") playVideo(msg);
+  if (msg.type === "textcast:navigate") navigateArtifact(msg.href);
+  if (msg.type === "textcast:scroll") {
     lastScroll = { x: Number(msg.x) || 0, y: Number(msg.y) || 0 };
   }
-  if (msg.type === "lavish:reviewState") {
+  if (msg.type === "textcast:reviewState") {
     setReviewState(msg.state && typeof msg.state === "object" ? msg.state : null);
   }
-  if (msg.type === "lavish:reviewDraftUnrestorable") {
+  if (msg.type === "textcast:reviewDraftUnrestorable") {
     discardUnrestorableDraft(String(msg.selector || ""));
   }
-  if (msg.type === "lavish:artifactAssetFailure") {
+  if (msg.type === "textcast:artifactAssetFailure") {
     reportArtifactFailures(
       [{ kind: "artifact-asset-unavailable", detail: String(msg.detail || "a local artifact asset failed to load") }],
       messageToken,
     ).catch(() => {});
   }
-  if (msg.type === "lavish:uploadAttachment") uploadAttachment(msg);
+  if (msg.type === "textcast:uploadAttachment") uploadAttachment(msg);
   // There is deliberately no attachment-delete message. See removeAttachment's
   // removal note below: the iframe cannot be trusted to decide a delete, and the
   // chrome cannot see every live reference, so reclamation is the sweeper's job.
-  if (msg.type === "lavish:sendQueuedPrompts") sendQueued();
-  if (msg.type === "lavish:endSession") endSession();
-  if (msg.type === "lavish:revisions") applyRevisionMessage(msg);
-  if (msg.type === "lavish:toggleAnnotationMode") toggleAnnotationMode();
-  if (msg.type === "lavish:editQueuedAnchor") editQueuedAnchor(String(msg.selector || ""));
+  if (msg.type === "textcast:sendQueuedPrompts") {
+    // Sent straight from the page's ask card: show the conversation so the delivery is visible.
+    if (!isMobileSheet()) revealConversation();
+    sendQueued();
+  }
+  if (msg.type === "textcast:endSession") endSession();
+  if (msg.type === "textcast:revisions") applyRevisionMessage(msg);
+  if (msg.type === "textcast:toggleAnnotationMode") toggleAnnotationMode();
 });
 
 // The sandboxed artifact iframe can't reach the loopback server (opaque origin),
@@ -3167,7 +3593,7 @@ async function uploadAttachment(message, reportResult = postToFrame, signal) {
   }
   if (!Number.isFinite(size) || size < 0) {
     reportResult({
-      type: "lavish:attachmentResult",
+      type: "textcast:attachmentResult",
       nonce,
       localId,
       ok: false,
@@ -3181,11 +3607,11 @@ async function uploadAttachment(message, reportResult = postToFrame, signal) {
   // reaches its error+retry state. The server still enforces the cap authoritatively.
   if (attachmentMaxBytes > 0 && size > attachmentMaxBytes) {
     reportResult({
-      type: "lavish:attachmentResult",
+      type: "textcast:attachmentResult",
       nonce,
       localId,
       ok: false,
-      error: "Image is larger than the " + formatByteLimit(attachmentMaxBytes) + " limit",
+      error: t("Image is larger than the " + formatByteLimit(attachmentMaxBytes) + " limit"),
     });
     return;
   }
@@ -3194,21 +3620,21 @@ async function uploadAttachment(message, reportResult = postToFrame, signal) {
   while (uploadTimestamps.length && now - uploadTimestamps[0] > UPLOAD_RATE_WINDOW_MS) uploadTimestamps.shift();
   if (uploadTimestamps.length >= UPLOAD_RATE_MAX) {
     reportResult({
-      type: "lavish:attachmentResult",
+      type: "textcast:attachmentResult",
       nonce,
       localId,
       ok: false,
-      error: "Too many uploads. Wait a moment and retry.",
+      error: t("Too many uploads. Wait a moment and retry."),
     });
     return;
   }
   if (uploadedBytesTotal + size > UPLOAD_SESSION_BYTE_QUOTA) {
     reportResult({
-      type: "lavish:attachmentResult",
+      type: "textcast:attachmentResult",
       nonce,
       localId,
       ok: false,
-      error: "Upload limit reached for this session (" + formatByteLimit(UPLOAD_SESSION_BYTE_QUOTA) + ").",
+      error: t("Upload limit reached for this session (" + formatByteLimit(UPLOAD_SESSION_BYTE_QUOTA) + ")."),
     });
     return;
   }
@@ -3217,11 +3643,11 @@ async function uploadAttachment(message, reportResult = postToFrame, signal) {
   // upload (below) frees a slot for the next.
   if (uploadsInFlight >= UPLOAD_MAX_IN_FLIGHT) {
     reportResult({
-      type: "lavish:attachmentResult",
+      type: "textcast:attachmentResult",
       nonce,
       localId,
       ok: false,
-      error: "Too many uploads in flight. Wait a moment and retry.",
+      error: t("Too many uploads in flight. Wait a moment and retry."),
     });
     return;
   }
@@ -3236,9 +3662,9 @@ async function uploadAttachment(message, reportResult = postToFrame, signal) {
       signal,
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Upload failed");
+    if (!response.ok) throw new Error(data.error || t("Upload failed"));
     reportResult({
-      type: "lavish:attachmentResult",
+      type: "textcast:attachmentResult",
       nonce,
       localId,
       ok: true,
@@ -3246,7 +3672,7 @@ async function uploadAttachment(message, reportResult = postToFrame, signal) {
     });
   } catch (error) {
     reportResult({
-      type: "lavish:attachmentResult",
+      type: "textcast:attachmentResult",
       nonce,
       localId,
       ok: false,
@@ -3275,7 +3701,7 @@ function toggleAnnotationMode() {
   annotationOverridden = true;
   annotation = !annotation;
   annotationSwitch.setAttribute("aria-pressed", String(annotation));
-  postToFrame({ type: "lavish:setAnnotationMode", enabled: annotation });
+  postToFrame({ type: "textcast:setAnnotationMode", enabled: annotation });
 }
 
 annotationSwitch.onclick = toggleAnnotationMode;
@@ -3414,8 +3840,8 @@ document.addEventListener("keydown", (event) => {
       closeRevisionsDrawer({ restoreFocus: true });
     } else if (!moreMenu.hidden) {
       closeMenus();
-    } else if (sheetOpen && isMobileSheet()) {
-      setSheetOpen(false);
+    } else if (!isConversationHidden()) {
+      hideConversation();
     } else {
       closeMenus();
     }
@@ -3434,14 +3860,13 @@ document.addEventListener(
 );
 frame.addEventListener("load", () => {
   if (artifactSpokeToken !== artifactLoadToken) armArtifactAvailabilityProbe(artifactLoadToken);
-  postToFrame({ type: "lavish:setAnnotationMode", enabled: annotation && !ended });
+  postToFrame({ type: "textcast:setAnnotationMode", enabled: annotation && !ended });
   // Replay the pre-reload scroll position so hot reloads don't jump the artifact to the top.
-  postToFrame({ type: "lavish:restoreScroll", x: lastScroll.x, y: lastScroll.y });
-  if (lastReviewState) postToFrame({ type: "lavish:restoreReviewState", state: lastReviewState });
-  postQueuedAnchors(true);
+  postToFrame({ type: "textcast:restoreScroll", x: lastScroll.x, y: lastScroll.y });
+  if (lastReviewState) postToFrame({ type: "textcast:restoreReviewState", state: lastReviewState });
 });
 
-initializeLayoutGate();
+if (loadNoticeDismiss) loadNoticeDismiss.onclick = () => hideLoadNotice();
 
 // WebSockets leave the browser's HTTP connection pool free for sends and artifact loads.
 const events = new Map();
@@ -3488,6 +3913,11 @@ events.set("reload", () => {
   resetFrame();
 });
 events.set("chrome-reload", (data) => reloadAfterServerRestart(String(data.reason || "")));
+// The agent reopened this ended review. The server that says so is up, so there is nothing to wait
+// out: one bounded probe, then the reload that brings back a live conversation.
+events.set("reopened", async () => {
+  if ((await probeChromeHealth()) === "running") location.reload();
+});
 // The replacement server serves a different artifact's review. This page keeps working against
 // it; it is only running the previous version of the chrome, which is the user's to act on.
 events.set("chrome-outdated", (data) => setChromeOutdated(true, String(data.reason || "")));
@@ -3525,5 +3955,5 @@ if (sessionData.initialEnded) markSessionEnded();
 // bootstrap already owns the gate's bounded escape if this script fails; retire only its separate
 // boot-failure timer now that the full client has taken over.
 const chromeBootWindow = /** @type {Record<string, any>} */ (/** @type {unknown} */ (window));
-chromeBootWindow.__lavishChromeReady = true;
-chromeBootWindow.__lavishCancelChromeBootFailsafe?.();
+chromeBootWindow.__textcastChromeReady = true;
+chromeBootWindow.__textcastCancelChromeBootFailsafe?.();

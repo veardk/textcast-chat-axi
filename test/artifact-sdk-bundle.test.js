@@ -130,7 +130,7 @@ function bootSdk({
   const documentElement = createElement("html");
   const head = createElement("head");
   const body = createElement("body");
-  if (htmlAnnotate !== null) documentElement.setAttribute("data-lavish-annotate", htmlAnnotate);
+  if (htmlAnnotate !== null) documentElement.setAttribute("data-textcast-annotate", htmlAnnotate);
   appendTo(documentElement, head);
   appendTo(documentElement, body);
   for (const element of revisionMarkElements) appendTo(body, element);
@@ -150,7 +150,7 @@ function bootSdk({
     },
     URL: {
       createObjectURL() {
-        return "blob:lavish-test";
+        return "blob:textcast-test";
       },
       revokeObjectURL() {},
     },
@@ -170,8 +170,8 @@ function bootSdk({
       createElement,
       getElementById: () => null,
       querySelector: (selector) =>
-        selector === "script[data-lavish-revisions]" ? revisionsScript : documentQuery(selector),
-      querySelectorAll: (selector) => (selector === "[data-lavish-revision]" ? revisionMarkElements : []),
+        selector === "script[data-textcast-revisions]" ? revisionsScript : documentQuery(selector),
+      querySelectorAll: (selector) => (selector === "[data-textcast-revision]" ? revisionMarkElements : []),
       getSelection: () => selection,
     },
   };
@@ -196,27 +196,10 @@ function bootSdk({
   return {
     posted,
     body,
-    api: sandbox.window.lavish,
-    // Returns the dispatched event so a test can tell whether the SDK swallowed the click.
-    click(target, modifiers = {}) {
-      const listener = documentListeners.find((entry) => entry.type === "click");
-      assert.ok(listener, "the SDK registers a document click listener");
-      const event = {
-        target,
-        ctrlKey: false,
-        metaKey: false,
-        ...modifiers,
-        defaultPrevented: false,
-        preventDefault() {
-          event.defaultPrevented = true;
-        },
-        stopPropagation() {},
-      };
-      listener.handler(event);
-      return event;
-    },
-    // Releases the mouse over `target` with `text` selected inside it, as a drag-select would.
-    selectText(target, text) {
+    api: sandbox.window.textcast,
+    // Selects `text` inside `target` the way a drag-select does, then presses the Ask button the
+    // SDK offers beside it. Returns whether the button was offered (annotation mode on).
+    ask(target, text = target.textContent) {
       const textNode = { nodeType: 3, parentElement: target, parentNode: { childNodes: [] } };
       textNode.parentNode.childNodes.push(textNode);
       const range = {
@@ -230,11 +213,29 @@ function bootSdk({
         getClientRects: () => [],
         getBoundingClientRect: () => target.getBoundingClientRect(),
       };
-      selection = { rangeCount: 1, getRangeAt: () => range, toString: () => text };
-      const listener = documentListeners.find((entry) => entry.type === "mouseup");
-      assert.ok(listener, "the SDK registers a document mouseup listener");
+      selection = { rangeCount: 1, getRangeAt: () => range, toString: () => text, removeAllRanges() {} };
+      const listener = documentListeners.find((entry) => entry.type === "pointerup");
+      assert.ok(listener, "the SDK registers a document pointerup listener");
+      const before = timers.length;
       listener.handler({ target });
+      // Run only the offer this release scheduled, so a test's own pending timers keep their turn.
+      for (const timer of timers.splice(before)) {
+        if (!timer.cancelled) timer.fn();
+      }
       selection = null;
+      const askButton = documentElement.children
+        .flatMap((child) => child.shadowRoot?.children || [])
+        .find((child) => child.className === "textcast-ask");
+      if (!askButton || askButton.hidden) return false;
+      const onClick = askButton.listeners.find((entry) => entry.type === "click");
+      assert.ok(onClick, "the Ask button opens a card on click");
+      onClick.handler({});
+      return true;
+    },
+    // Closing a card reports `card: null`; until that report the card the test opened is still open.
+    isCardOpen() {
+      this.runTimers();
+      return !posted.some((message) => message.type === "textcast:reviewState" && message.state.card === null);
     },
     setDocumentQuery(query) {
       documentQuery = query;
@@ -270,7 +271,7 @@ function bootSdk({
     cards() {
       return documentElement.children
         .flatMap((child) => child.shadowRoot?.children || [])
-        .filter((child) => child.className === "lavish-annotation-card");
+        .filter((child) => child.className === "textcast-annotation-card");
     },
     card() {
       const card = this.cards().at(-1);
@@ -280,7 +281,7 @@ function bootSdk({
     queue(text) {
       const card = this.card();
       card.querySelector("textarea").value = text;
-      card.querySelector(".lavish-send").onclick();
+      card.querySelector(".textcast-send").onclick();
       return posted.at(-1);
     },
   };
@@ -296,9 +297,9 @@ for (const { label, attributes, enabled } of [
   test(`annotation declaration honours ${label} and reports its initial mode`, () => {
     const sdk = bootSdk(attributes);
     const target = appendTo(sdk.body, cell("p", "Decision board"));
-    assert.equal(sdk.click(target).defaultPrevented, enabled);
+    assert.equal(sdk.ask(target), enabled);
     assert.equal(sdk.cards().length, enabled ? 1 : 0);
-    const mode = sdk.posted.find((message) => message.type === "lavish:annotationMode");
+    const mode = sdk.posted.find((message) => message.type === "textcast:annotationMode");
     assert.ok(mode, "the SDK reports the initial mode to the chrome");
     assert.equal(mode.enabled, enabled);
     assert.equal(mode.artifact_load_token, "load-token");
@@ -312,13 +313,13 @@ test("a page that declares off reports no review state at boot", () => {
   const sdk = bootSdk({ htmlAnnotate: "off" });
   sdk.runTimers();
   assert.equal(
-    sdk.posted.some((message) => message.type === "lavish:reviewState"),
+    sdk.posted.some((message) => message.type === "textcast:reviewState"),
     false,
     "nothing was open, so there is no card state to retire",
   );
   const target = appendTo(sdk.body, cell("h1", "Headline"));
   sdk.sendChromeMessage({
-    type: "lavish:restoreReviewState",
+    type: "textcast:restoreReviewState",
     state: { card: { selector: "h1", text: "needs a shorter headline" }, fields: [] },
   });
   sdk.setDocumentQuery((selector) => (selector === "h1" ? target : null));
@@ -329,16 +330,16 @@ test("a page that declares off reports no review state at boot", () => {
 test("the chrome can turn annotation on and off after a page declares off", () => {
   const sdk = bootSdk({ htmlAnnotate: "off" });
   const target = appendTo(sdk.body, cell("p", "Decision board"));
-  assert.equal(sdk.click(target).defaultPrevented, false);
-  sdk.sendChromeMessage({ type: "lavish:setAnnotationMode", enabled: true });
-  assert.equal(sdk.click(target).defaultPrevented, true);
+  assert.equal(sdk.ask(target), false);
+  sdk.sendChromeMessage({ type: "textcast:setAnnotationMode", enabled: true });
+  assert.equal(sdk.ask(target), true);
   assert.equal(sdk.cards().length, 1);
-  sdk.sendChromeMessage({ type: "lavish:setAnnotationMode", enabled: false });
-  assert.equal(sdk.click(target).defaultPrevented, false);
+  sdk.sendChromeMessage({ type: "textcast:setAnnotationMode", enabled: false });
+  assert.equal(sdk.ask(target), false);
   // This harness retains closed cards; no new card should appear while disabled.
   assert.equal(sdk.cards().length, 1);
   sdk.runTimers();
-  const state = sdk.posted.filter((message) => message.type === "lavish:reviewState").at(-1);
+  const state = sdk.posted.filter((message) => message.type === "textcast:reviewState").at(-1);
   assert.equal(state.state.card, null, "turning annotation off closes the active card");
 });
 
@@ -361,10 +362,10 @@ function buildTable(sdk) {
 test("the served SDK echoes the snapshot request id", () => {
   const sdk = bootSdk();
 
-  sdk.sendChromeMessage({ type: "lavish:requestSnapshot", snapshot_request_id: "snapshot-17" });
+  sdk.sendChromeMessage({ type: "textcast:requestSnapshot", snapshot_request_id: "snapshot-17" });
 
   const response = sdk.posted.at(-1);
-  assert.equal(response.type, "lavish:snapshot");
+  assert.equal(response.type, "textcast:snapshot");
   assert.equal(response.snapshot_request_id, "snapshot-17");
   assert.equal(response.artifact_load_token, "load-token");
 });
@@ -378,12 +379,12 @@ test("the served SDK bundle reports the artifact's own revision registry and mar
     { id: "r1", label: "Tightened header copy", summary: "Shortened the hero headline" },
   ]);
   const marked = createElement("h1");
-  marked.setAttribute("data-lavish-revision", "r1");
+  marked.setAttribute("data-textcast-revision", "r1");
   marked.textContent = "Ship faster";
 
   const sdk = bootSdk({ revisionsScript, revisionMarkElements: [marked] });
 
-  const message = sdk.posted.find((entry) => entry.type === "lavish:revisions");
+  const message = sdk.posted.find((entry) => entry.type === "textcast:revisions");
   assert.ok(message, "the SDK reports the revision registry on load");
   assert.equal(message.revisions.length, 1);
   assert.equal(message.revisions[0].id, "r1");
@@ -404,18 +405,7 @@ test("the served SDK bundle resolves table coordinates only for annotation click
   assert.equal(sdk.posted.at(-1).prompt.target, undefined);
 });
 
-test("the served SDK bundle annotates elements outside tables with no table target", () => {
-  const sdk = bootSdk();
-  const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-
-  sdk.click(paragraph);
-  const message = sdk.queue("Reword this");
-
-  assert.equal(message.prompt.tag, "p");
-  assert.equal(message.prompt.target, undefined);
-});
-
-// closeCard() clears the element highlight, so that highlight standing or gone is the observable proof of close.
+// closeCard() reports `card: null` to the chrome, so that report is the observable proof of close.
 function pressEscape(textarea) {
   const listener = textarea.listeners.find((entry) => entry.type === "keydown");
   assert.ok(listener, "the annotation textarea registers a keydown listener");
@@ -426,31 +416,31 @@ test("Escape closes an annotation card with no text and no attachment", () => {
   const sdk = bootSdk();
   const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
 
-  sdk.click(paragraph);
+  sdk.ask(paragraph);
   const textarea = sdk.card().querySelector("textarea");
   textarea.value = "   "; // whitespace-only counts as empty
   pressEscape(textarea);
 
-  assert.equal(paragraph.style.outline, "", "the highlight is cleared, proving the card closed");
+  assert.equal(sdk.isCardOpen(), false, "the card reported itself closed");
 });
 
 test("Escape during IME composition leaves an empty annotation card open", () => {
   const sdk = bootSdk();
   const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
 
-  sdk.click(paragraph);
+  sdk.ask(paragraph);
   const textarea = sdk.card().querySelector("textarea");
   const listener = textarea.listeners.find((entry) => entry.type === "keydown");
   listener.handler({ key: "Escape", isComposing: true, preventDefault() {} });
 
-  assert.notEqual(paragraph.style.outline, "", "a composing Escape belongs to the IME, not the card");
+  assert.equal(sdk.isCardOpen(), true, "a composing Escape belongs to the IME, not the card");
 });
 
 test("the Enter that confirms an IME conversion in WebKit leaves the annotation card open", () => {
   const sdk = bootSdk();
   const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
 
-  sdk.click(paragraph);
+  sdk.ask(paragraph);
   const textarea = sdk.card().querySelector("textarea");
   textarea.value = "漢字";
   const listener = textarea.listeners.find((entry) => entry.type === "keydown");
@@ -459,19 +449,19 @@ test("the Enter that confirms an IME conversion in WebKit leaves the annotation 
   listener.handler({ key: "Enter", isComposing: false, keyCode: 229, preventDefault: () => (prevented = true) });
 
   assert.equal(prevented, false, "the IME keeps its Enter");
-  assert.notEqual(paragraph.style.outline, "", "the card stays open");
+  assert.equal(sdk.isCardOpen(), true, "the card stays open");
 });
 
 test("Escape leaves an annotation card with typed text open and untouched", () => {
   const sdk = bootSdk();
   const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
 
-  sdk.click(paragraph);
+  sdk.ask(paragraph);
   const textarea = sdk.card().querySelector("textarea");
   textarea.value = "keep this note";
   pressEscape(textarea);
 
-  assert.notEqual(paragraph.style.outline, "", "the card is still open, so the highlight remains");
+  assert.equal(sdk.isCardOpen(), true, "the card is still open, so the highlight remains");
   assert.equal(textarea.value, "keep this note", "Escape never discards the typed text");
 });
 
@@ -479,9 +469,9 @@ test("Escape leaves an annotation card with an in-flight attachment open, even w
   const sdk = bootSdk();
   const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
 
-  sdk.click(paragraph);
+  sdk.ask(paragraph);
   const card = sdk.card();
-  const attachInput = card.querySelector(".lavish-attach-input");
+  const attachInput = card.querySelector(".textcast-attach-input");
   // Never resolves - only the synchronous "uploading" status addFiles sets is needed here.
   attachInput.files = [{ name: "shot.png", type: "image/png", size: 10, arrayBuffer: () => new Promise(() => {}) }];
   const changeListener = attachInput.listeners.find((entry) => entry.type === "change");
@@ -490,11 +480,7 @@ test("Escape leaves an annotation card with an in-flight attachment open, even w
 
   pressEscape(card.querySelector("textarea"));
 
-  assert.notEqual(
-    paragraph.style.outline,
-    "",
-    "an attachment mid-upload is unsent content, so Escape must not close the card",
-  );
+  assert.equal(sdk.isCardOpen(), true, "an attachment mid-upload is unsent content, so Escape must not close the card");
 });
 
 // The chrome cannot see into this document, so a draft whose anchor is gone is only ever retired
@@ -503,20 +489,20 @@ test("the served SDK bundle reports a draft whose anchor the artifact no longer 
   const sdk = bootSdk();
 
   sdk.sendChromeMessage({
-    type: "lavish:restoreReviewState",
+    type: "textcast:restoreReviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
 
   // The load event proves the document parsed, not that it finished rendering, so nothing is
   // reported until the anchor has had time to appear.
   assert.equal(
-    sdk.posted.some((message) => message.type === "lavish:reviewDraftUnrestorable"),
+    sdk.posted.some((message) => message.type === "textcast:reviewDraftUnrestorable"),
     false,
   );
 
   sdk.runTimers();
   const report = sdk.posted.at(-1);
-  assert.equal(report.type, "lavish:reviewDraftUnrestorable");
+  assert.equal(report.type, "textcast:reviewDraftUnrestorable");
   assert.equal(report.selector, "#hero");
   assert.equal(report.artifact_load_token, "load-token");
 });
@@ -528,14 +514,14 @@ test("the served SDK bundle restores a draft whose anchor arrives after the load
   sdk.setDocumentQuery((selector) => (selector === "#hero" ? late : null));
 
   sdk.sendChromeMessage({
-    type: "lavish:restoreReviewState",
+    type: "textcast:restoreReviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
   late = appendTo(sdk.body, cell("h1", "Headline"));
   sdk.runTimers();
 
   assert.equal(
-    sdk.posted.some((message) => message.type === "lavish:reviewDraftUnrestorable"),
+    sdk.posted.some((message) => message.type === "textcast:reviewDraftUnrestorable"),
     false,
     "an anchor that arrived late is restored, not reported gone",
   );
@@ -546,8 +532,8 @@ test("the served SDK bundle reports nothing when there is no draft to restore", 
   const sdk = bootSdk();
   const before = sdk.posted.length;
 
-  sdk.sendChromeMessage({ type: "lavish:restoreReviewState", state: { card: null, fields: [] } });
-  sdk.sendChromeMessage({ type: "lavish:restoreReviewState", state: { card: { selector: "#hero", text: "  " } } });
+  sdk.sendChromeMessage({ type: "textcast:restoreReviewState", state: { card: null, fields: [] } });
+  sdk.sendChromeMessage({ type: "textcast:restoreReviewState", state: { card: { selector: "#hero", text: "  " } } });
   sdk.runTimers();
 
   assert.equal(sdk.posted.length, before);
@@ -562,12 +548,12 @@ test("the served SDK bundle leaves a card the user opened alone when the anchor 
   sdk.setDocumentQuery((selector) => (selector === "#hero" ? late : null));
 
   sdk.sendChromeMessage({
-    type: "lavish:restoreReviewState",
+    type: "textcast:restoreReviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
 
   const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-  sdk.click(paragraph);
+  sdk.ask(paragraph);
   sdk.card().querySelector("textarea").value = "typing something new";
   late = appendTo(sdk.body, cell("h1", "Headline"));
   sdk.runTimers();
@@ -576,7 +562,7 @@ test("the served SDK bundle leaves a card the user opened alone when the anchor 
   // The draft is still stored on the chrome side, so a later load can try again; nothing here
   // claims the anchor is gone either.
   assert.equal(
-    sdk.posted.some((message) => message.type === "lavish:reviewDraftUnrestorable"),
+    sdk.posted.some((message) => message.type === "textcast:reviewDraftUnrestorable"),
     false,
   );
 });
@@ -591,13 +577,13 @@ test("the served SDK bundle drops a late restore once the user has opened a card
   sdk.setDocumentQuery((selector) => (selector === "#hero" ? late : null));
 
   sdk.sendChromeMessage({
-    type: "lavish:restoreReviewState",
+    type: "textcast:restoreReviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
 
   const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-  sdk.click(paragraph);
-  sdk.card().querySelector(".lavish-cancel").onclick();
+  sdk.ask(paragraph);
+  sdk.card().querySelector(".textcast-cancel").onclick();
   const cardsAfterCancel = sdk.cards().length;
 
   late = appendTo(sdk.body, cell("h1", "Headline"));
@@ -606,157 +592,19 @@ test("the served SDK bundle drops a late restore once the user has opened a card
   assert.equal(sdk.cards().length, cardsAfterCancel, "the cancelled card is not replaced by a restored one");
   assert.notEqual(sdk.card().querySelector("textarea").value, "needs a shorter headline");
   assert.equal(
-    sdk.posted.some((message) => message.type === "lavish:reviewDraftUnrestorable"),
+    sdk.posted.some((message) => message.type === "textcast:reviewDraftUnrestorable"),
     false,
   );
-});
-
-test("clicking an element with a queued note asks the chrome to edit it instead of opening a card", () => {
-  const sdk = bootSdk();
-  const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-  sdk.click(paragraph);
-  const queued = sdk.queue("Reword this");
-  sdk.sendChromeMessage({ type: "lavish:queuedAnchors", selectors: [queued.prompt.selector] });
-  // The stub shadow root keeps closed cards, so a new card shows as a higher count.
-  const cardsBefore = sdk.cards().length;
-
-  sdk.click(paragraph);
-
-  assert.equal(sdk.cards().length, cardsBefore);
-  const message = sdk.posted.at(-1);
-  assert.equal(message.type, "lavish:editQueuedAnchor");
-  assert.equal(message.selector, queued.prompt.selector);
-  assert.equal(message.artifact_load_token, "load-token");
-});
-
-test("an element whose queued note left the queue opens a fresh card again", () => {
-  const sdk = bootSdk();
-  const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-  sdk.click(paragraph);
-  const queued = sdk.queue("Reword this");
-  sdk.sendChromeMessage({ type: "lavish:queuedAnchors", selectors: [queued.prompt.selector] });
-  sdk.sendChromeMessage({ type: "lavish:queuedAnchors", selectors: [] });
-  const cardsBefore = sdk.cards().length;
-
-  sdk.click(paragraph);
-
-  assert.equal(sdk.cards().length, cardsBefore + 1);
-});
-
-test("the chrome can hand an element click back for a fresh card", () => {
-  const sdk = bootSdk();
-  const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-  sdk.setDocumentQuery((selector) => (selector === "body > p" ? paragraph : null));
-
-  sdk.sendChromeMessage({ type: "lavish:annotateElement", selector: "body > p" });
-
-  assert.match(sdk.card().innerHTML, /Annotate &lt;p&gt;/);
-});
-
-// In annotate mode a plain click on a link annotates it, so Ctrl-click (Cmd-click on macOS) is the
-// way to follow the link without leaving annotate mode: the SDK steps aside and the browser opens it.
-function buildLink(sdk) {
-  const link = appendTo(sdk.body, cell("a", "Read the spec"));
-  link.setAttribute("href", "https://example.com/spec");
-  const inner = appendTo(link, cell("span", "spec"));
-  return { link, inner };
-}
-
-// The follow modifier is the platform's own: Cmd on macOS, Ctrl elsewhere. Meta on Linux/Windows
-// is the Super/Windows key, which is not a link-follow gesture there, so it annotates like a plain click.
-for (const [platform, modifier] of [
-  ["MacIntel", "metaKey"],
-  ["Linux x86_64", "ctrlKey"],
-  ["Win32", "ctrlKey"],
-]) {
-  test(`${modifier}-click on a link on ${platform} follows the link instead of annotating`, () => {
-    const sdk = bootSdk({ platform });
-    const { link, inner } = buildLink(sdk);
-
-    for (const target of [link, inner]) {
-      const event = sdk.click(target, { [modifier]: true });
-      assert.equal(event.defaultPrevented, false, "the browser's own link handling runs");
-    }
-    assert.equal(sdk.cards().length, 0);
-  });
-}
-
-for (const [platform, modifier] of [
-  ["Linux x86_64", "metaKey"],
-  ["Win32", "metaKey"],
-  ["MacIntel", "ctrlKey"],
-]) {
-  test(`${modifier}-click on a link on ${platform} annotates like a plain click`, () => {
-    const sdk = bootSdk({ platform });
-    const { link } = buildLink(sdk);
-
-    const event = sdk.click(link, { [modifier]: true });
-
-    assert.equal(event.defaultPrevented, true, "the SDK keeps the frame from navigating");
-    assert.match(sdk.card().innerHTML, /Annotate &lt;a&gt;/);
-  });
-}
-
-test("a plain click on a link in annotate mode still opens an annotation card", () => {
-  const sdk = bootSdk();
-  const { link } = buildLink(sdk);
-
-  const event = sdk.click(link);
-
-  assert.equal(event.defaultPrevented, true);
-  assert.match(sdk.card().innerHTML, /Annotate &lt;a&gt;/);
-});
-
-test("a modified click on something that is not a link still annotates", () => {
-  const sdk = bootSdk();
-  const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-
-  const event = sdk.click(paragraph, { ctrlKey: true });
-
-  assert.equal(event.defaultPrevented, true);
-  assert.match(sdk.card().innerHTML, /Annotate &lt;p&gt;/);
-});
-
-test("Ctrl-click follows a link even when the link already has a queued note", () => {
-  const sdk = bootSdk();
-  const { link } = buildLink(sdk);
-  sdk.click(link);
-  const queued = sdk.queue("Is this the right spec?");
-  sdk.sendChromeMessage({ type: "lavish:queuedAnchors", selectors: [queued.prompt.selector] });
-  const postedBefore = sdk.posted.length;
-
-  const event = sdk.click(link, { ctrlKey: true });
-
-  assert.equal(event.defaultPrevented, false);
-  assert.equal(
-    sdk.posted.slice(postedBefore).some((message) => message.type === "lavish:editQueuedAnchor"),
-    false,
-  );
-});
-
-test("Ctrl-click on a link after a text selection does not eat the next plain click", () => {
-  const sdk = bootSdk();
-  const { link } = buildLink(sdk);
-  const paragraph = appendTo(sdk.body, cell("p", "Just prose"));
-  sdk.selectText(paragraph, "prose");
-  assert.match(sdk.card().innerHTML, /Annotate text/, "the selection opens a text annotation card");
-
-  const followed = sdk.click(link, { ctrlKey: true });
-  assert.equal(followed.defaultPrevented, false);
-
-  sdk.click(paragraph);
-
-  assert.match(sdk.card().innerHTML, /Annotate &lt;p&gt;/);
 });
 
 test("setDocumentMeta posts the title and icon the page asked for, stamped with the load token", () => {
   const sdk = bootSdk();
   sdk.api.setDocumentMeta({ title: "(1) Board", icon: "data:image/svg+xml,<svg/>" });
-  const message = sdk.posted.find((entry) => entry.type === "lavish:documentMeta");
+  const message = sdk.posted.find((entry) => entry.type === "textcast:documentMeta");
   assert.deepEqual(
     { ...message },
     {
-      type: "lavish:documentMeta",
+      type: "textcast:documentMeta",
       title: "(1) Board",
       icon: "data:image/svg+xml,<svg/>",
       artifact_load_token: "load-token",
@@ -769,7 +617,7 @@ test("setDocumentMeta forwards null to restore, omits unset fields and drops non
   sdk.api.setDocumentMeta({ title: null });
   sdk.api.setDocumentMeta({ icon: 42, title: { toString: () => "x" } });
   sdk.api.setDocumentMeta();
-  const messages = sdk.posted.filter((entry) => entry.type === "lavish:documentMeta");
+  const messages = sdk.posted.filter((entry) => entry.type === "textcast:documentMeta");
   assert.deepEqual(
     messages.map((entry) => JSON.parse(JSON.stringify({ title: entry.title, icon: entry.icon }))),
     [{ title: null }, {}, {}],

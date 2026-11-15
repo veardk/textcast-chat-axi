@@ -1,11 +1,7 @@
 dist
 node_modules
-.lavish
 .textcast-chat-axi
-.no-mistakes
-lavish-code-review.html
 package-lock.json
 CHANGELOG.md
-.claude/settings.local.json
 # Canonical two-line @AGENTS.md pointer; prettier would add a blank line.
 CLAUDE.md

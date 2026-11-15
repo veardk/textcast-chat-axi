@@ -8,7 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const runBrowserE2e = process.env.LAVISH_AXI_BROWSER_E2E === "1";
+const runBrowserE2e = process.env.TEXTCAST_CHAT_AXI_BROWSER_E2E === "1";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const baseCommit = "5b871af347444feda1d3002952ec5fc179248629";
 
@@ -103,21 +103,21 @@ test(
   "six legacy tabs migrate before seven sessions exercise live transport",
   { skip: !runBrowserE2e, timeout: 300_000 },
   async () => {
-    const temp = await mkdtemp(path.join(tmpdir(), "lavish-event-transport-"));
+    const temp = await mkdtemp(path.join(tmpdir(), "textcast-event-transport-"));
     const oldRoot = path.join(temp, "old-build");
     const archive = path.join(temp, "old-build.tar");
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
-    const lavishEnv = {
-      LAVISH_AXI_PORT: String(port),
-      LAVISH_AXI_STATE_DIR: path.join(temp, "state"),
-      LAVISH_AXI_NO_OPEN: "1",
-      LAVISH_AXI_TELEMETRY: "0",
-      LAVISH_AXI_HOST: "127.0.0.1",
-      LAVISH_AXI_LINK_HOST: "127.0.0.1",
+    const textcastEnv = {
+      TEXTCAST_CHAT_AXI_PORT: String(port),
+      TEXTCAST_CHAT_AXI_STATE_DIR: path.join(temp, "state"),
+      TEXTCAST_CHAT_AXI_NO_OPEN: "1",
+      TEXTCAST_CHAT_AXI_TELEMETRY: "0",
+      TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+      TEXTCAST_CHAT_AXI_LINK_HOST: "127.0.0.1",
     };
     const chromeEnv = {
-      CHROME_DEVTOOLS_AXI_SESSION: `lavish-event-transport-${process.pid}`,
+      CHROME_DEVTOOLS_AXI_SESSION: `textcast-event-transport-${process.pid}`,
       CHROME_DEVTOOLS_AXI_USER_DATA_DIR: path.join(temp, "chrome"),
     };
     const sessions = [];
@@ -126,10 +126,10 @@ test(
 
     try {
       await mkdir(oldRoot);
-      run("git", ["archive", "--format=tar", "--output", archive, baseCommit], lavishEnv);
-      run("tar", ["-xf", archive, "-C", oldRoot], lavishEnv);
+      run("git", ["archive", "--format=tar", "--output", archive, baseCommit], textcastEnv);
+      run("tar", ["-xf", archive, "-C", oldRoot], textcastEnv);
       await symlink(path.join(repoRoot, "node_modules"), path.join(oldRoot, "node_modules"), "dir");
-      oldServer = await startServer(oldRoot, lavishEnv, port);
+      oldServer = await startServer(oldRoot, textcastEnv, port);
 
       for (let index = 0; index < 7; index += 1) {
         const file = path.join(temp, `board-${index + 1}.html`);
@@ -140,7 +140,7 @@ test(
         const output = run(
           process.execPath,
           ["bin/textcast-chat-axi.js", file, "--no-open"],
-          lavishEnv,
+          textcastEnv,
           20_000,
           oldRoot,
         );
@@ -174,7 +174,7 @@ test(
           "chrome-devtools-axi",
           [
             "eval",
-            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 8000; const checkReady = () => { if (!window.__lavishChromeReady) { if (Date.now() >= deadline) return reject(new Error("old chrome did not load")); return setTimeout(checkReady, 25); } const input = document.getElementById("chatInput"); input.value = ${JSON.stringify(`queued-before-upgrade-${index + 1}`)}; input.dispatchEvent(new Event("input", { bubbles: true })); document.getElementById("send").click(); const queueKey = "textcast-chat-axi:queued:${session.key}"; const checkQueue = () => { if (sessionStorage.getItem(queueKey)) return resolve(true); if (Date.now() >= deadline) return reject(new Error("old chrome did not persist its queue")); setTimeout(checkQueue, 25); }; checkQueue(); }; checkReady(); })`,
+            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 8000; const checkReady = () => { if (!window.__textcastChromeReady) { if (Date.now() >= deadline) return reject(new Error("old chrome did not load")); return setTimeout(checkReady, 25); } const input = document.getElementById("chatInput"); input.value = ${JSON.stringify(`queued-before-upgrade-${index + 1}`)}; input.dispatchEvent(new Event("input", { bubbles: true })); document.getElementById("send").click(); const queueKey = "textcast-chat-axi:queued:${session.key}"; const checkQueue = () => { if (sessionStorage.getItem(queueKey)) return resolve(true); if (Date.now() >= deadline) return reject(new Error("old chrome did not persist its queue")); setTimeout(checkQueue, 25); }; checkQueue(); }; checkReady(); })`,
           ],
           chromeEnv,
           10_000,
@@ -189,7 +189,7 @@ test(
         "chrome-devtools-axi",
         [
           "eval",
-          `() => { const frame = document.getElementById("artifact"); const token = new URL(frame.src).searchParams.get("artifact_load_token"); window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, data: { type: "lavish:reviewState", artifact_load_token: token, state: { card: { selector: "#board-1", text: "draft survives server replacement" }, fields: [] } } })); return sessionStorage.getItem("textcast-chat-axi:review-state:${draftSession.key}"); }`,
+          `() => { const frame = document.getElementById("artifact"); const token = new URL(frame.src).searchParams.get("artifact_load_token"); window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, data: { type: "textcast:reviewState", artifact_load_token: token, state: { card: { selector: "#board-1", text: "draft survives server replacement" }, fields: [] } } })); return sessionStorage.getItem("textcast-chat-axi:review-state:${draftSession.key}"); }`,
         ],
         chromeEnv,
       );
@@ -197,7 +197,7 @@ test(
 
       await stopServer(oldServer, base, "stop");
       oldServer = undefined;
-      currentServer = await startServer(repoRoot, lavishEnv, port);
+      currentServer = await startServer(repoRoot, textcastEnv, port);
       run("chrome-devtools-axi", ["newpage", sessions[6].url, "--background"], chromeEnv);
 
       const sessionUrls = new Set(sessions.map((session) => session.url));
@@ -232,7 +232,7 @@ test(
           "chrome-devtools-axi",
           [
             "eval",
-            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const expectedDraft = ${index === 0 ? '"draft survives server replacement"' : '""'}; const check = () => { const draft = sessionStorage.getItem("textcast-chat-axi:review-state:${session.key}") || ""; if (window.__lavishChromeReady && document.getElementById("artifact")?.src && (!expectedDraft || draft.includes(expectedDraft))) return resolve(true); if (Date.now() >= deadline) return reject(new Error("real legacy chrome did not migrate")); setTimeout(check, 25); }; check(); })`,
+            `() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const expectedDraft = ${index === 0 ? '"draft survives server replacement"' : '""'}; const check = () => { const draft = sessionStorage.getItem("textcast-chat-axi:review-state:${session.key}") || ""; if (window.__textcastChromeReady && document.getElementById("artifact")?.src && (!expectedDraft || draft.includes(expectedDraft))) return resolve(true); if (Date.now() >= deadline) return reject(new Error("real legacy chrome did not migrate")); setTimeout(check, 25); }; check(); })`,
           ],
           chromeEnv,
           12_000,
@@ -283,7 +283,7 @@ test(
         const poll = run(
           process.execPath,
           ["bin/textcast-chat-axi.js", "poll", session.file, "--timeout-ms", "5000"],
-          lavishEnv,
+          textcastEnv,
           10_000,
         );
         assert.match(poll, new RegExp(message), `board ${index + 1} poll received its exact prompt`);

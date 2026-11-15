@@ -19,7 +19,7 @@ const servedChromeIds = new Set(
 
 const SERVED_TAB_ICON = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>";
 
-/** @typedef {{ key: string, file: string, layoutGateMaxHoldMs?: number, modeToggleHotkeyKey?: string, initialChat?: any[], initialChatAckIds?: string[], initialChatRevision?: number, initialLayoutWarnings?: any[], chromeLoadToken?: string, initialArtifactRevision?: number, initialArtifactLoadToken?: string, initialArtifactLoadSequence?: number, attachmentMaxBytes?: number, attachmentMaxCount?: number, attachmentAcceptedMime?: string[], initialEnded?: boolean, initialEndedBy?: string | null, revisionPalette?: { hex: string, borderStyle: string, pattern: string }[] }} HarnessSessionData */
+/** @typedef {{ key: string, file: string, modeToggleHotkeyKey?: string, initialChat?: any[], initialChatAckIds?: string[], initialChatRevision?: number, initialLayoutWarnings?: any[], chromeLoadToken?: string, initialArtifactRevision?: number, initialArtifactLoadToken?: string, initialArtifactLoadSequence?: number, attachmentMaxBytes?: number, attachmentMaxCount?: number, attachmentAcceptedMime?: string[], initialEnded?: boolean, initialEndedBy?: string | null, revisionPalette?: { hex: string, borderStyle: string, pattern: string }[] }} HarnessSessionData */
 /** @type {HarnessSessionData} */
 const defaultSessionData = {
   key: "abc",
@@ -331,7 +331,7 @@ async function createChromeHarness({
     return el;
   }
 
-  element("lavish-session").textContent = JSON.stringify(sessionData);
+  element("textcast-session").textContent = JSON.stringify(sessionData);
   const frame = element("artifact");
   frame.dataset.artifactSrc = artifactSrc;
   Object.defineProperty(frame, "src", {
@@ -355,7 +355,7 @@ async function createChromeHarness({
   }
   element("chatComposer").parentElement = element("panel");
   element("panelScroll").parentElement = element("panel");
-  element("layoutGateBypass").hidden = true;
+  element("loadNotice").hidden = true;
   element("shareDialog").hidden = true;
   element("moreMenu").hidden = true;
   element("warningsDrawer").hidden = true;
@@ -394,7 +394,7 @@ async function createChromeHarness({
     fetch: harnessFetch,
     location: {
       protocol: "http:",
-      host: "lavish.test",
+      host: "textcast.test",
       reload() {
         reloadCount += 1;
       },
@@ -410,7 +410,7 @@ async function createChromeHarness({
     crypto: globalThis.crypto,
     URL: {
       createObjectURL() {
-        return "blob:lavish-test";
+        return "blob:textcast-test";
       },
       revokeObjectURL() {},
     },
@@ -444,7 +444,7 @@ async function createChromeHarness({
     },
     document: {
       // The tab as the server served it: the artifact's title and its icon link.
-      title: "Plan \u00b7 Lavish",
+      title: "Plan \u00b7 Textcast Chat",
       body: element("body"),
       head: { appendChild: (link) => (tabIcon = link) },
       querySelector: (selector) => (selector === 'link[rel~="icon"]' ? tabIcon : null),
@@ -585,14 +585,14 @@ async function createChromeHarness({
       for (const handler of handlers) handler({ source: frame.contentWindow, data });
     },
     sendSnapshot(snapshot) {
-      const request = [...postedToFrame].reverse().find((message) => message.type === "lavish:requestSnapshot");
+      const request = [...postedToFrame].reverse().find((message) => message.type === "textcast:requestSnapshot");
       assert.ok(request?.snapshot_request_id, "the chrome requested a correlated snapshot");
       const handlers = windowListeners.get("message") || [];
       assert.ok(handlers.length > 0, "chrome-client registered a message handler");
       for (const handler of handlers) {
         handler({
           source: frame.contentWindow,
-          data: { type: "lavish:snapshot", snapshot, snapshot_request_id: request.snapshot_request_id },
+          data: { type: "textcast:snapshot", snapshot, snapshot_request_id: request.snapshot_request_id },
         });
       }
     },
@@ -678,7 +678,7 @@ async function createChromeHarness({
 test("chrome client carries live events over a WebSocket outside the HTTP connection pool", async () => {
   const chrome = await createChromeHarness();
 
-  assert.equal(chrome.webSocket().url, "ws://lavish.test/events/abc");
+  assert.equal(chrome.webSocket().url, "ws://textcast.test/events/abc");
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
   assert.equal(chrome.element("presenceBanner").hidden, true);
 });
@@ -692,7 +692,7 @@ test("chrome reconnects its live WebSocket and syncs missed chat", async () => {
 
   assert.equal(chrome.webSocketCount(), 2);
   const reconnectedSocket = chrome.webSocketAt(1);
-  assert.equal(reconnectedSocket.url, "ws://lavish.test/events/abc");
+  assert.equal(reconnectedSocket.url, "ws://textcast.test/events/abc");
   reconnectedSocket.listeners.get("chat-sync")({
     data: JSON.stringify({ chat: [{ role: "agent", text: "Missed while disconnected" }] }),
   });
@@ -736,7 +736,7 @@ test("a reconnect cannot settle an identical note this tab never submitted", asy
 
   chrome.webSocket().protocolListeners.get("close")();
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Same note", selector: "", tag: "message", text: "Freeform message" },
   });
   chrome.runTimers(500);
@@ -799,7 +799,7 @@ test("a queued send falls back without a snapshot and ignores a late snapshot", 
 
   chrome.element("send").click();
   const snapshotRequest = chrome.postedToFrame.at(-1);
-  assert.equal(snapshotRequest.type, "lavish:requestSnapshot");
+  assert.equal(snapshotRequest.type, "textcast:requestSnapshot");
   assert.equal(typeof snapshotRequest.snapshot_request_id, "string");
 
   chrome.runTimers(4999);
@@ -835,11 +835,11 @@ test("a queued send falls back without a snapshot and ignores a late snapshot", 
   assert.equal(chrome.queued().length, 0);
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Keep this for later", selector: "h2", tag: "annotation", text: "Later" },
   });
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "late snapshot",
     snapshot_request_id: snapshotRequest.snapshot_request_id,
   });
@@ -866,11 +866,11 @@ test("a Send only submits prompts present when that action started", async () =>
   chrome.element("send").click();
   const firstRequest = chrome.postedToFrame.at(-1);
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Later work", selector: "h2", tag: "annotation", text: "Later" },
   });
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "uid=1 body",
     snapshot_request_id: firstRequest.snapshot_request_id,
   });
@@ -903,7 +903,7 @@ test("an older out-of-order snapshot cannot submit work queued after a newer Sen
   const secondRequest = chrome.postedToFrame.at(-1);
 
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "newer snapshot",
     snapshot_request_id: secondRequest.snapshot_request_id,
   });
@@ -915,11 +915,11 @@ test("an older out-of-order snapshot cannot submit work queued after a newer Sen
   );
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Not sent yet", selector: "h2", tag: "annotation", text: "Later" },
   });
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "older snapshot",
     snapshot_request_id: firstRequest.snapshot_request_id,
   });
@@ -952,7 +952,7 @@ test("a Send started after another snapshot wins remains live while that POST is
   chrome.element("send").click();
   const winningRequest = chrome.postedToFrame.at(-1);
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "winning snapshot",
     snapshot_request_id: winningRequest.snapshot_request_id,
   });
@@ -971,7 +971,7 @@ test("a Send started after another snapshot wins remains live while that POST is
   );
 
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "later snapshot",
     snapshot_request_id: laterRequest.snapshot_request_id,
   });
@@ -1124,12 +1124,12 @@ test("a failed in-flight POST preserves and runs a completed later Send & End", 
   chrome.element("sendAndEnd").click();
   const finalRequest = chrome.postedToFrame.at(-1);
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "uid=2 final",
     snapshot_request_id: finalRequest.snapshot_request_id,
   });
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Unsent later work", selector: "h2", tag: "annotation", text: "Later" },
   });
 
@@ -1234,13 +1234,13 @@ test("Send & End reserves its terminal batch and only retries that batch after f
   assert.equal(chrome.element("chatInput").disabled, true);
   assert.equal(chrome.element("end").disabled, true);
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Rejected later annotation", selector: "h2", tag: "annotation", text: "Later" },
   });
   chrome.element("chatInput").value = "Rejected later send";
   chrome.element("send").click();
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "uid=1 terminal",
     snapshot_request_id: firstRequest.snapshot_request_id,
   });
@@ -1282,7 +1282,7 @@ test("Send & End reserves its terminal batch and only retries that batch after f
   assert.equal(typeof retryRequest.snapshot_request_id, "string");
   assert.equal(reloaded.element("sendAndEnd").disabled, true);
   reloaded.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "uid=2 retry",
     snapshot_request_id: retryRequest.snapshot_request_id,
   });
@@ -1314,14 +1314,14 @@ test("Send & End locks the artifact without closing an open annotation draft bef
     },
   });
   const disableMessagesBefore = chrome.postedToFrame.filter(
-    (message) => message.type === "lavish:setAnnotationMode" && message.enabled === false,
+    (message) => message.type === "textcast:setAnnotationMode" && message.enabled === false,
   ).length;
 
   chrome.element("sendAndEnd").click();
 
   assert.equal(chrome.frame.inert, true, "the artifact is interaction-locked while the terminal send owns it");
   assert.equal(
-    chrome.postedToFrame.filter((message) => message.type === "lavish:setAnnotationMode" && message.enabled === false)
+    chrome.postedToFrame.filter((message) => message.type === "textcast:setAnnotationMode" && message.enabled === false)
       .length,
     disableMessagesBefore,
     "reserving Send & End must not tell the SDK to close its live annotation card",
@@ -1502,7 +1502,7 @@ test("an older late Send failure preserves newer terminal retry guidance", async
   const terminalRequest = chrome.postedToFrame.at(-1);
 
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "terminal snapshot",
     snapshot_request_id: terminalRequest.snapshot_request_id,
   });
@@ -1514,7 +1514,7 @@ test("an older late Send failure preserves newer terminal retry guidance", async
   assert.match(chrome.element("sendHint").textContent, /click Send & End to retry the same batch/i);
 
   chrome.sendFrameMessage({
-    type: "lavish:snapshot",
+    type: "textcast:snapshot",
     snapshot: "older ordinary snapshot",
     snapshot_request_id: ordinaryRequest.snapshot_request_id,
   });
@@ -1685,15 +1685,27 @@ test("chrome client replaces queued prompts with the same internal key", async (
   const chrome = await createChromeHarness();
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
-    prompt: { prompt: "Use plan A", selector: "input#plan-a", tag: "choice", text: "Plan A", _lavishQueueKey: "plan" },
+    type: "textcast:queuePrompt",
+    prompt: {
+      prompt: "Use plan A",
+      selector: "input#plan-a",
+      tag: "choice",
+      text: "Plan A",
+      _textcastQueueKey: "plan",
+    },
   });
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
-    prompt: { prompt: "Use plan B", selector: "input#plan-b", tag: "choice", text: "Plan B", _lavishQueueKey: "plan" },
+    type: "textcast:queuePrompt",
+    prompt: {
+      prompt: "Use plan B",
+      selector: "input#plan-b",
+      tag: "choice",
+      text: "Plan B",
+      _textcastQueueKey: "plan",
+    },
   });
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Apply dark mode", selector: "button#dark", tag: "choice", text: "Dark" },
   });
 
@@ -1711,7 +1723,7 @@ test("chrome client scrolls new chat bubbles into view above queued prompts", as
   panelScroll.scrollHeight = 1800;
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Review the title", selector: "h1", tag: "annotation", text: "Title" },
   });
   assert.equal(panelScroll.scrollTop, 1800);
@@ -1737,7 +1749,7 @@ test("chrome mediates attachment uploads: rate + cumulative-byte ceiling (confus
   });
 
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     localId: "invalid",
     mime: "image/png",
     bytes: { byteLength: 16 },
@@ -1745,7 +1757,7 @@ test("chrome mediates attachment uploads: rate + cumulative-byte ceiling (confus
   await flushPromises();
   assert.equal(fetches, 0, "an invalid payload never hits the network");
   const invalidResult = chrome.postedToFrame.find(
-    (m) => m.type === "lavish:attachmentResult" && m.localId === "invalid",
+    (m) => m.type === "textcast:attachmentResult" && m.localId === "invalid",
   );
   assert.equal(invalidResult.ok, false);
   assert.equal(invalidResult.error, "invalid upload payload");
@@ -1757,14 +1769,14 @@ test("chrome mediates attachment uploads: rate + cumulative-byte ceiling (confus
   const oversized = new Uint8Array(0);
   Object.defineProperty(oversized, "byteLength", { value: 300 * 1024 * 1024, configurable: true });
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     localId: "big",
     mime: "image/png",
     bytes: oversized,
   });
   await flushPromises();
   assert.equal(fetches, 0, "quota-exceeding upload never hits the network");
-  const quotaResult = chrome.postedToFrame.find((m) => m.type === "lavish:attachmentResult" && m.localId === "big");
+  const quotaResult = chrome.postedToFrame.find((m) => m.type === "textcast:attachmentResult" && m.localId === "big");
   assert.equal(quotaResult.ok, false);
   assert.match(quotaResult.error, /Upload limit reached/);
 
@@ -1773,7 +1785,7 @@ test("chrome mediates attachment uploads: rate + cumulative-byte ceiling (confus
   // here we are exercising the RATE cap, which counts uploads that reached the network.
   for (let i = 0; i < 30; i += 1) {
     chrome.sendFrameMessage({
-      type: "lavish:uploadAttachment",
+      type: "textcast:uploadAttachment",
       localId: "ok-" + i,
       mime: "image/png",
       bytes: new ArrayBuffer(16),
@@ -1783,14 +1795,16 @@ test("chrome mediates attachment uploads: rate + cumulative-byte ceiling (confus
   assert.equal(fetches, 30, "the first 30 uploads within the window are allowed");
 
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     localId: "throttled",
     mime: "image/png",
     bytes: new ArrayBuffer(16),
   });
   await flushPromises();
   assert.equal(fetches, 30, "the 31st upload in the window is throttled, not sent");
-  const throttled = chrome.postedToFrame.find((m) => m.type === "lavish:attachmentResult" && m.localId === "throttled");
+  const throttled = chrome.postedToFrame.find(
+    (m) => m.type === "textcast:attachmentResult" && m.localId === "throttled",
+  );
   assert.equal(throttled.ok, false);
   assert.match(throttled.error, /Too many uploads/);
 });
@@ -1809,7 +1823,7 @@ test("chrome only mediates uploads carrying the current artifact load token", as
   // without the current load token is dropped before the upload handler runs, so
   // the real SDK must stamp it (postArtifactMessage) on every upload.
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     nonce: "n",
     localId: "no-token",
     mime: "image/png",
@@ -1818,7 +1832,7 @@ test("chrome only mediates uploads carrying the current artifact load token", as
   await flushPromises();
   assert.equal(fetches, 0, "a token-less upload message never reaches the network");
   assert.equal(
-    chrome.postedToFrame.some((m) => m.type === "lavish:attachmentResult" && m.localId === "no-token"),
+    chrome.postedToFrame.some((m) => m.type === "textcast:attachmentResult" && m.localId === "no-token"),
     false,
     "a token-less upload message gets no result either - it is dropped, not handled",
   );
@@ -1826,7 +1840,7 @@ test("chrome only mediates uploads carrying the current artifact load token", as
   // The same message stamped with the current load token is mediated normally.
   chrome.sendFrameMessage({
     artifact_load_token: "live-load",
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     nonce: "n",
     localId: "with-token",
     mime: "image/png",
@@ -1834,7 +1848,7 @@ test("chrome only mediates uploads carrying the current artifact load token", as
   });
   await flushPromises();
   assert.equal(fetches, 1);
-  const result = chrome.postedToFrame.find((m) => m.type === "lavish:attachmentResult" && m.localId === "with-token");
+  const result = chrome.postedToFrame.find((m) => m.type === "textcast:attachmentResult" && m.localId === "with-token");
   assert.equal(result.ok, true);
 });
 
@@ -2452,7 +2466,7 @@ test("queued annotation prompts still deliver while a composer chip uploads", as
   assert.match(chrome.element("chatAttachmentNotice").textContent, /finish uploading/i);
   // The chip gate must not have swallowed the send: the chrome asked the frame
   // for the snapshot that starts the actual submission.
-  assert.ok(chrome.postedToFrame.some((m) => m.type === "lavish:requestSnapshot"));
+  assert.ok(chrome.postedToFrame.some((m) => m.type === "textcast:requestSnapshot"));
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
   await flushPromises();
@@ -2485,7 +2499,7 @@ test("Send & End with a failed composer chip delivers prompts but holds the end"
 
   chrome.element("sendAndEnd").click();
   assert.match(chrome.element("chatAttachmentNotice").textContent, /retry or remove/i);
-  assert.ok(chrome.postedToFrame.some((m) => m.type === "lavish:requestSnapshot"));
+  assert.ok(chrome.postedToFrame.some((m) => m.type === "textcast:requestSnapshot"));
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
   await flushPromises();
@@ -2614,7 +2628,7 @@ test("a fresh open navigates the artifact frame only to the begin-load's token",
   assert.equal(chrome.artifactBeginRequests.length, 1);
   assert.deepEqual(
     chrome.srcLoads.map((load) => load.src),
-    ["/artifact/abc/index.html?artifact_revision=1&artifact_load_token=harness-load-1"],
+    ["/artifact/abc/index.html?artifact_revision=1&artifact_load_token=harness-load-1&textcast_theme=light"],
   );
 });
 
@@ -2634,80 +2648,35 @@ test("a superseded first load still shows the embedded artifact", async () => {
 
   assert.deepEqual(
     chrome.srcLoads.map((load) => load.src),
-    ["/artifact/abc/index.html?artifact_revision=4&artifact_load_token=live-load"],
+    ["/artifact/abc/index.html?artifact_revision=4&artifact_load_token=live-load&textcast_theme=light"],
   );
   assert.equal(chrome.element("handoffBanner").hidden, false);
 });
 
-test("the layout gate reveals once the artifact reports ready", async () => {
-  const chrome = await createChromeHarness();
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), true);
-
-  chrome.sendFrameMessage({ type: "lavish:ready" });
-  await flushPromises();
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-});
-
-test("layout gate timeout fails open when no result arrives", async () => {
-  const chrome = await createChromeHarness({
-    sessionData: { key: "abc", file: "/tmp/artifact.html", layoutGateMaxHoldMs: 25 },
-  });
-
-  chrome.runTimers(25);
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-});
-
-test("layout gate re-arms on reload and still reveals on the next ready report", async () => {
-  const chrome = await createChromeHarness({
-    sessionData: { key: "abc", file: "/tmp/artifact.html", layoutGateMaxHoldMs: 25 },
-  });
-
-  chrome.runTimers(25);
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-
-  chrome.eventSource().listeners.get("reload")();
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), true);
-
-  chrome.sendFrameMessage({ type: "lavish:ready" });
-  await flushPromises();
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-});
-
-test("a stale prior-document ready report cannot reveal the new gate or clear its probe", async () => {
+test("a stale prior-document ready report cannot clear the new load's availability probe", async () => {
   const posts = [];
   const chrome = await createChromeHarness({
     fetchImpl: async (url, init = {}) => {
       posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
       return { ok: true, json: async () => ({}) };
     },
-    sessionData: { key: "abc", file: "/tmp/artifact.html", layoutGateMaxHoldMs: 25 },
     artifactSrc: "/artifact/abc/index.html",
   });
 
   const oldToken = chrome.artifactLoadToken();
-  chrome.runTimers(25);
   chrome.eventSource().listeners.get("reload")();
   await flushPromises();
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:ready",
+    type: "textcast:ready",
     artifact_revision: 1,
   });
   await flushPromises();
 
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
   chrome.frame.dispatch("load");
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:ready",
+    type: "textcast:ready",
     artifact_revision: 1,
   });
   await flushPromises();
@@ -2801,8 +2770,8 @@ test("a first begin-load that fails keeps retrying until the artifact loads", as
   await flushPromises();
   assert.equal(chrome.artifactBeginRequests.length, 4);
   assert.match(chrome.frame.src, /^\/artifact\/abc\/index\.html\?artifact_revision=\d+&artifact_load_token=/);
-  // Retries alone never raise the failure card: the gate is back on its ordinary loading copy.
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Opening the page.");
+  // Retries alone never raise the failure notice.
+  assert.equal(chrome.element("loadNotice").hidden, true);
 });
 
 test("a first begin-load that never recovers surfaces a reloadable failure instead of a blank frame", async () => {
@@ -2825,20 +2794,20 @@ test("a first begin-load that never recovers surfaces a reloadable failure inste
   }
 
   assert.equal(chrome.frame.src, "");
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish could not load this artifact.");
-  assert.equal(chrome.element("layoutGateAction").textContent, "Check and reload");
+  assert.equal(chrome.element("loadNotice").hidden, false);
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat could not load this artifact.");
+  assert.equal(chrome.element("loadNoticeAction").textContent, "Check and reload");
 
   // This card is raised in the state where the server may be gone, so it must not navigate into
   // a port nothing is listening on any more than the other two cards do.
-  await chrome.element("layoutGateAction").click();
+  await chrome.element("loadNoticeAction").click();
   await flushPromises();
   assert.equal(chrome.reloadCount(), 0);
-  assert.match(chrome.element("layoutGateCopy").textContent, /still not answering/);
-  assert.equal(chrome.element("layoutGateAction").disabled, false);
+  assert.match(chrome.element("loadNoticeCopy").textContent, /still not answering/);
+  assert.equal(chrome.element("loadNoticeAction").disabled, false);
 
   running = true;
-  await chrome.element("layoutGateAction").click();
+  await chrome.element("loadNoticeAction").click();
   await flushPromises();
   assert.equal(chrome.reloadCount(), 1);
 });
@@ -2861,7 +2830,7 @@ test("a load that asks for the artifact again gets the whole recovery backoff ag
     await exhaustOneBeginLoadAttempt(chrome);
   }
   assert.equal(chrome.artifactBeginRequests.length, 15);
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish could not load this artifact.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat could not load this artifact.");
 
   // A fresh attempt whose own begin fails must schedule the backoff again instead of giving up.
   chrome.element("reloadArtifact").click();
@@ -2873,7 +2842,7 @@ test("a load that asks for the artifact again gets the whole recovery backoff ag
   await flushPromises();
   assert.equal(chrome.artifactBeginRequests.length, 19);
   assert.match(chrome.frame.src, /artifact_load_token=/);
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Opening the page.");
+  assert.equal(chrome.element("loadNotice").hidden, true, "a load that gets going retires the notice");
 });
 
 test("empty Send names this tab's queue without importing another window's answers", async () => {
@@ -2886,7 +2855,7 @@ test("empty Send names this tab's queue without importing another window's answe
   };
   const first = await createChromeHarness({ storage: firstStorage, fetchImpl });
   first.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Keep my answer", selector: "#answer", tag: "input", text: "Answer" },
   });
   const savedQueue = firstStorage.get("textcast-chat-axi:queued:abc");
@@ -2902,7 +2871,7 @@ test("empty Send names this tab's queue without importing another window's answe
   await flushPromises();
   assert.equal(second.element("sendHint").hidden, false);
   assert.equal(second.element("sendHint").textContent, `Nothing queued in this tab. ${UNSENT_OWNERSHIP_COPY}`);
-  assert.equal(second.element("layoutGateCopy").textContent, UNSENT_OWNERSHIP_COPY);
+  assert.equal(second.element("loadNoticeCopy").textContent, UNSENT_OWNERSHIP_COPY);
   assert.equal(second.queued().length, 0);
   assert.equal(first.queued().length, 1);
   assert.equal(firstStorage.get("textcast-chat-axi:queued:abc"), savedQueue);
@@ -2937,7 +2906,7 @@ test("a superseded reviewer is not retried in the background", async () => {
   assert.equal(chrome.artifactBeginRequests.length, 1);
 });
 
-test("a superseded first load names itself on the layout gate instead of holding the spinner", async () => {
+test("a superseded first load names itself on the load notice instead of an empty page", async () => {
   const chrome = await createChromeHarness({
     artifactSrc: "/artifact/abc/index.html",
     sessionData: { ...defaultSessionData, chromeLoadToken: "old-handoff" },
@@ -2946,15 +2915,15 @@ test("a superseded first load names itself on the layout gate instead of holding
   await flushPromises();
   await flushPromises();
 
-  // Nothing ever reached the frame, and the takeover banner is covered by the gate overlay, so
-  // the overlay itself has to carry the message and the control.
+  // Nothing ever reached the frame, and the takeover banner sits in a panel that may be minimized,
+  // so the notice has to carry the message and the control.
   assert.equal(chrome.element("artifact").src, "");
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-  assert.match(chrome.element("layoutGateTitle").textContent, /already open in another tab/);
-  assert.equal(chrome.element("layoutGateCopy").textContent, UNSENT_OWNERSHIP_COPY);
-  assert.equal(chrome.element("layoutGateAction").textContent, "Take over here");
+  assert.equal(chrome.element("loadNotice").hidden, false);
+  assert.match(chrome.element("loadNoticeTitle").textContent, /already open in another tab/);
+  assert.equal(chrome.element("loadNoticeCopy").textContent, UNSENT_OWNERSHIP_COPY);
+  assert.equal(chrome.element("loadNoticeAction").textContent, "Take over here");
   assert.equal(chrome.reloadCount(), 0, "the warning appears before any takeover");
-  chrome.element("layoutGateAction").click();
+  chrome.element("loadNoticeAction").click();
   assert.equal(chrome.reloadCount(), 1);
   // Taking over is the user's action; nothing may retry in the background against the tab that
   // currently owns the artifact.
@@ -2963,7 +2932,7 @@ test("a superseded first load names itself on the layout gate instead of holding
   assert.equal(chrome.artifactBeginRequests.length, 1);
 });
 
-test("a superseded reload keeps the artifact already on screen and leaves the gate down", async () => {
+test("a superseded reload keeps the artifact already on screen and raises no notice", async () => {
   const chrome = await createChromeHarness({
     artifactSrc: "/artifact/abc/index.html",
     sessionData: {
@@ -2980,7 +2949,7 @@ test("a superseded reload keeps the artifact already on screen and leaves the ga
   // A usable review must never be replaced by the takeover card - the banner in the panel is
   // enough once there is something to read behind it.
   assert.equal(chrome.element("handoffBanner").hidden, false);
-  assert.notEqual(chrome.element("layoutGateTitle").textContent, "This review is already open in another tab.");
+  assert.equal(chrome.element("loadNotice").hidden, true);
 });
 
 test("a chrome told to reload after a server restart waits for the replacement to answer", async () => {
@@ -3033,9 +3002,9 @@ test("a chrome whose replacement server never returns says so instead of reloadi
   }
 
   assert.equal(chrome.reloadCount(), 0);
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
-  assert.equal(chrome.element("layoutGateAction").textContent, "Check and reload");
+  assert.equal(chrome.element("loadNotice").hidden, false);
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
+  assert.equal(chrome.element("loadNoticeAction").textContent, "Check and reload");
 });
 
 // A hidden tab has its timers clamped to seconds or minutes, so the wait can end on a single
@@ -3066,7 +3035,7 @@ test("a chrome confirms the server is gone before saying it never came back", as
   }
 
   assert.equal(chrome.reloadCount(), 1);
-  assert.notEqual(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.notEqual(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
 });
 
 test("the not-running card reloads only once the server answers again", async () => {
@@ -3090,18 +3059,18 @@ test("the not-running card reloads only once the server answers again", async ()
     chrome.runTimers(100);
     await flushPromises();
   }
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
 
   // Clicking while nothing is listening must not navigate into the dead port - that is the
   // browser connection-error page this whole path exists to avoid.
-  await chrome.element("layoutGateAction").click();
+  await chrome.element("loadNoticeAction").click();
   await flushPromises();
   assert.equal(chrome.reloadCount(), 0);
-  assert.match(chrome.element("layoutGateCopy").textContent, /still not running/);
-  assert.equal(chrome.element("layoutGateAction").disabled, false);
+  assert.match(chrome.element("loadNoticeCopy").textContent, /still not running/);
+  assert.equal(chrome.element("loadNoticeAction").disabled, false);
 
   healthy = true;
-  await chrome.element("layoutGateAction").click();
+  await chrome.element("loadNoticeAction").click();
   await flushPromises();
   assert.equal(chrome.reloadCount(), 1);
 });
@@ -3135,7 +3104,7 @@ test("a chrome re-checks a stale healthy probe before reloading", async () => {
   }
 
   assert.equal(chrome.reloadCount(), 0, "never reload into a port nothing is listening on");
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
 });
 
 test("the not-running card survives a later successful artifact load", async () => {
@@ -3159,7 +3128,7 @@ test("the not-running card survives a later successful artifact load", async () 
     chrome.runTimers(100);
     await flushPromises();
   }
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
 
   // The replacement server binds and serves this artifact again. The page is still running the
   // pre-upgrade client, so the card the user was told to act on must stay up.
@@ -3169,91 +3138,25 @@ test("the not-running card survives a later successful artifact load", async () 
   await flushPromises();
 
   assert.match(chrome.frame.src, /artifact_load_token=/, "the artifact still reloads");
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
-  assert.match(chrome.element("layoutGateCopy").textContent, /did not come back/);
-  assert.equal(chrome.element("layoutGateAction").textContent, "Check and reload");
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
+  assert.match(chrome.element("loadNoticeCopy").textContent, /did not come back/);
+  assert.equal(chrome.element("loadNoticeAction").textContent, "Check and reload");
+  assert.equal(chrome.element("loadNotice").hidden, false);
 
-  // A ready report from the replacement server must release the visual gate even
-  // while the sticky card copy remains in state. The card is not allowed to trap the artifact.
+  // A ready report from the replacement server does not retire it either; only the user does.
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:ready",
+    type: "textcast:ready",
   });
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.equal(chrome.element("loadNotice").hidden, false);
+  chrome.element("loadNoticeDismiss").click();
+  assert.equal(chrome.element("loadNotice").hidden, true);
 
+  // Once dismissed, an ordinary failure may speak again.
   chrome.eventSource().listeners.get("reload")();
   await flushPromises();
   await flushPromises();
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-  assert.equal(chrome.element("layoutGateBypass").hidden, false);
-  chrome.element("layoutGateBypass").click();
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-});
-
-test("a sticky failure cannot outlive the layout gate timeout", async () => {
-  const chrome = await createChromeHarness({
-    artifactSrc: "/artifact/abc/index.html",
-    fakeClock: true,
-    fetchImpl: async (url) => {
-      if (String(url) === "/health") throw new Error("connection refused");
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.eventSource().listeners.get("chrome-reload")();
-  await flushPromises();
-  chrome.advanceClock(61000);
-  for (let i = 0; i < 3; i += 1) {
-    chrome.runTimers(100);
-    await flushPromises();
-  }
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-
-  // setLayoutGateFailure() is sticky here; its hold timer must still release the visual gate.
-  chrome.runTimers(12000);
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-});
-
-test("a sticky failure reveals by ready report, manual bypass, or timeout", async () => {
-  async function createFailedChrome() {
-    const chrome = await createChromeHarness({
-      artifactSrc: "/artifact/abc/index.html",
-      fakeClock: true,
-      fetchImpl: async (url) => {
-        if (String(url) === "/health") throw new Error("connection refused");
-        return { ok: true, json: async () => ({}) };
-      },
-    });
-
-    chrome.eventSource().listeners.get("chrome-reload")();
-    await flushPromises();
-    chrome.advanceClock(61000);
-    for (let i = 0; i < 3; i += 1) {
-      chrome.runTimers(100);
-      await flushPromises();
-    }
-    assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
-    assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-    return chrome;
-  }
-
-  const completed = await createFailedChrome();
-  completed.sendFrameMessage({
-    artifact_load_token: completed.artifactLoadToken(),
-    type: "lavish:ready",
-  });
-  assert.equal(completed.element("layoutGateOverlay").hidden, true);
-
-  const bypassed = await createFailedChrome();
-  bypassed.element("layoutGateBypass").click();
-  assert.equal(bypassed.element("layoutGateOverlay").hidden, true);
-
-  const timedOut = await createFailedChrome();
-  timedOut.runTimers(12000);
-  assert.equal(timedOut.element("layoutGateOverlay").hidden, true);
+  assert.equal(chrome.element("loadNotice").hidden, true);
 });
 
 test("a ready report lost to a token race requests a fresh report", async () => {
@@ -3262,9 +3165,9 @@ test("a ready report lost to a token race requests a fresh report", async () => 
 
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:ready",
+    type: "textcast:ready",
   });
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:requestReady");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:requestReady");
 });
 
 function sendChromeOutdated(chrome, reason) {
@@ -3277,12 +3180,12 @@ test("an outdated chrome shows a dismissible banner and never reloads itself", a
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
 
   assert.equal(chrome.element("outdatedBanner").hidden, true);
-  const gateBefore = chrome.element("layoutGateOverlay").hidden;
+  const gateBefore = chrome.element("loadNotice").hidden;
   sendChromeOutdated(chrome, "upgrade");
   await flushPromises();
 
   assert.equal(chrome.element("outdatedBanner").hidden, false);
-  assert.equal(chrome.element("layoutGateOverlay").hidden, gateBefore, "the banner never covers the artifact");
+  assert.equal(chrome.element("loadNotice").hidden, gateBefore, "the banner never covers the artifact");
   assert.equal(chrome.element("chatInput").disabled, false, "an outdated page can still write feedback");
   chrome.runTimers();
   await flushPromises();
@@ -3305,11 +3208,14 @@ test("the outdated banner says what actually happened to the server", async () =
   sendChromeOutdated(chrome, "upgrade");
   assert.equal(
     chrome.element("outdatedText").textContent,
-    "Lavish was updated. This page is running the previous version.",
+    "Textcast Chat was updated. This page is running the previous version.",
   );
 
   sendChromeOutdated(chrome, "stop");
-  assert.equal(chrome.element("outdatedText").textContent, "Lavish was stopped. Reload after you start it again.");
+  assert.equal(
+    chrome.element("outdatedText").textContent,
+    "Textcast Chat was stopped. Reload after you start it again.",
+  );
 
   sendChromeOutdated(chrome, "local-build");
   const localBuild = chrome.element("outdatedText").textContent;
@@ -3429,7 +3335,7 @@ test("a restart wait whose port never answers still reaches the not-running card
   }
 
   assert.equal(chrome.reloadCount(), 0);
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
 });
 
 // A probe can take until its timeout, and by then the overlay may have moved on to a different
@@ -3450,24 +3356,25 @@ test("a slow probe does not write its failure copy over a card that moved on", a
     chrome.runTimers(delay);
     await exhaustOneBeginLoadAttempt(chrome);
   }
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish could not load this artifact.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat could not load this artifact.");
 
-  chrome.element("layoutGateAction").click();
+  chrome.element("loadNoticeAction").click();
   await flushPromises();
 
-  // The artifact loads while the probe is still out, so the gate is back on its checking card.
+  // The artifact loads while the probe is still out, so the notice is retired.
   chrome.eventSource().listeners.get("reload")();
   await flushPromises();
   await flushPromises();
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Opening the page.");
-  const checkingCopy = chrome.element("layoutGateCopy").textContent;
+  assert.equal(chrome.element("loadNotice").hidden, true);
+  const retiredCopy = chrome.element("loadNoticeCopy").textContent;
 
   chrome.runTimers(4000);
   await flushPromises();
   await flushPromises();
 
-  assert.equal(chrome.element("layoutGateCopy").textContent, checkingCopy);
-  assert.equal(chrome.element("layoutGateAction").disabled, false, "the control still comes back");
+  assert.equal(chrome.element("loadNoticeCopy").textContent, retiredCopy);
+  assert.equal(chrome.element("loadNotice").hidden, true);
+  assert.equal(chrome.element("loadNoticeAction").disabled, false, "the control still comes back");
 });
 
 test("a slow probe does not write its failure copy over a newer banner", async () => {
@@ -3505,22 +3412,22 @@ test("a health check that never answers hands the failure card's button back", a
     chrome.runTimers(delay);
     await exhaustOneBeginLoadAttempt(chrome);
   }
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish could not load this artifact.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat could not load this artifact.");
 
-  chrome.element("layoutGateAction").click();
+  chrome.element("loadNoticeAction").click();
   await flushPromises();
-  assert.equal(chrome.element("layoutGateAction").disabled, true);
+  assert.equal(chrome.element("loadNoticeAction").disabled, true);
 
   chrome.runTimers(4000);
   await flushPromises();
   await flushPromises();
 
   assert.equal(chrome.reloadCount(), 0);
-  assert.equal(chrome.element("layoutGateAction").disabled, false);
-  assert.match(chrome.element("layoutGateCopy").textContent, /did not answer/);
+  assert.equal(chrome.element("loadNoticeAction").disabled, false);
+  assert.match(chrome.element("loadNoticeCopy").textContent, /did not answer/);
 
   health.answer();
-  await chrome.element("layoutGateAction").click();
+  await chrome.element("loadNoticeAction").click();
   await flushPromises();
   assert.equal(chrome.reloadCount(), 1);
 });
@@ -3547,7 +3454,7 @@ test("an ordinary load failure cannot replace the not-running card", async () =>
     chrome.runTimers(100);
     await flushPromises();
   }
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
 
   // The replacement binds late; a live reload then fails its begin-loads for the whole backoff.
   chrome.eventSource().listeners.get("reload")();
@@ -3557,8 +3464,8 @@ test("an ordinary load failure cannot replace the not-running card", async () =>
     await exhaustOneBeginLoadAttempt(chrome);
   }
 
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
-  assert.match(chrome.element("layoutGateCopy").textContent, /did not come back/);
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
+  assert.match(chrome.element("loadNoticeCopy").textContent, /did not come back/);
 });
 
 // Drives one live-reload, which the harness answers with a fresh artifact revision and token.
@@ -3573,7 +3480,7 @@ async function loadNextArtifactRevision(chrome) {
 function reportDraft(chrome, selector, text) {
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: { selector, text }, fields: [] },
   });
 }
@@ -3581,7 +3488,7 @@ function reportDraft(chrome, selector, text) {
 function reportUnrestorable(chrome, selector) {
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:reviewDraftUnrestorable",
+    type: "textcast:reviewDraftUnrestorable",
     selector,
   });
 }
@@ -3596,7 +3503,7 @@ function retiredDraftNotes(chrome) {
 
 async function restoredDraft(storage) {
   const next = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html", storage });
-  return next.postedToFrame.filter((message) => message.type === "lavish:restoreReviewState");
+  return next.postedToFrame.filter((message) => message.type === "textcast:restoreReviewState");
 }
 
 // A draft whose anchor the agent removed can never be replayed, so it must not be retried against
@@ -3618,7 +3525,7 @@ test("a draft the artifact can no longer anchor is retired after a second revisi
   await flushPromises();
 
   assert.deepEqual(await restoredDraft(storage), []);
-  // Retiring ends Lavish's ability to replay the note, so the text is handed back where the user
+  // Retiring ends Textcast Chat's ability to replay the note, so the text is handed back where the user
   // can read and copy it instead of disappearing.
   assert.equal(retiredDraftNotes(chrome).length, 1);
   assert.match(retiredDraftNotes(chrome)[0].innerHTML, /needs a shorter headline/);
@@ -3667,27 +3574,27 @@ test("a probe that never answers leaves the not-running card's title and body ag
     chrome.runTimers(4000);
     await flushPromises();
   }
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
 
-  chrome.element("layoutGateAction").click();
+  chrome.element("loadNoticeAction").click();
   await flushPromises();
   chrome.runTimers(4000);
   await flushPromises();
   await flushPromises();
 
-  const title = chrome.element("layoutGateTitle").textContent;
-  const copy = chrome.element("layoutGateCopy").textContent;
+  const title = chrome.element("loadNoticeTitle").textContent;
+  const copy = chrome.element("loadNoticeCopy").textContent;
   assert.match(copy, /did not answer/);
   assert.match(title, /did not answer/);
   assert.doesNotMatch(title, /is not running/);
 
   // A probe that does answer puts the card's own definite title back.
   health.answerRefused();
-  chrome.element("layoutGateAction").click();
+  chrome.element("loadNoticeAction").click();
   await flushPromises();
   await flushPromises();
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish is not running.");
-  assert.match(chrome.element("layoutGateCopy").textContent, /still not running/);
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat is not running.");
+  assert.match(chrome.element("loadNoticeCopy").textContent, /still not running/);
 });
 
 // The handback is the one thing in this panel the user cannot recover anywhere else, so a chat
@@ -3815,20 +3722,20 @@ test("an unrestorable report for a different anchor leaves the stored draft alon
 
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
   await flushPromises();
 
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:reviewDraftUnrestorable",
+    type: "textcast:reviewDraftUnrestorable",
     selector: "#footer",
   });
   await flushPromises();
 
   const next = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html", storage });
-  const restored = next.postedToFrame.filter((message) => message.type === "lavish:restoreReviewState");
+  const restored = next.postedToFrame.filter((message) => message.type === "textcast:restoreReviewState");
   assert.equal(restored.length, 1);
   assert.equal(restored[0].state.card.text, "needs a shorter headline");
 });
@@ -3853,7 +3760,7 @@ async function restartWithUnsentDraft(reason) {
 
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
   await flushPromises();
@@ -3881,7 +3788,7 @@ test("a restart reload with an unsent draft offers the banner instead of reloadi
   assert.equal(chrome.element("outdatedBanner").hidden, false);
   assert.equal(
     chrome.element("outdatedText").textContent,
-    "Lavish was updated. This page is running the previous version.",
+    "Textcast Chat was updated. This page is running the previous version.",
   );
 });
 
@@ -3907,14 +3814,14 @@ test("an unsent annotation draft survives a full page reload", async () => {
 
   first.sendFrameMessage({
     artifact_load_token: first.artifactLoadToken(),
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
   await flushPromises();
 
   // The page is torn down and booted again in the same tab, which is what a reload is.
   const second = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html", storage });
-  const restored = second.postedToFrame.filter((message) => message.type === "lavish:restoreReviewState");
+  const restored = second.postedToFrame.filter((message) => message.type === "textcast:restoreReviewState");
   assert.equal(restored.length, 1, "the reloaded chrome replays the draft into the new document");
   assert.equal(restored[0].state.card.text, "needs a shorter headline");
   assert.equal(restored[0].state.card.selector, "#hero");
@@ -3926,21 +3833,21 @@ test("a queued or cancelled card leaves no draft behind for the next page load",
 
   first.sendFrameMessage({
     artifact_load_token: first.artifactLoadToken(),
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
   await flushPromises();
   // Queuing or cancelling the card makes the SDK report a card-less state.
   first.sendFrameMessage({
     artifact_load_token: first.artifactLoadToken(),
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: null, fields: [] },
   });
   await flushPromises();
 
   const second = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html", storage });
   assert.deepEqual(
-    second.postedToFrame.filter((message) => message.type === "lavish:restoreReviewState"),
+    second.postedToFrame.filter((message) => message.type === "textcast:restoreReviewState"),
     [],
   );
 });
@@ -3951,7 +3858,7 @@ test("a draft never leaks from one artifact into another", async () => {
 
   first.sendFrameMessage({
     artifact_load_token: first.artifactLoadToken(),
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: { selector: "#hero", text: "needs a shorter headline" }, fields: [] },
   });
   await flushPromises();
@@ -3962,7 +3869,7 @@ test("a draft never leaks from one artifact into another", async () => {
     storage,
   });
   assert.deepEqual(
-    other.postedToFrame.filter((message) => message.type === "lavish:restoreReviewState"),
+    other.postedToFrame.filter((message) => message.type === "textcast:restoreReviewState"),
     [],
   );
 });
@@ -3982,7 +3889,7 @@ test("a current load token accepts artifact messages before the frame load event
   const currentToken = chrome.artifactLoadToken();
   chrome.sendFrameMessage({
     artifact_load_token: currentToken,
-    type: "lavish:artifactAssetFailure",
+    type: "textcast:artifactAssetFailure",
     detail: "current asset before load",
   });
   await flushPromises();
@@ -4005,7 +3912,7 @@ test("a pre-load ready report silences the artifact probe", async () => {
   await flushPromises();
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:ready",
+    type: "textcast:ready",
   });
   await flushPromises();
   chrome.frame.dispatch("load");
@@ -4032,13 +3939,13 @@ test("stale artifact messages are ignored until the current frame load", async (
   await flushPromises();
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:reviewState",
+    type: "textcast:reviewState",
     state: { card: { selector: "h1", text: "stale" } },
   });
-  chrome.sendFrameMessage({ artifact_load_token: oldToken, type: "lavish:scroll", x: 8, y: 44 });
+  chrome.sendFrameMessage({ artifact_load_token: oldToken, type: "textcast:scroll", x: 8, y: 44 });
   chrome.sendFrameMessage({
     artifact_load_token: oldToken,
-    type: "lavish:artifactAssetFailure",
+    type: "textcast:artifactAssetFailure",
     detail: "stale asset",
   });
   await flushPromises();
@@ -4049,16 +3956,16 @@ test("stale artifact messages are ignored until the current frame load", async (
   );
   chrome.frame.dispatch("load");
   assert.equal(
-    chrome.postedToFrame.some((message) => message.type === "lavish:restoreReviewState"),
+    chrome.postedToFrame.some((message) => message.type === "textcast:restoreReviewState"),
     false,
   );
-  const restoredScroll = chrome.postedToFrame.filter((message) => message.type === "lavish:restoreScroll").at(-1);
+  const restoredScroll = chrome.postedToFrame.filter((message) => message.type === "textcast:restoreScroll").at(-1);
   assert.equal(restoredScroll.x, 0);
   assert.equal(restoredScroll.y, 0);
 
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:artifactAssetFailure",
+    type: "textcast:artifactAssetFailure",
     detail: "current asset",
   });
   await flushPromises();
@@ -4101,25 +4008,6 @@ test("a stale artifact probe cannot report failure after a reload", async () => 
   );
 });
 
-test("layout gate manual override reveals immediately", async () => {
-  const chrome = await createChromeHarness();
-
-  chrome.element("layoutGateAction").onclick();
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-});
-
-test("layout gate manual override stays bypassed on reload", async () => {
-  const chrome = await createChromeHarness();
-
-  chrome.element("layoutGateAction").onclick();
-  chrome.eventSource().listeners.get("reload")();
-
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("body").classList.contains("layout-gate-active"), false);
-});
-
 test("chrome client strips the internal queue key before posting prompts", async () => {
   const posts = [];
   const chrome = await createChromeHarness({
@@ -4130,11 +4018,17 @@ test("chrome client strips the internal queue key before posting prompts", async
   });
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
-    prompt: { prompt: "Use plan B", selector: "input#plan-b", tag: "choice", text: "Plan B", _lavishQueueKey: "plan" },
+    type: "textcast:queuePrompt",
+    prompt: {
+      prompt: "Use plan B",
+      selector: "input#plan-b",
+      tag: "choice",
+      text: "Plan B",
+      _textcastQueueKey: "plan",
+    },
   });
   chrome.element("send").onclick();
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:requestSnapshot");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:requestSnapshot");
 
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
@@ -4160,11 +4054,11 @@ test("chrome client sends queued prompts while the agent is working", async () =
 
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "working" }) });
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Follow up", selector: "button#follow-up", tag: "choice", text: "Follow up" },
   });
   chrome.element("send").onclick();
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:requestSnapshot");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:requestSnapshot");
 
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
@@ -4195,7 +4089,7 @@ test("a send acknowledgement does not finish the round before late feedback deli
 
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Late feedback matters", selector: "h1", tag: "message", text: "Late feedback matters" },
   });
   chrome.element("send").onclick();
@@ -4228,7 +4122,7 @@ test("send controls stay enabled while the agent works and lock only once the se
   assert.equal(chrome.element("sendAndEnd").disabled, false);
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" },
   });
   chrome.element("sendAndEnd").onclick();
@@ -4250,11 +4144,11 @@ test("chrome send and end carries the end intent with queued prompts", async () 
   });
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" },
   });
   chrome.element("sendAndEnd").onclick();
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:requestSnapshot");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:requestSnapshot");
 
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
@@ -4375,7 +4269,7 @@ test("chrome send and end during an in-flight submit still ends after the submit
   });
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" },
   });
   chrome.element("send").onclick();
@@ -4435,7 +4329,7 @@ test("a queued Send refused because the session already ended marks the chrome r
   });
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Too late", selector: "button#ship", tag: "choice", text: "Ship" },
   });
   chrome.element("send").onclick();
@@ -4455,13 +4349,13 @@ for (const enabled of [true, false]) {
       const chrome = await createChromeHarness();
       if (loadFirst) chrome.frame.dispatch("load");
       chrome.sendFrameMessage({
-        type: "lavish:annotationMode",
+        type: "textcast:annotationMode",
         artifact_load_token: chrome.artifactLoadToken(),
         enabled,
       });
       if (!loadFirst) chrome.frame.dispatch("load");
       assert.equal(chrome.element("annotation")["aria-pressed"], String(enabled));
-      const mode = chrome.postedToFrame.filter((message) => message.type === "lavish:setAnnotationMode").at(-1);
+      const mode = chrome.postedToFrame.filter((message) => message.type === "textcast:setAnnotationMode").at(-1);
       assert.equal(mode.enabled, enabled);
       chrome.element("annotation").click();
       assert.equal(chrome.element("annotation")["aria-pressed"], String(!enabled));
@@ -4474,7 +4368,7 @@ test("page annotation defaults follow reloads until the reviewer uses the toolba
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
   await flushPromises();
   const report = (enabled, token = chrome.artifactLoadToken()) =>
-    chrome.sendFrameMessage({ type: "lavish:annotationMode", artifact_load_token: token, enabled });
+    chrome.sendFrameMessage({ type: "textcast:annotationMode", artifact_load_token: token, enabled });
   report(false);
   assert.equal(chrome.element("annotation")["aria-pressed"], "false");
   report(true);
@@ -4501,7 +4395,7 @@ test("a late initial annotation report cannot undo a toolbar choice", async () =
   const chrome = await createChromeHarness();
   chrome.element("annotation").click();
   chrome.sendFrameMessage({
-    type: "lavish:annotationMode",
+    type: "textcast:annotationMode",
     artifact_load_token: chrome.artifactLoadToken(),
     enabled: true,
   });
@@ -4512,15 +4406,15 @@ test("a late initial annotation report cannot undo a toolbar choice", async () =
 test("initial annotation reports reject stale tokens and non-boolean modes", async () => {
   const chrome = await createChromeHarness();
   const before = chrome.postedToFrame.length;
-  chrome.sendFrameMessage({ type: "lavish:annotationMode", artifact_load_token: "old-load", enabled: false });
+  chrome.sendFrameMessage({ type: "textcast:annotationMode", artifact_load_token: "old-load", enabled: false });
   chrome.sendFrameMessage({
-    type: "lavish:annotationMode",
+    type: "textcast:annotationMode",
     artifact_load_token: chrome.artifactLoadToken(),
     enabled: "off",
   });
   assert.equal(chrome.postedToFrame.length, before);
   chrome.sendFrameMessage({
-    type: "lavish:annotationMode",
+    type: "textcast:annotationMode",
     artifact_load_token: chrome.artifactLoadToken(),
     enabled: false,
   });
@@ -4530,7 +4424,7 @@ test("initial annotation reports reject stale tokens and non-boolean modes", asy
 test("an ended session never enables annotation from the page default", async () => {
   const chrome = await createChromeHarness({ sessionData: { ...defaultSessionData, initialEnded: true } });
   chrome.sendFrameMessage({
-    type: "lavish:annotationMode",
+    type: "textcast:annotationMode",
     artifact_load_token: chrome.artifactLoadToken(),
     enabled: true,
   });
@@ -4543,13 +4437,13 @@ test("Cmd/Ctrl+I toggles annotation mode from the chrome document, regardless of
   const metaEvent = chrome.dispatchDocumentKeydown({ key: "i", metaKey: true });
   assert.equal(metaEvent.defaultPrevented, true);
   assert.equal(chrome.element("annotation")["aria-pressed"], "false");
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:setAnnotationMode");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:setAnnotationMode");
   assert.equal(chrome.postedToFrame.at(-1).enabled, false);
 
   const ctrlEvent = chrome.dispatchDocumentKeydown({ key: "I", ctrlKey: true });
   assert.equal(ctrlEvent.defaultPrevented, true);
   assert.equal(chrome.element("annotation")["aria-pressed"], "true");
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:setAnnotationMode");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:setAnnotationMode");
   assert.equal(chrome.postedToFrame.at(-1).enabled, true);
 });
 
@@ -4589,22 +4483,22 @@ test("chrome client reads the mode toggle hotkey from the session bootstrap", as
   const bootstrapHotkeyEvent = chrome.dispatchDocumentKeydown({ key: "K", metaKey: true });
   assert.equal(bootstrapHotkeyEvent.defaultPrevented, true);
   assert.equal(chrome.element("annotation")["aria-pressed"], "false");
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:setAnnotationMode");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:setAnnotationMode");
   assert.equal(chrome.postedToFrame.at(-1).enabled, false);
 });
 
 test("chrome client toggles annotation mode when the artifact SDK requests it via postMessage", async () => {
   const chrome = await createChromeHarness();
 
-  chrome.sendFrameMessage({ type: "lavish:toggleAnnotationMode" });
+  chrome.sendFrameMessage({ type: "textcast:toggleAnnotationMode" });
 
   assert.equal(chrome.element("annotation")["aria-pressed"], "false");
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:setAnnotationMode");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:setAnnotationMode");
   assert.equal(chrome.postedToFrame.at(-1).enabled, false);
 
-  chrome.sendFrameMessage({ type: "lavish:toggleAnnotationMode" });
+  chrome.sendFrameMessage({ type: "textcast:toggleAnnotationMode" });
   assert.equal(chrome.element("annotation")["aria-pressed"], "true");
-  assert.equal(chrome.postedToFrame.at(-1).type, "lavish:setAnnotationMode");
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:setAnnotationMode");
   assert.equal(chrome.postedToFrame.at(-1).enabled, true);
 });
 
@@ -4614,12 +4508,12 @@ test("chrome client ignores annotation mode toggles after the session ends", asy
   chrome.dispatchDocumentKeydown({ key: "i", metaKey: true });
   assert.equal(chrome.element("annotation")["aria-pressed"], "false");
 
-  chrome.sendFrameMessage({ type: "lavish:endSession" });
+  chrome.sendFrameMessage({ type: "textcast:endSession" });
   await flushPromises();
   const afterEndPostCount = chrome.postedToFrame.length;
 
   chrome.dispatchDocumentKeydown({ key: "i", metaKey: true });
-  chrome.sendFrameMessage({ type: "lavish:toggleAnnotationMode" });
+  chrome.sendFrameMessage({ type: "textcast:toggleAnnotationMode" });
 
   assert.equal(chrome.element("annotation")["aria-pressed"], "false");
   assert.equal(chrome.postedToFrame.length, afterEndPostCount);
@@ -4660,7 +4554,7 @@ test("an artifact that reports ready is never probed as unavailable", async () =
   chrome.element("artifact").dispatch("load");
   chrome.sendFrameMessage({
     artifact_load_token: chrome.artifactLoadToken(),
-    type: "lavish:ready",
+    type: "textcast:ready",
   });
   await flushPromises();
   chrome.runTimers(8000);
@@ -4687,7 +4581,7 @@ test("a local asset failure inside the artifact is reported as a fatal artifact 
   });
 
   chrome.sendFrameMessage({
-    type: "lavish:artifactAssetFailure",
+    type: "textcast:artifactAssetFailure",
     detail: "<img> could not load /artifact/abc/logo.png",
   });
   await flushPromises();
@@ -4708,7 +4602,7 @@ test("chrome uploads captured attachment bytes and reports the server id to the 
 
   const bytes = new Uint8Array([1, 2, 3]).buffer;
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     localId: "att-1",
     name: "mock.png",
     mime: "image/png",
@@ -4721,7 +4615,7 @@ test("chrome uploads captured attachment bytes and reports the server id to the 
   assert.equal(requests[0].options.headers["content-type"], "image/png");
   assert.equal(requests[0].options.body, bytes);
   const result = chrome.postedToFrame.at(-1);
-  assert.equal(result.type, "lavish:attachmentResult");
+  assert.equal(result.type, "textcast:attachmentResult");
   assert.equal(result.localId, "att-1");
   assert.equal(result.ok, true);
   assert.equal(result.id, "a".repeat(64) + ".png");
@@ -4732,7 +4626,7 @@ test("chrome reports an upload failure back to the card", async () => {
     fetchImpl: async () => ({ ok: false, json: async () => ({ error: "unsupported image type" }) }),
   });
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     localId: "att-9",
     name: "bad.svg",
     mime: "image/svg+xml",
@@ -4740,7 +4634,7 @@ test("chrome reports an upload failure back to the card", async () => {
   });
   await flushPromises();
   const result = chrome.postedToFrame.at(-1);
-  assert.equal(result.type, "lavish:attachmentResult");
+  assert.equal(result.type, "textcast:attachmentResult");
   assert.equal(result.localId, "att-9");
   assert.equal(result.ok, false);
   assert.equal(result.error, "unsupported image type");
@@ -4755,7 +4649,7 @@ test("chrome renders queued-prompt attachment thumbnails from the server endpoin
   const chrome = await createChromeHarness();
   const id = "a".repeat(64) + ".png";
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "", selector: "h1", tag: "annotation", text: "", attachments: [{ id, name: "mock.png" }] },
   });
   const html = chrome.element("queuedLog").innerHTML;
@@ -4766,13 +4660,13 @@ test("chrome renders queued-prompt attachment thumbnails from the server endpoin
 });
 
 test("a queued prompt over the thumbnail limit shows the hidden images as a +N badge (W-A)", async () => {
-  // LAVISH_AXI_MAX_ATTACHMENTS_PER_PROMPT is configurable, so a prompt can legitimately
+  // TEXTCAST_CHAT_AXI_MAX_ATTACHMENTS_PER_PROMPT is configurable, so a prompt can legitimately
   // carry more images than the compact bubble can show. The overflow must be counted, not
   // silently dropped - otherwise the queue looks like it lost the extra attachments.
   const chrome = await createChromeHarness();
   const attachments = Array.from({ length: 7 }, (_, i) => ({ id: String(i).repeat(64) + ".png", name: `i${i}.png` }));
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "seven", selector: "h1", tag: "annotation", text: "", attachments },
   });
   const html = chrome.element("queuedLog").innerHTML;
@@ -4785,7 +4679,7 @@ test("a queued prompt at or under the thumbnail limit shows no +N badge (W-A)", 
   const chrome = await createChromeHarness();
   const attachments = Array.from({ length: 4 }, (_, i) => ({ id: String(i).repeat(64) + ".png", name: `i${i}.png` }));
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "four", selector: "h1", tag: "annotation", text: "", attachments },
   });
   const html = chrome.element("queuedLog").innerHTML;
@@ -4797,7 +4691,7 @@ test("the +N badge stays singular for a single hidden image (W-A)", async () => 
   const chrome = await createChromeHarness();
   const attachments = Array.from({ length: 5 }, (_, i) => ({ id: String(i).repeat(64) + ".png", name: `i${i}.png` }));
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "five", selector: "h1", tag: "annotation", text: "", attachments },
   });
   assert.match(chrome.element("queuedLog").innerHTML, /title="1 more image"/);
@@ -4814,7 +4708,7 @@ test("chrome rejects an over-cap image before it hits the network", async () => 
   });
   const bytes = new Uint8Array([1, 2, 3, 4, 5, 6]).buffer; // 6 bytes > 4-byte cap
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     localId: "att-x",
     name: "big.png",
     mime: "image/png",
@@ -4823,7 +4717,7 @@ test("chrome rejects an over-cap image before it hits the network", async () => 
   await flushPromises();
   assert.equal(requests.length, 0, "an over-cap image must not be uploaded");
   const result = chrome.postedToFrame.at(-1);
-  assert.equal(result.type, "lavish:attachmentResult");
+  assert.equal(result.type, "textcast:attachmentResult");
   assert.equal(result.localId, "att-x");
   assert.equal(result.ok, false);
   assert.match(result.error, /larger than/);
@@ -4837,7 +4731,7 @@ test("a poisoned attachments array cannot wedge the queue or the tab (E5)", asyn
   // the render, so the poison survives in sessionStorage and re-throws on every
   // reload, wedging the tab for good.
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "poison", selector: "h1", tag: "annotation", text: "", attachments: [null] },
   });
 
@@ -4850,7 +4744,7 @@ test("only well-formed attachment refs survive the enqueue path (E5)", async () 
   const good = "a".repeat(64) + ".png";
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: {
       prompt: "mixed",
       selector: "h1",
@@ -4870,7 +4764,7 @@ test("a non-array attachments field cannot wedge the queue (E5)", async () => {
   const chrome = await createChromeHarness();
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "bad", selector: "h1", tag: "annotation", text: "", attachments: "not-an-array" },
   });
 
@@ -4901,7 +4795,7 @@ test("the chrome never honors an attachment delete driven by the artifact iframe
   // not yet queued in ANOTHER tab. Honoring this delete lets one tab (or a
   // malicious artifact) destroy bytes another live card still needs, which then
   // fails as not-found on send. Reclamation belongs to the reference-aware sweeper.
-  chrome.sendFrameMessage({ type: "lavish:removeAttachment", id: "a".repeat(64) + ".png" });
+  chrome.sendFrameMessage({ type: "textcast:removeAttachment", id: "a".repeat(64) + ".png" });
   await flushPromises();
 
   assert.deepEqual(
@@ -4928,7 +4822,7 @@ test("a queued attachment ref is projected to primitives, not kept by reference 
   const hostile = { id, name: "ok.png", big: 10n };
   hostile.self = hostile;
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "hostile", selector: "h1", tag: "annotation", text: "", attachments: [hostile] },
   });
 
@@ -4947,7 +4841,7 @@ test("a non-string attachment name is dropped rather than carried (E5)", async (
   const chrome = await createChromeHarness();
   const id = "b".repeat(64) + ".png";
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "x", selector: "h1", tag: "annotation", text: "", attachments: [{ id, name: { evil: true } }] },
   });
   assert.deepEqual(chrome.queued()[0].attachments, [{ id }]);
@@ -4974,7 +4868,7 @@ test("the chrome bounds concurrent in-flight uploads (D8)", async () => {
   // holding eight large bodies (structured clones + server buffers) concurrently.
   for (let i = 0; i < 8; i += 1) {
     chrome.sendFrameMessage({
-      type: "lavish:uploadAttachment",
+      type: "textcast:uploadAttachment",
       localId: "u-" + i,
       mime: "image/png",
       bytes: new ArrayBuffer(16),
@@ -4987,7 +4881,7 @@ test("the chrome bounds concurrent in-flight uploads (D8)", async () => {
   // the card can retry once capacity frees.
   const refused = chrome.postedToFrame.filter(
     (m) =>
-      m.type === "lavish:attachmentResult" &&
+      m.type === "textcast:attachmentResult" &&
       m.ok === false &&
       /in flight|in-flight|concurrent|Wait a moment/i.test(m.error || ""),
   );
@@ -5014,7 +4908,7 @@ test("a settled upload frees an in-flight slot for the next (D8)", async () => {
   // Fill the in-flight bound.
   for (let i = 0; i < 4; i += 1) {
     chrome.sendFrameMessage({
-      type: "lavish:uploadAttachment",
+      type: "textcast:uploadAttachment",
       localId: "a-" + i,
       mime: "image/png",
       bytes: new ArrayBuffer(16),
@@ -5029,7 +4923,7 @@ test("a settled upload frees an in-flight slot for the next (D8)", async () => {
   await flushPromises();
 
   chrome.sendFrameMessage({
-    type: "lavish:uploadAttachment",
+    type: "textcast:uploadAttachment",
     localId: "next",
     mime: "image/png",
     bytes: new ArrayBuffer(16),
@@ -5039,7 +4933,7 @@ test("a settled upload frees an in-flight slot for the next (D8)", async () => {
   assert.equal(resolvers.length, startedBefore + 1, "a freed slot admits the next upload");
 });
 
-test("a load that recovers after the failure card retires it even when the gate was bypassed", async () => {
+test("a load that recovers after the failure notice retires it", async () => {
   const beginLoadResponses = [];
   for (let i = 0; i < 15; i += 1) beginLoadResponses.push({ ok: false, status: 503 });
   const chrome = await createChromeHarness({
@@ -5049,31 +4943,27 @@ test("a load that recovers after the failure card retires it even when the gate 
   });
 
   await exhaustOneBeginLoadAttempt(chrome);
-  chrome.element("layoutGateAction").click(); // "Show anyway": bypasses the gate for good
   for (const delay of [1000, 3000, 8000, 20000]) {
     chrome.runTimers(delay);
     await exhaustOneBeginLoadAttempt(chrome);
   }
-  assert.equal(chrome.element("layoutGateOverlay").hidden, false);
-  assert.equal(chrome.element("layoutGateTitle").textContent, "Lavish could not load this artifact.");
+  assert.equal(chrome.element("loadNotice").hidden, false);
+  assert.equal(chrome.element("loadNoticeTitle").textContent, "Textcast Chat could not load this artifact.");
 
-  // An explicit reload-artifact action is a fresh attempt, and the harness answers it. The card
-  // must come down even though the bypass keeps startLayoutGateCycle from running its body.
+  // An explicit reload-artifact action is a fresh attempt, and the harness answers it.
   chrome.element("reloadArtifact").click();
   await flushPromises();
   assert.match(chrome.frame.src, /artifact_load_token=/);
-  assert.equal(chrome.element("layoutGateOverlay").hidden, true);
-  assert.equal(chrome.element("layoutGateAction").textContent, "Show anyway");
+  assert.equal(chrome.element("loadNotice").hidden, true);
 });
 
 // ---- Phone-width conversation sheet ----
 
 function sheetState(chrome) {
-  const toggle = chrome.element("panelToggle");
+  const toggle = chrome.element("sidebarToggle");
   return {
     open: chrome.element("body").classList.contains("sheet-open"),
-    scrollInert: Boolean(chrome.element("panelScroll").inert),
-    composerInert: Boolean(chrome.element("chatComposer").inert),
+    panelInert: Boolean(chrome.element("panel").inert),
     expanded: toggle["aria-expanded"],
     label: toggle["aria-label"],
     summary: chrome.element("panelSummary").textContent,
@@ -5082,42 +4972,42 @@ function sheetState(chrome) {
   };
 }
 
+// The round launcher opens and minimizes the conversation in either layout.
+function toggleConversation(chrome) {
+  chrome.element("sidebarToggle").dispatch("click", {});
+}
+
 test("desktop chrome never turns the conversation panel into a sheet", async () => {
   const chrome = await createChromeHarness();
 
   assert.deepEqual(chrome.mediaQueries, []);
-  const before = sheetState(chrome);
-  assert.equal(before.open, false);
-  assert.equal(before.scrollInert, false);
-  assert.equal(before.composerInert, false);
+  const collapsedBefore = chrome.element("body").classList.contains("panel-collapsed");
+  assert.equal(sheetState(chrome).open, false);
 
-  // The heading is plain text on desktop: clicking it must not start hiding the panel.
+  // The heading is plain text on desktop: clicking it must not open or hide anything.
   chrome.element("panelHead").dispatch("click", {});
-  const after = sheetState(chrome);
-  assert.equal(after.open, false);
-  assert.equal(after.scrollInert, false);
-  assert.equal(after.stored, null);
+  assert.equal(sheetState(chrome).open, false);
+  assert.equal(sheetState(chrome).stored, null);
+  assert.equal(chrome.element("body").classList.contains("panel-collapsed"), collapsedBefore);
 });
 
-test("phone chrome boots with the conversation docked and raises it on tap", async () => {
+test("phone chrome boots with the conversation hidden and the launcher raises it", async () => {
   const chrome = await createChromeHarness({ mobile: true });
 
   assert.equal(chrome.mediaQueries.length, 1);
   assert.match(chrome.mediaQueries[0].media, /max-width/);
-  const docked = sheetState(chrome);
-  assert.equal(docked.open, false);
-  // The hidden part of the sheet must be unreachable: a focus landing in the off-screen
-  // composer would scroll the page into a state the layout cannot recover from.
-  assert.equal(docked.scrollInert, true);
-  assert.equal(docked.composerInert, true);
-  assert.equal(docked.expanded, "false");
-  assert.equal(docked.label, "Show conversation");
+  const hidden = sheetState(chrome);
+  assert.equal(hidden.open, false);
+  // The off-screen sheet must be unreachable: a focus landing in its composer would scroll the
+  // page into a state the layout cannot recover from.
+  assert.equal(hidden.panelInert, true);
+  assert.equal(hidden.expanded, "false");
+  assert.equal(hidden.label, "Show conversation");
 
-  chrome.element("panelHead").dispatch("click", {});
+  toggleConversation(chrome);
   const raised = sheetState(chrome);
   assert.equal(raised.open, true);
-  assert.equal(raised.scrollInert, false);
-  assert.equal(raised.composerInert, false);
+  assert.equal(raised.panelInert, false);
   assert.equal(raised.expanded, "true");
   assert.equal(raised.label, "Hide conversation");
   assert.equal(raised.stored, "1");
@@ -5127,9 +5017,13 @@ test("phone chrome boots with the conversation docked and raises it on tap", asy
   assert.equal(sheetState(chrome).open, false);
   assert.equal(sheetState(chrome).stored, null);
 
+  // The sheet's own minimize control lowers it too.
+  toggleConversation(chrome);
+  chrome.element("panelClose").dispatch("click", {});
+  assert.equal(sheetState(chrome).open, false);
+
   // Escape also lowers it, after the menus and dialogs that sit above it have had their turn.
-  chrome.element("panelToggle").dispatch("click", {});
-  chrome.element("panelHead").dispatch("click", {});
+  toggleConversation(chrome);
   assert.equal(sheetState(chrome).open, true);
   chrome.dispatchDocumentKeydown({ key: "Escape" });
   assert.equal(sheetState(chrome).open, false);
@@ -5141,11 +5035,11 @@ test("phone chrome restores an open sheet across a chrome reload", async () => {
 
   const state = sheetState(chrome);
   assert.equal(state.open, true);
-  assert.equal(state.scrollInert, false);
+  assert.equal(state.panelInert, false);
   assert.equal(state.expanded, "true");
 });
 
-test("the dock summarizes what the user should know while the sheet is down", async () => {
+test("the status line and launcher say what the user should know while the sheet is down", async () => {
   const chrome = await createChromeHarness({
     mobile: true,
     fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
@@ -5155,37 +5049,45 @@ test("the dock summarizes what the user should know while the sheet is down", as
 
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
   assert.equal(sheetState(chrome).summary, "Agent listening");
+  assert.equal(chrome.element("panelSummary").dataset.presence, "listening");
 
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "working" }) });
   assert.equal(sheetState(chrome).summary, "Agent is working…");
 
-  // A reply that lands behind the artifact is previewed on the dock until the sheet comes up.
-  chrome.eventSource().listeners.get("agent-reply")({ data: JSON.stringify({ text: "Renamed the payment step." }) });
+  // A reply that lands behind the artifact is previewed beside the launcher until the sheet comes up.
+  chrome.eventSource().listeners.get("agent-reply")({
+    data: JSON.stringify({ text: "Renamed the **payment** step." }),
+  });
   let state = sheetState(chrome);
   assert.equal(state.summary, "Renamed the payment step.");
   assert.match(state.summaryClass, /is-unread/);
+  assert.equal(chrome.element("launcherPeek").hidden, false);
+  assert.equal(chrome.element("launcherPeekText").textContent, "Renamed the payment step.");
 
-  // Work the user queued from the artifact outranks the unread preview: it is the thing they
-  // still have to send.
+  // Work the user queued from the artifact outranks the unread marker: it is the thing they
+  // still have to send. The reply preview stays beside the count.
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Call this Payment method", selector: "h2", tag: "element", text: "Payment" },
   });
   state = sheetState(chrome);
   assert.equal(state.summary, "1 queued");
   assert.match(state.summaryClass, /is-accent/);
   assert.doesNotMatch(state.summaryClass, /is-unread/);
-  assert.match(String(chrome.element("panelHead").classList), /is-fresh/);
+  assert.match(String(chrome.element("sidebarToggle").classList), /is-fresh/);
+  assert.equal(chrome.element("sidebarToggleCount").textContent, "1");
+  assert.equal(chrome.element("launcherPeek").hidden, false);
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Drop the map preview", selector: "p", tag: "element", text: "Autofill" },
   });
   assert.equal(sheetState(chrome).summary, "2 queued");
 
   // Raising the sheet shows the reply itself, so the preview is no longer owed; once the queue
-  // is sent the dock is back to reporting the agent.
-  chrome.element("panelHead").dispatch("click", {});
+  // is sent the status line is back to reporting the agent.
+  toggleConversation(chrome);
+  assert.equal(chrome.element("launcherPeek").hidden, true);
   chrome.element("send").click();
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
@@ -5196,11 +5098,12 @@ test("the dock summarizes what the user should know while the sheet is down", as
 
   // A reply that arrives while the sheet is up was seen, so lowering it previews nothing.
   chrome.eventSource().listeners.get("agent-reply")({ data: JSON.stringify({ text: "Done." }) });
-  chrome.element("panelHead").dispatch("click", {});
+  toggleConversation(chrome);
   assert.equal(sheetState(chrome).summary, "Agent is working…");
+  assert.equal(chrome.element("launcherPeek").hidden, true);
 });
 
-test("the dock reports an ended session", async () => {
+test("the status line reports an ended session", async () => {
   const chrome = await createChromeHarness({
     mobile: true,
     fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
@@ -5215,23 +5118,20 @@ test("the dock reports an ended session", async () => {
   assert.equal(sheetState(chrome).summary, "Session ended");
 });
 
-test("a swipe on the dock raises and lowers the sheet, and a tap after a swipe is not a second toggle", async () => {
+test("a downward drag on the open sheet's head lowers it, and a short nudge does not", async () => {
   const chrome = await createChromeHarness({ mobile: true });
+  toggleConversation(chrome);
 
-  // Upward travel past the threshold raises it; the click that ends the gesture is swallowed.
-  chrome.dragDock(800, 700);
-  assert.equal(sheetState(chrome).open, true);
-
-  // A nudge short of the threshold is not a decision either way.
+  // A nudge short of the threshold is not a decision.
   chrome.dragDock(100, 130, { pointerId: 2 });
   assert.equal(sheetState(chrome).open, true);
 
   chrome.dragDock(100, 220, { pointerId: 3 });
   assert.equal(sheetState(chrome).open, false);
 
-  // A pure tap (no travel) still toggles.
-  chrome.dragDock(300, 300, { pointerId: 4 });
-  assert.equal(sheetState(chrome).open, true);
+  // A closed sheet is off-screen; there is no head to drag it back up by.
+  chrome.dragDock(800, 600, { pointerId: 4 });
+  assert.equal(sheetState(chrome).open, false);
 
   // Nothing the gesture set on the panel survives its end.
   const panel = chrome.element("panel");
@@ -5239,41 +5139,40 @@ test("a swipe on the dock raises and lowers the sheet, and a tap after a swipe i
   assert.equal(panel.classList.contains("is-dragging"), false);
 });
 
-test("a cancelled dock swipe leaves the sheet unchanged and the next tap active", async () => {
+test("a cancelled drag leaves the sheet unchanged", async () => {
   const chrome = await createChromeHarness({ mobile: true });
   const panel = chrome.element("panel");
+  toggleConversation(chrome);
 
-  chrome.cancelDock(800, 790, 0);
+  chrome.cancelDock(100, 180, 0);
 
-  assert.equal(sheetState(chrome).open, false);
+  assert.equal(sheetState(chrome).open, true);
   assert.equal(panel.style.transform, "");
   assert.equal(panel.classList.contains("is-dragging"), false);
-
-  chrome.element("panelHead").dispatch("click", {});
-  assert.equal(sheetState(chrome).open, true);
 });
 
 test("crossing the breakpoint in either direction leaves no sheet state behind", async () => {
   const chrome = await createChromeHarness({ mobile: true });
-  chrome.element("panelHead").dispatch("click", {});
+  toggleConversation(chrome);
   assert.equal(sheetState(chrome).open, true);
   assert.equal(chrome.storage.get("textcast-chat-axi:sheet-open:abc"), "1");
 
-  // Widening to desktop: the panel is a plain side panel again, never inert, never "open".
+  // Widening to desktop: the panel is the floating card again, never "open" as a sheet.
   chrome.setMobile(false);
-  let state = sheetState(chrome);
-  assert.equal(state.open, false);
-  assert.equal(state.scrollInert, false);
-  assert.equal(state.composerInert, false);
+  assert.equal(sheetState(chrome).open, false);
   assert.equal(chrome.storage.has("textcast-chat-axi:sheet-open:abc"), false);
+  toggleConversation(chrome);
+  assert.equal(sheetState(chrome).panelInert, false, "the desktop card is open and reachable");
 
-  // Narrowing back docks it again and moves focus out of the content becoming inert.
-  chrome.element("chatInput").focus();
+  // Narrowing back hides the sheet and moves focus out of the panel becoming inert.
+  const input = chrome.element("chatInput");
+  input.parentElement = chrome.element("panel");
+  input.focus();
   chrome.setMobile(true);
-  state = sheetState(chrome);
+  const state = sheetState(chrome);
   assert.equal(state.open, false);
-  assert.equal(state.scrollInert, true);
-  assert.equal(chrome.focusLog.at(-1), "panelToggle");
+  assert.equal(state.panelInert, true);
+  assert.equal(chrome.focusLog.at(-1), "sidebarToggle");
   assert.equal(chrome.storage.has("textcast-chat-axi:sheet-open:abc"), false);
 });
 
@@ -5286,7 +5185,7 @@ test("crossing the breakpoint in either direction leaves no sheet state behind",
 test("a queued note is a dashed bubble at the end of the conversation with its anchor and edit and remove controls", async () => {
   const chrome = await createChromeHarness();
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Rename this", selector: "h2#phase-1", tag: "h2", text: "Phase 1: Inventory" },
   });
 
@@ -5315,7 +5214,7 @@ test("a queued note is a dashed bubble at the end of the conversation with its a
 test("a queued note's remove control clears memory, storage, and its bubble", async () => {
   const chrome = await createChromeHarness();
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Remove this", selector: "h2", tag: "h2", text: "Heading" },
   });
   assert.equal(chrome.queued().length, 1);
@@ -5353,7 +5252,7 @@ test("a sent batch settles in place: notes read Sending until the server's trans
     },
   });
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Rename this", selector: "h2#phase-1", tag: "h2", text: "Phase 1: Inventory" },
   });
   chrome.element("chatInput").value = "Keep the table";
@@ -5502,7 +5401,7 @@ test("an acceptance sync settles a matching local note before the prompts respon
     text: "Phase 1",
     attachments: [{ id: "a".repeat(64) + ".png", name: "reference.png" }],
   };
-  chrome.sendFrameMessage({ type: "lavish:queuePrompt", prompt });
+  chrome.sendFrameMessage({ type: "textcast:queuePrompt", prompt });
   const promptId = chrome.queued()[0].prompt_id;
   assertPromptIdentity(promptId);
   chrome.element("send").click();
@@ -5556,7 +5455,7 @@ test("one transcript entry cannot settle a second identical queued note", async 
   await flushPromises();
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Repeat this", selector: "", tag: "message", text: "Freeform message" },
   });
   chrome.eventSource().listeners.get("chat-sync")({
@@ -5675,7 +5574,7 @@ test("a WebSocket acceptance sync settles only the note whose identity it acknow
       return { ok: true, json: async () => ({}) };
     },
   });
-  chrome.sendFrameMessage({ type: "lavish:queuePrompt", prompt: identicalProjectionNote(0) });
+  chrome.sendFrameMessage({ type: "textcast:queuePrompt", prompt: identicalProjectionNote(0) });
   const promptId = chrome.queued()[0].prompt_id;
   assertPromptIdentity(promptId);
   chrome.element("send").click();
@@ -5707,7 +5606,7 @@ test("a reconnect initial sync settles this tab's in-flight note by identity", a
       return { ok: true, json: async () => ({}) };
     },
   });
-  chrome.sendFrameMessage({ type: "lavish:queuePrompt", prompt: identicalProjectionNote(0) });
+  chrome.sendFrameMessage({ type: "textcast:queuePrompt", prompt: identicalProjectionNote(0) });
   const promptId = chrome.queued()[0].prompt_id;
   chrome.element("send").click();
   chrome.sendSnapshot("uid=1 body");
@@ -5852,8 +5751,8 @@ test("two tabs with identical chat projections settle only their own submission"
     },
   });
 
-  chromeA.sendFrameMessage({ type: "lavish:queuePrompt", prompt: identicalProjectionNote(0) });
-  chromeB.sendFrameMessage({ type: "lavish:queuePrompt", prompt: identicalProjectionNote(5) });
+  chromeA.sendFrameMessage({ type: "textcast:queuePrompt", prompt: identicalProjectionNote(0) });
+  chromeB.sendFrameMessage({ type: "textcast:queuePrompt", prompt: identicalProjectionNote(5) });
   const idA = chromeA.queued()[0].prompt_id;
   const idB = chromeB.queued()[0].prompt_id;
   assertPromptIdentity(idA);
@@ -5893,7 +5792,7 @@ test("two tabs with identical chat projections settle only their own submission"
 test("an iframe-supplied prompt identity is replaced before the note is queued", async () => {
   const chrome = await createChromeHarness();
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { ...identicalProjectionNote(0), prompt_id: "stolen-identity" },
   });
   const stored = chrome.queued()[0];
@@ -6310,14 +6209,14 @@ test("a reconnect does not retire the banner a server replacement raised", async
   const banner = chrome.element("outdatedBanner");
   chrome.webSocket().listeners.get("chrome-outdated")({ data: JSON.stringify({ reason: "upgrade" }) });
   assert.equal(banner.hidden, false);
-  assert.match(chrome.element("outdatedText").textContent, /Lavish was updated/);
+  assert.match(chrome.element("outdatedText").textContent, /Textcast Chat was updated/);
 
   // The server really was replaced; reconnecting to its successor does not make that untrue, and
   // the page is still running the previous chrome.
   dropLiveStream(chrome, LIVE_EVENT_RECONNECT_DELAYS_MS[0]);
   recoverLiveStream(chrome);
   assert.equal(banner.hidden, false);
-  assert.match(chrome.element("outdatedText").textContent, /Lavish was updated/);
+  assert.match(chrome.element("outdatedText").textContent, /Textcast Chat was updated/);
 });
 
 // ---------------------------------------------------------------------------
@@ -6340,7 +6239,7 @@ async function revisionHarness() {
 
 function sendRevisions(chrome, payload) {
   chrome.sendFrameMessage({
-    type: "lavish:revisions",
+    type: "textcast:revisions",
     artifact_load_token: chrome.artifactLoadToken(),
     ...payload,
   });
@@ -6439,7 +6338,7 @@ test("Reveal walks the marked blocks one at a time through the existing reveal p
     ],
   });
 
-  const revealed = () => chrome.postedToFrame.filter((message) => message.type === "lavish:revealElement");
+  const revealed = () => chrome.postedToFrame.filter((message) => message.type === "textcast:revealElement");
   const button = () => revisionRows(chrome)[0].querySelectorAll(".revision-reveal")[0];
 
   assert.equal(button().textContent, "Reveal 1/2");
@@ -6500,7 +6399,7 @@ function typeIntoQueuedEdit(chrome, value, index = 0) {
 }
 
 function queueHeadingNote(chrome, prompt = "Make this heading bigger", selector = "main > h2") {
-  chrome.sendFrameMessage({ type: "lavish:queuePrompt", prompt: { prompt, selector, tag: "h2", text: "Pricing" } });
+  chrome.sendFrameMessage({ type: "textcast:queuePrompt", prompt: { prompt, selector, tag: "h2", text: "Pricing" } });
 }
 
 test("clicking a queued note opens it for editing and reveals its element", async () => {
@@ -6512,9 +6411,9 @@ test("clicking a queued note opens it for editing and reveals its element", asyn
   assert.match(chrome.element("queuedLog").innerHTML, /class="queued-edit-input"[^>]*>Make this heading bigger</);
   assert.deepEqual(
     JSON.parse(
-      JSON.stringify(chrome.postedToFrame.filter((message) => message.type === "lavish:revealElement").at(-1)),
+      JSON.stringify(chrome.postedToFrame.filter((message) => message.type === "textcast:revealElement").at(-1)),
     ),
-    { type: "lavish:revealElement", selector: "main > h2" },
+    { type: "textcast:revealElement", selector: "main > h2" },
   );
 });
 
@@ -6593,37 +6492,6 @@ test("saving a queued note with its words cleared removes it", async () => {
   assert.deepEqual(chrome.queued(), []);
 });
 
-test("the artifact learns which elements carry a queued note, never the note itself", async () => {
-  const chrome = await createChromeHarness();
-  queueHeadingNote(chrome);
-  chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
-    prompt: {
-      prompt: "Punchier",
-      selector: "main > p",
-      tag: "text",
-      text: "marketing site",
-      target: { type: "text-range", text: "marketing site", selector: "main > p" },
-    },
-  });
-
-  const anchors = chrome.postedToFrame.filter((message) => message.type === "lavish:queuedAnchors").at(-1);
-  assert.deepEqual(JSON.parse(JSON.stringify(anchors)), { type: "lavish:queuedAnchors", selectors: ["main > h2"] });
-});
-
-test("clicking an annotated element in the artifact opens its queued note", async () => {
-  const chrome = await createChromeHarness();
-  queueHeadingNote(chrome, "First thought");
-  queueHeadingNote(chrome, "Tighten this copy", "main > p");
-  queueHeadingNote(chrome, "Second thought");
-
-  chrome.sendFrameMessage({ type: "lavish:editQueuedAnchor", selector: "main > h2" });
-
-  // The most recent note on the element is the one the reviewer is most likely revising.
-  assert.match(chrome.element("queuedLog").innerHTML, /class="queued-edit-input"[^>]*>Second thought</);
-  assert.equal(chrome.element("queuedLog").innerHTML.match(/queued-edit-input/g)?.length, 1);
-});
-
 test("Send delivers an open edit instead of the stale words", async () => {
   const posts = [];
   const chrome = await createChromeHarness({
@@ -6652,19 +6520,13 @@ test("a note that is already sending cannot be opened for editing", async () => 
   chrome.element("send").click();
 
   chrome.element("queuedLog").dispatch("click", { target: queuedLogNode(["bubble", "queued"], 0) });
-  chrome.sendFrameMessage({ type: "lavish:editQueuedAnchor", selector: "main > h2" });
 
   assert.doesNotMatch(chrome.element("queuedLog").innerHTML, /queued-edit-input/);
-  // The element click falls back to the fresh card it would have opened without a queued note.
-  assert.deepEqual(JSON.parse(JSON.stringify(chrome.postedToFrame.at(-1))), {
-    type: "lavish:annotateElement",
-    selector: "main > h2",
-  });
 });
 
 test("Escape in the queued-note editor cancels the edit and leaves the phone sheet open", async () => {
   const chrome = await createChromeHarness({ mobile: true });
-  chrome.element("panelHead").dispatch("click", {});
+  toggleConversation(chrome);
   queueHeadingNote(chrome);
   chrome.element("queuedLog").dispatch("click", { target: queuedLogNode(["bubble", "queued"], 0) });
 
@@ -6695,8 +6557,8 @@ test("a re-render while editing a queued note keeps the reviewer's caret and scr
 test("a keyed replacement closes the open edit and hands its typed words back as unsent", async () => {
   const chrome = await createChromeHarness();
   const choice = (prompt, selector, text) => ({
-    type: "lavish:queuePrompt",
-    prompt: { prompt, selector, tag: "choice", text, _lavishQueueKey: "plan" },
+    type: "textcast:queuePrompt",
+    prompt: { prompt, selector, tag: "choice", text, _textcastQueueKey: "plan" },
   });
   chrome.sendFrameMessage(choice("Use plan A", "input#plan-a", "Plan A"));
   chrome.element("queuedLog").dispatch("click", { target: queuedLogNode(["bubble", "queued"], 0) });
@@ -6718,8 +6580,8 @@ test("a keyed replacement closes the open edit and hands its typed words back as
 test("a keyed replacement of an untouched open edit leaves no unsent note", async () => {
   const chrome = await createChromeHarness();
   const choice = (prompt, selector, text) => ({
-    type: "lavish:queuePrompt",
-    prompt: { prompt, selector, tag: "choice", text, _lavishQueueKey: "plan" },
+    type: "textcast:queuePrompt",
+    prompt: { prompt, selector, tag: "choice", text, _textcastQueueKey: "plan" },
   });
   chrome.sendFrameMessage(choice("Use plan A", "input#plan-a", "Plan A"));
   chrome.element("queuedLog").dispatch("click", { target: queuedLogNode(["bubble", "queued"], 0) });
@@ -6890,30 +6752,43 @@ function sidebarState(chrome) {
   };
 }
 
-test("desktop sidebar toggle hides and restores the conversation panel", async () => {
+test("desktop launcher opens and minimizes the floating conversation panel", async () => {
   const chrome = await createChromeHarness();
 
+  // A first visit starts minimized, so the page keeps its whole width.
+  const first = sidebarState(chrome);
+  assert.equal(first.collapsed, true);
+  assert.equal(first.expanded, "false");
+  assert.equal(first.label, "Show conversation");
+  assert.equal(first.title, "Show conversation");
+  assert.equal(first.count, null);
+  assert.equal(chrome.element("panel").inert, true);
+
+  chrome.element("sidebarToggle").dispatch("click", {});
   const open = sidebarState(chrome);
   assert.equal(open.collapsed, false);
   assert.equal(open.expanded, "true");
   assert.equal(open.label, "Hide conversation");
-  assert.equal(open.title, "Hide conversation");
-  assert.equal(open.count, null);
-
-  chrome.element("sidebarToggle").dispatch("click", {});
-  const collapsed = sidebarState(chrome);
-  assert.equal(collapsed.collapsed, true);
-  assert.equal(collapsed.expanded, "false");
-  assert.equal(collapsed.label, "Show conversation");
+  assert.equal(chrome.element("panel").inert, false);
   // The preference is the viewer's, not the review's: one key shared by every session.
-  assert.equal(collapsed.stored, "1");
+  assert.equal(open.stored, "0");
   assert.equal(chrome.storage.has("textcast-chat-axi:panel-collapsed"), false, "never per-tab sessionStorage");
 
+  // The panel's own minimize control and the launcher both put it away.
+  chrome.element("panelClose").dispatch("click", {});
+  assert.equal(sidebarState(chrome).collapsed, true);
+  assert.equal(sidebarState(chrome).stored, "1");
   chrome.element("sidebarToggle").dispatch("click", {});
-  const reopened = sidebarState(chrome);
-  assert.equal(reopened.collapsed, false);
-  assert.equal(reopened.expanded, "true");
-  assert.equal(reopened.stored, null);
+  chrome.element("sidebarToggle").dispatch("click", {});
+  assert.equal(sidebarState(chrome).collapsed, true);
+});
+
+test("an opened panel stays open across a chrome reload", async () => {
+  const localStore = new Map([["textcast-chat-axi:panel-collapsed", "0"]]);
+  const chrome = await createChromeHarness({ localStore });
+
+  assert.equal(sidebarState(chrome).collapsed, false);
+  assert.equal(sidebarState(chrome).expanded, "true");
 });
 
 test("a collapsed panel stays collapsed across a chrome reload and across sessions", async () => {
@@ -6929,18 +6804,19 @@ test("a collapsed panel stays collapsed across a chrome reload and across sessio
   assert.equal(state.label, "Show conversation");
 });
 
-test("the sidebar toggle still works when the browser refuses localStorage", async () => {
+test("the launcher still works when the browser refuses localStorage", async () => {
   const chrome = await createChromeHarness({ localStorageThrows: true });
 
-  assert.equal(sidebarState(chrome).collapsed, false);
-  chrome.element("sidebarToggle").dispatch("click", {});
   assert.equal(sidebarState(chrome).collapsed, true);
   chrome.element("sidebarToggle").dispatch("click", {});
   assert.equal(sidebarState(chrome).collapsed, false);
+  chrome.element("sidebarToggle").dispatch("click", {});
+  assert.equal(sidebarState(chrome).collapsed, true);
 });
 
-test("collapsing the panel moves focus out of it to the toggle", async () => {
+test("minimizing the panel moves focus out of it to the launcher", async () => {
   const chrome = await createChromeHarness();
+  chrome.element("sidebarToggle").dispatch("click", {});
   const input = chrome.element("chatInput");
   input.parentElement = chrome.element("panel");
   input.focus();
@@ -6949,9 +6825,8 @@ test("collapsing the panel moves focus out of it to the toggle", async () => {
   assert.equal(chrome.focusLog.at(-1), "sidebarToggle");
 });
 
-test("a collapsed toggle reports queued notes and unseen agent replies", async () => {
+test("a minimized launcher reports queued notes and unseen agent replies", async () => {
   const chrome = await createChromeHarness();
-  chrome.element("sidebarToggle").dispatch("click", {});
 
   // A reply that lands while the panel is hidden marks the toggle until the panel opens.
   chrome.eventSource().listeners.get("agent-reply")({ data: JSON.stringify({ text: "Renamed the payment step." }) });
@@ -6961,7 +6836,7 @@ test("a collapsed toggle reports queued notes and unseen agent replies", async (
 
   // Queued work outranks the unread marker: it is what the user still has to send.
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Call this Payment method", selector: "h2", tag: "element", text: "Payment" },
   });
   state = sidebarState(chrome);
@@ -6970,7 +6845,7 @@ test("a collapsed toggle reports queued notes and unseen agent replies", async (
   assert.equal(state.label, "Show conversation (1 queued)");
 
   chrome.sendFrameMessage({
-    type: "lavish:queuePrompt",
+    type: "textcast:queuePrompt",
     prompt: { prompt: "Drop the map preview", selector: "p", tag: "element", text: "Autofill" },
   });
   assert.equal(sidebarState(chrome).count, "2");
@@ -6985,36 +6860,6 @@ test("a collapsed toggle reports queued notes and unseen agent replies", async (
   // And collapsing again does not resurrect the reply that was already seen.
   chrome.element("sidebarToggle").dispatch("click", {});
   assert.equal(sidebarState(chrome).unread, false);
-});
-
-test("clicking an annotated element while the panel is collapsed reopens it to edit the note", async () => {
-  const chrome = await createChromeHarness();
-  queueHeadingNote(chrome, "Shorter heading");
-  chrome.element("sidebarToggle").dispatch("click", {});
-  assert.equal(sidebarState(chrome).collapsed, true);
-
-  chrome.sendFrameMessage({ type: "lavish:editQueuedAnchor", selector: "main > h2" });
-
-  const state = sidebarState(chrome);
-  assert.equal(state.collapsed, false);
-  assert.equal(state.expanded, "true");
-  assert.equal(state.stored, null);
-  assert.match(chrome.element("queuedLog").innerHTML, /class="queued-edit-input"[^>]*>Shorter heading</);
-});
-
-test("clicking the element of a note already being edited reopens the collapsed panel to that edit", async () => {
-  const chrome = await createChromeHarness();
-  queueHeadingNote(chrome, "Shorter heading");
-  chrome.element("queuedLog").dispatch("click", { target: queuedLogNode(["bubble", "queued"], 0) });
-  typeIntoQueuedEdit(chrome, "Much shorter heading");
-  chrome.element("sidebarToggle").dispatch("click", {});
-  assert.equal(sidebarState(chrome).collapsed, true);
-
-  chrome.sendFrameMessage({ type: "lavish:editQueuedAnchor", selector: "main > h2" });
-
-  assert.equal(sidebarState(chrome).collapsed, false);
-  assert.equal(chrome.focusLog.at(-1), "queued-edit-input");
-  assert.match(chrome.element("queuedLog").innerHTML, /class="queued-edit-input"[^>]*>Much shorter heading</);
 });
 
 test("an expanded desktop panel never marks a reply as unread", async () => {
@@ -7040,44 +6885,44 @@ test("the stored desktop collapse never hides the phone sheet", async () => {
   assert.equal(sidebarState(chrome).stored, "1", "crossing the breakpoint does not rewrite the preference");
 });
 
-// ---- Tab title and icon from the artifact (lavish:documentMeta) ----
+// ---- Tab title and icon from the artifact (textcast:documentMeta) ----
 
 const PAGE_ICON = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><circle r='4'/></svg>";
 
 async function sendDocumentMeta(chrome, meta, { token = chrome.artifactLoadToken() } = {}) {
-  chrome.sendFrameMessage({ type: "lavish:documentMeta", artifact_load_token: token, ...meta });
+  chrome.sendFrameMessage({ type: "textcast:documentMeta", artifact_load_token: token, ...meta });
 }
 
 test("a page can set the tab title and icon after it loaded", async () => {
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
-  assert.deepEqual(chrome.tab(), { title: "Plan \u00b7 Lavish", icon: SERVED_TAB_ICON });
+  assert.deepEqual(chrome.tab(), { title: "Plan \u00b7 Textcast Chat", icon: SERVED_TAB_ICON });
   await sendDocumentMeta(chrome, { title: "(2) Agent canvas", icon: PAGE_ICON });
-  assert.deepEqual(chrome.tab(), { title: "(2) Agent canvas \u00b7 Lavish", icon: PAGE_ICON });
+  assert.deepEqual(chrome.tab(), { title: "(2) Agent canvas \u00b7 Textcast Chat", icon: PAGE_ICON });
 });
 
 test("a field the page leaves out stays as it was", async () => {
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
   await sendDocumentMeta(chrome, { title: "Only title" });
-  assert.deepEqual(chrome.tab(), { title: "Only title \u00b7 Lavish", icon: SERVED_TAB_ICON });
+  assert.deepEqual(chrome.tab(), { title: "Only title \u00b7 Textcast Chat", icon: SERVED_TAB_ICON });
   await sendDocumentMeta(chrome, { icon: PAGE_ICON });
-  assert.deepEqual(chrome.tab(), { title: "Only title \u00b7 Lavish", icon: PAGE_ICON });
+  assert.deepEqual(chrome.tab(), { title: "Only title \u00b7 Textcast Chat", icon: PAGE_ICON });
 });
 
 test("null puts back the title and icon the tab loaded with", async () => {
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
   await sendDocumentMeta(chrome, { title: "Changed", icon: PAGE_ICON });
   await sendDocumentMeta(chrome, { title: null, icon: null });
-  assert.deepEqual(chrome.tab(), { title: "Plan \u00b7 Lavish", icon: SERVED_TAB_ICON });
+  assert.deepEqual(chrome.tab(), { title: "Plan \u00b7 Textcast Chat", icon: SERVED_TAB_ICON });
 });
 
 test("the tab title is flattened, trimmed and capped; a blank one restores the load-time title", async () => {
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
   await sendDocumentMeta(chrome, { title: "  two\n\tlines\u0000 here  " });
-  assert.equal(chrome.tab().title, "two lines here \u00b7 Lavish");
+  assert.equal(chrome.tab().title, "two lines here \u00b7 Textcast Chat");
   await sendDocumentMeta(chrome, { title: "x".repeat(500) });
-  assert.equal(chrome.tab().title, "x".repeat(120) + " \u00b7 Lavish");
+  assert.equal(chrome.tab().title, "x".repeat(120) + " \u00b7 Textcast Chat");
   await sendDocumentMeta(chrome, { title: " \n " });
-  assert.equal(chrome.tab().title, "Plan \u00b7 Lavish");
+  assert.equal(chrome.tab().title, "Plan \u00b7 Textcast Chat");
 });
 
 for (const [label, icon] of [
@@ -7091,7 +6936,7 @@ for (const [label, icon] of [
   test(`the tab icon refuses ${label}`, async () => {
     const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
     await sendDocumentMeta(chrome, { icon, title: "still applies" });
-    assert.deepEqual(chrome.tab(), { title: "still applies \u00b7 Lavish", icon: SERVED_TAB_ICON });
+    assert.deepEqual(chrome.tab(), { title: "still applies \u00b7 Textcast Chat", icon: SERVED_TAB_ICON });
   });
 }
 
@@ -7106,7 +6951,7 @@ test("a document-meta message without the current load token is ignored", async 
   const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
   await sendDocumentMeta(chrome, { title: "stale", icon: PAGE_ICON }, { token: "an-old-load" });
   await sendDocumentMeta(chrome, { title: "tokenless" }, { token: "" });
-  assert.deepEqual(chrome.tab(), { title: "Plan \u00b7 Lavish", icon: SERVED_TAB_ICON });
+  assert.deepEqual(chrome.tab(), { title: "Plan \u00b7 Textcast Chat", icon: SERVED_TAB_ICON });
 });
 
 test("a window that is not the artifact frame cannot set the tab", async () => {
@@ -7115,10 +6960,10 @@ test("a window that is not the artifact frame cannot set the tab", async () => {
   for (const handler of chrome.messageHandlers()) {
     handler({
       source: foreign.source,
-      data: { type: "lavish:documentMeta", artifact_load_token: chrome.artifactLoadToken(), title: "spoof" },
+      data: { type: "textcast:documentMeta", artifact_load_token: chrome.artifactLoadToken(), title: "spoof" },
     });
   }
-  assert.equal(chrome.tab().title, "Plan \u00b7 Lavish");
+  assert.equal(chrome.tab().title, "Plan \u00b7 Textcast Chat");
 });
 
 test("chrome goes read-only when the server forwards an ended SSE event (#171)", async () => {
@@ -7172,7 +7017,7 @@ test("the chrome's queued anchor agrees with the server's transcript anchor for 
       .replace(/&amp;/g, "&");
   for (const fixture of fixtures) {
     const chrome = await createChromeHarness();
-    chrome.sendFrameMessage({ type: "lavish:queuePrompt", prompt: fixture });
+    chrome.sendFrameMessage({ type: "textcast:queuePrompt", prompt: fixture });
     const html = chrome.element("queuedLog").innerHTML;
     const expected = chatEntryForPrompt({ uid: "", ...fixture }, "2026-09-15T00:00:00.000Z").anchor;
     const rendered = html.match(
@@ -7191,4 +7036,94 @@ test("the chrome's queued anchor agrees with the server's transcript anchor for 
       `${fixture.tag}: hover`,
     );
   }
+});
+
+// ---- The video player for Textcast pages (textcast:play) ----
+
+test("a Textcast page's video plays in the chrome's player, built from its id alone", async () => {
+  const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
+  const token = chrome.artifactLoadToken();
+  const dock = chrome.element("playerDock");
+  dock.hidden = true;
+
+  chrome.sendFrameMessage({
+    type: "textcast:play",
+    artifact_load_token: token,
+    kind: "youtube",
+    id: 'x"><script>',
+    start: 5,
+  });
+  chrome.sendFrameMessage({ type: "textcast:play", artifact_load_token: token, kind: "vimeo", id: "123456", start: 5 });
+  assert.equal(dock.hidden, true);
+
+  chrome.sendFrameMessage({
+    type: "textcast:play",
+    artifact_load_token: token,
+    kind: "youtube",
+    id: "jNQXAC9IVRw",
+    start: 12.7,
+  });
+  assert.equal(dock.hidden, false);
+  const frame = chrome.element("playerSlot").children.at(-1);
+  assert.equal(frame.src, "https://www.youtube.com/embed/jNQXAC9IVRw?start=12&autoplay=1&rel=0");
+
+  chrome.sendFrameMessage({
+    type: "textcast:play",
+    artifact_load_token: token,
+    kind: "bilibili",
+    id: "BV1xx411c7mD",
+    page: 2,
+    start: 30,
+  });
+  assert.match(frame.src, /^https:\/\/player\.bilibili\.com\/player\.html\?bvid=BV1xx411c7mD&p=2&t=30&/);
+
+  chrome.element("playerClose").dispatch("click", {});
+  assert.equal(dock.hidden, true);
+});
+
+test("the video switch shows only on a page with a video, and off it plays nothing", async () => {
+  const chrome = await createChromeHarness({ artifactSrc: "/artifact/abc/index.html" });
+  const token = chrome.artifactLoadToken();
+  const dock = chrome.element("playerDock");
+  const toggle = chrome.element("videoSwitch");
+  dock.hidden = true;
+  toggle.hidden = true;
+
+  chrome.sendFrameMessage({
+    type: "textcast:ready",
+    artifact_load_token: token,
+    artifact_revision: 1,
+    has_video: true,
+  });
+  assert.equal(toggle.hidden, false);
+  assert.equal(toggle["aria-pressed"], "true");
+
+  toggle.dispatch("click", {});
+  assert.equal(toggle["aria-pressed"], "false");
+  chrome.sendFrameMessage({
+    type: "textcast:play",
+    artifact_load_token: token,
+    kind: "youtube",
+    id: "jNQXAC9IVRw",
+    start: 3,
+  });
+  assert.equal(dock.hidden, true);
+
+  toggle.dispatch("click", {});
+  chrome.sendFrameMessage({
+    type: "textcast:play",
+    artifact_load_token: token,
+    kind: "youtube",
+    id: "jNQXAC9IVRw",
+    start: 3,
+  });
+  assert.equal(dock.hidden, false);
+
+  chrome.sendFrameMessage({
+    type: "textcast:ready",
+    artifact_load_token: token,
+    artifact_revision: 1,
+    has_video: false,
+  });
+  assert.equal(toggle.hidden, true);
 });

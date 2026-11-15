@@ -1,8 +1,8 @@
-/* global CSS, Element, document, parent, window */
+/* global CSS, Element, MutationObserver, document, parent, window */
 
 import { readArtifactRevisions } from "./artifact-revisions.js";
 
-export const LAVISH_INTERNAL_QUEUE_KEY = "_lavishQueueKey";
+export const TEXTCAST_INTERNAL_QUEUE_KEY = "_textcastQueueKey";
 
 export const MODE_TOGGLE_HOTKEY_KEY = "i";
 
@@ -13,7 +13,7 @@ export function isModeToggleHotkeyEvent(event) {
 
 // Derive the browser-only replacement key used to collapse unsent updates for the same input.
 // The key is stripped by the chrome before prompts are sent to the server or returned by poll.
-export function deriveLavishQueueKey(element, options = {}) {
+export function deriveTextcastQueueKey(element, options = {}) {
   function stringValue(value) {
     return value === null || value === undefined ? "" : String(value);
   }
@@ -62,7 +62,7 @@ export function deriveLavishQueueKey(element, options = {}) {
     const scope = closestElementMatching(el, "form,fieldset") || el?.parentElement || el;
     const tag = tagName(scope) || "scope";
     const explicit = stringValue(
-      attributeValue(scope, "data-lavish-question") || attributeValue(scope, "id") || attributeValue(scope, "name"),
+      attributeValue(scope, "data-textcast-question") || attributeValue(scope, "id") || attributeValue(scope, "name"),
     ).trim();
     if (explicit) return `${tag}:${explicit}`;
     return elementPath(scope) || tag;
@@ -82,8 +82,8 @@ export function deriveLavishQueueKey(element, options = {}) {
     return stringValue(options.queueKey).trim();
   }
 
-  const question = closestElementMatching(element, "[data-lavish-question]");
-  const questionKey = stringValue(attributeValue(question, "data-lavish-question")).trim();
+  const question = closestElementMatching(element, "[data-textcast-question]");
+  const questionKey = stringValue(attributeValue(question, "data-textcast-question")).trim();
   if (questionKey) return `question:${questionKey}`;
 
   const tag = tagName(element);
@@ -283,7 +283,7 @@ export function planClipboardPaste(clipboardData, acceptedMime) {
 }
 
 /**
- * Decide whether an incoming `lavish:attachmentResult` may be applied to this
+ * Decide whether an incoming `textcast:attachmentResult` may be applied to this
  * document's chips. Two independent conditions, both required:
  *
  * 1. It came from the chrome (`event.source === parent`). The SDK's listener is on
@@ -329,7 +329,7 @@ export function deriveAttachmentNoticeState(state = {}) {
  * @param {*} [isNativeInteractive]
  * @param {number} [artifactRevision]
  * @param {string} [artifactLoadToken]
- * @param {{ maxAttachmentCount?: number, maxAttachmentBytes?: number, acceptedImageMime?: string[] }} [options]
+ * @param {{ maxAttachmentCount?: number, maxAttachmentBytes?: number, acceptedImageMime?: string[], strings?: Record<string, string> }} [options]
  */
 export function createArtifactSdk(
   deriveQueueKey,
@@ -338,19 +338,24 @@ export function createArtifactSdk(
   artifactLoadToken = "",
   options = {},
 ) {
+  // The page's language, chosen by the server (src/chrome-i18n.js). Without it the card is English.
+  // `makeTranslator` is a const of the SDK bundle (createSdkJs); unit tests run without it.
+  // @ts-ignore
+  const bundledTranslator = typeof makeTranslator === "function" ? makeTranslator : undefined; // eslint-disable-line no-undef
+  /** @type {(text: string, vars?: Record<string, unknown>) => string} */
+  const t = bundledTranslator ? bundledTranslator(options.strings) : (text) => String(text);
   function postArtifactMessage(type, payload = {}) {
     parent.postMessage({ type, ...payload, artifact_load_token: String(artifactLoadToken || "") }, "*");
   }
   // Only an explicit "off" declaration on the root opts out; absent or unknown
   // values keep the artifact annotatable by default.
-  const initialAnnotationMode = document.documentElement.getAttribute("data-lavish-annotate") !== "off";
+  const initialAnnotationMode = document.documentElement.getAttribute("data-textcast-annotate") !== "off";
   let annotationMode = initialAnnotationMode;
-  let hovered = null;
   let selected = null;
-  let ignoreNextClick = false;
-  // Selectors the chrome reports as carrying a queued note. A click on one opens that note in the
-  // chrome's panel instead of a fresh card; the note's words never enter this document.
-  let queuedAnchorSelectors = new Set();
+  // The text selection the floating Ask button would annotate, and the button itself.
+  let offeredSelection = null;
+  let askButton = null;
+  let pointerSelecting = false;
   let shadow = null;
   let counter = 0;
   const ids = new WeakMap();
@@ -359,7 +364,7 @@ export function createArtifactSdk(
   // server re-validates size and enforces the per-prompt count/byte caps at queue
   // time (see attachment-store.js), rejecting the entire send batch on a mismatch
   // so the chrome can preserve the queue and surface the correction to the user.
-  // The count cap mirrors the server's LAVISH_AXI_MAX_ATTACHMENTS_PER_PROMPT, passed
+  // The count cap mirrors the server's TEXTCAST_CHAT_AXI_MAX_ATTACHMENTS_PER_PROMPT, passed
   // in via createSdkJs (W1); the literal 4 is only the fallback when the SDK runs
   // without that wiring (e.g. a unit-test call to createArtifactSdk).
   const ATTACHMENT_MAX_COUNT =
@@ -400,26 +405,30 @@ export function createArtifactSdk(
   function attachmentChipHtml(item, index) {
     const name = escapeAnnotationText(item.name || "image");
     const thumb = item.url
-      ? '<img class="lavish-attachment-thumb" src="' + escapeAnnotationText(item.url) + '" alt="">'
-      : '<span class="lavish-attachment-thumb lavish-attachment-thumb-empty" aria-hidden="true"></span>';
+      ? '<img class="textcast-attachment-thumb" src="' + escapeAnnotationText(item.url) + '" alt="">'
+      : '<span class="textcast-attachment-thumb textcast-attachment-thumb-empty" aria-hidden="true"></span>';
     let status = "";
-    if (item.status === "uploading") status = '<span class="lavish-attachment-status">Uploading…</span>';
+    if (item.status === "uploading") status = '<span class="textcast-attachment-status">' + t("Uploading…") + "</span>";
     else if (item.status === "error")
       status =
-        '<span class="lavish-attachment-status lavish-attachment-status-error">' +
-        escapeAnnotationText(item.error || "Upload failed") +
+        '<span class="textcast-attachment-status textcast-attachment-status-error">' +
+        escapeAnnotationText(t(item.error || "Upload failed")) +
         "</span>";
     // Only a real (retryable) upload gets a Retry button; a rejected non-image has no file.
     const retry =
       item.status === "error" && item.file
-        ? '<button type="button" class="lavish-attachment-retry" data-attachment-retry="' + index + '">Retry</button>'
+        ? '<button type="button" class="textcast-attachment-retry" data-attachment-retry="' +
+          index +
+          '">' +
+          t("Retry") +
+          "</button>"
         : "";
     return (
-      '<div class="lavish-attachment-chip' +
+      '<div class="textcast-attachment-chip' +
       (item.status === "error" ? " is-error" : "") +
       '">' +
       thumb +
-      '<span class="lavish-attachment-body"><span class="lavish-attachment-name" title="' +
+      '<span class="textcast-attachment-body"><span class="textcast-attachment-name" title="' +
       name +
       '">' +
       name +
@@ -427,9 +436,13 @@ export function createArtifactSdk(
       status +
       "</span>" +
       retry +
-      '<button type="button" class="lavish-attachment-remove" data-attachment-remove="' +
+      '<button type="button" class="textcast-attachment-remove" data-attachment-remove="' +
       index +
-      '" aria-label="Remove image" title="Remove">' +
+      '" aria-label="' +
+      escapeAnnotationText(t("Remove image")) +
+      '" title="' +
+      escapeAnnotationText(t("Remove")) +
+      '">' +
       REMOVE_ICON +
       "</button></div>"
     );
@@ -451,14 +464,16 @@ export function createArtifactSdk(
       if (items.length < ATTACHMENT_MAX_COUNT) capRejected = false;
       if (!hasPending() && !hasErrors()) queueBlocked = false;
       notify(
-        deriveAttachmentNoticeState({
-          itemCount: items.length,
-          maxCount: ATTACHMENT_MAX_COUNT,
-          capRejected,
-          queueBlocked,
-          hasPending: hasPending(),
-          hasErrors: hasErrors(),
-        }),
+        t(
+          deriveAttachmentNoticeState({
+            itemCount: items.length,
+            maxCount: ATTACHMENT_MAX_COUNT,
+            capRejected,
+            queueBlocked,
+            hasPending: hasPending(),
+            hasErrors: hasErrors(),
+          }),
+        ),
       );
       listEl.innerHTML = items.map((item, index) => attachmentChipHtml(item, index)).join("");
       listEl.hidden = items.length === 0;
@@ -485,7 +500,7 @@ export function createArtifactSdk(
           // Route through postArtifactMessage so the message carries the current
           // artifact_load_token - the chrome drops any artifact message without it
           // before the upload handler ever runs.
-          postArtifactMessage("lavish:uploadAttachment", {
+          postArtifactMessage("textcast:uploadAttachment", {
             nonce: ATTACHMENT_NONCE,
             localId: item.localId,
             name: item.name,
@@ -709,7 +724,7 @@ export function createArtifactSdk(
   window.addEventListener("message", (event) => {
     if (event.source !== parent) return;
     const msg = event.data || {};
-    if (msg.type === "lavish:requestReady") reportReady();
+    if (msg.type === "textcast:requestReady") reportReady();
   });
 
   function closestElement(node) {
@@ -747,7 +762,7 @@ export function createArtifactSdk(
     if (range.collapsed || !text) return null;
 
     const ancestor = closestElement(range.commonAncestorContainer);
-    if (isLavishUi(ancestor) || isLavishAction(ancestor) || isInteractiveControl(ancestor)) return null;
+    if (isTextcastUi(ancestor) || isTextcastAction(ancestor) || isInteractiveControl(ancestor)) return null;
 
     const commonAncestorSelector = selector(ancestor);
     const target = {
@@ -770,26 +785,26 @@ export function createArtifactSdk(
     };
   }
 
-  function isLavishUi(el) {
-    return !!(el && el.closest && el.closest("[data-lavish-ui]"));
+  function isTextcastUi(el) {
+    return !!(el && el.closest && el.closest("[data-textcast-ui]"));
   }
 
-  function isLavishAction(el) {
-    return !!(el && el.closest && el.closest("[data-lavish-action]"));
+  function isTextcastAction(el) {
+    return !!(el && el.closest && el.closest("[data-textcast-action]"));
   }
 
   // Native interactive controls (radios, checkboxes, inputs, selects, buttons,
   // labels, disclosure summaries, editable regions, interactive ARIA widgets)
   // should toggle/focus/type natively instead of triggering annotation, just
-  // like elements marked with data-lavish-action.
+  // like elements marked with data-textcast-action.
   function isInteractiveControl(el) {
     return isNativeInteractive(el);
   }
 
   function highlightElement(el) {
     if (!el) return;
-    el.style.outline = "var(--lavish-annotate-outline,2px solid #f4c95d)";
-    el.style.outlineOffset = "var(--lavish-annotate-offset,2px)";
+    el.style.outline = "2px solid var(--brand, #1b365d)";
+    el.style.outlineOffset = "2px";
   }
 
   function clearHighlight(el) {
@@ -798,7 +813,7 @@ export function createArtifactSdk(
 
   function clearTextHighlight() {
     if (!shadow) return;
-    for (const el of [...shadow.querySelectorAll(".lavish-text-highlight")]) el.remove();
+    for (const el of [...shadow.querySelectorAll(".textcast-text-highlight")]) el.remove();
   }
 
   function highlightTextRange(range) {
@@ -807,7 +822,7 @@ export function createArtifactSdk(
     for (const rect of [...range.getClientRects()]) {
       if (rect.width <= 0 || rect.height <= 0) continue;
       const mark = document.createElement("div");
-      mark.className = "lavish-text-highlight";
+      mark.className = "textcast-text-highlight";
       mark.style.left = rect.left + "px";
       mark.style.top = rect.top + "px";
       mark.style.width = rect.width + "px";
@@ -818,27 +833,21 @@ export function createArtifactSdk(
 
   function setAnnotationMode(enabled) {
     annotationMode = !!enabled;
-    let style = document.getElementById("lavish-cursor-style");
-    if (annotationMode && !style) {
-      style = document.createElement("style");
-      style.id = "lavish-cursor-style";
-      style.textContent =
-        ":root{--lavish-accent:#f4c95d;--lavish-annotate-outline:2px solid var(--lavish-accent);--lavish-annotate-offset:2px}*{cursor:default!important}:where(:is([role='button'],[role='checkbox'],[role='combobox'],[role='menuitem'],[role='menuitemcheckbox'],[role='menuitemradio'],[role='option'],[role='radio'],[role='switch'],[role='tab'],[role='treeitem']):not(a[href])),:where(:is([role='button'],[role='checkbox'],[role='combobox'],[role='menuitem'],[role='menuitemcheckbox'],[role='menuitemradio'],[role='option'],[role='radio'],[role='switch'],[role='tab'],[role='treeitem']):not(a[href])) *{cursor:pointer!important}:where(:is([role='button'],[role='checkbox'],[role='combobox'],[role='menuitem'],[role='menuitemcheckbox'],[role='menuitemradio'],[role='option'],[role='radio'],[role='switch'],[role='tab'],[role='treeitem']) a[href]),:where(:is([role='button'],[role='checkbox'],[role='combobox'],[role='menuitem'],[role='menuitemcheckbox'],[role='menuitemradio'],[role='option'],[role='radio'],[role='switch'],[role='tab'],[role='treeitem']) a[href]) *{cursor:default!important}[data-lavish-action],[data-lavish-action] *{cursor:pointer!important}input,textarea,[contenteditable]:not([contenteditable='false']){cursor:text!important}button,select,label,option,input[type='button'],input[type='submit'],input[type='reset'],input[type='checkbox'],input[type='radio'],input[type='file'],input[type='color'],input[type='range'],input[type='image']{cursor:pointer!important}";
-      document.head.appendChild(style);
+    if (!annotationMode) {
+      hideAskButton();
+      closeCard();
     }
-    if (!annotationMode && style) style.remove();
-    if (!annotationMode) closeCard();
   }
 
   function queuePrompt(prompt, options = {}) {
     const originElement = options.element || document.activeElement || document.body;
-    /** @type {{ uid: string, prompt: string, selector: string, tag: string, text: string, target?: unknown, attachments?: Array<{ id: string, name?: string }>, _lavishQueueKey?: string }} */
+    /** @type {{ uid: string, prompt: string, selector: string, tag: string, text: string, target?: unknown, attachments?: Array<{ id: string, name?: string }>, _textcastQueueKey?: string }} */
     const item = {
       ...context(originElement),
       prompt: String(prompt || ""),
     };
     const queueKey = typeof deriveQueueKey === "function" ? deriveQueueKey(originElement, options) : "";
-    if (queueKey) item._lavishQueueKey = String(queueKey);
+    if (queueKey) item._textcastQueueKey = String(queueKey);
 
     if (options.uid) item.uid = String(options.uid);
     if (options.selector) item.selector = String(options.selector);
@@ -859,22 +868,120 @@ export function createArtifactSdk(
       if (attachments.length) item.attachments = attachments;
     }
 
-    postArtifactMessage("lavish:queuePrompt", { prompt: item });
+    postArtifactMessage("textcast:queuePrompt", { prompt: item });
   }
 
   function sendQueuedPrompts() {
-    postArtifactMessage("lavish:sendQueuedPrompts");
+    postArtifactMessage("textcast:sendQueuedPrompts");
   }
 
   function endSession() {
-    postArtifactMessage("lavish:endSession");
+    postArtifactMessage("textcast:endSession");
   }
 
-  // Tells the chrome this document parsed and its SDK is running, which is what lifts the chrome's
-  // loading cover. The chrome asks again (`lavish:requestReady`) when a report lost a token race.
+  // Tells the chrome this document parsed and its SDK is running, right after the theme report the
+  // chrome dresses itself in. The chrome asks again (`textcast:requestReady`) when a report lost a
+  // token race, so the current document's theme still arrives.
   function reportReady() {
-    postArtifactMessage("lavish:ready", { artifact_revision: artifactRevision });
+    lastThemeReport = "";
+    reportTheme();
+    // A Textcast page with a video marks its body `has-player`; the chrome then offers its switch.
+    postArtifactMessage("textcast:ready", {
+      artifact_revision: artifactRevision,
+      has_video: Boolean(document.body && document.body.classList.contains("has-player")),
+    });
   }
+
+  // The page's colour theme, so the chrome around it can wear the same palette. The theme name
+  // comes from `<html data-theme>`; the palette is the page's own custom properties as computed
+  // now, plus the body colours for pages that define none. The chrome validates every value.
+  const THEME_PROPERTIES = [
+    "parchment",
+    "ivory",
+    "surface",
+    "inline-code-bg",
+    "warm-sand",
+    "brand",
+    "brand-light",
+    "brand-tint",
+    "on-brand",
+    "near-black",
+    "dark-warm",
+    "olive",
+    "stone",
+    "border",
+    "border-soft",
+    "line",
+    "shadow",
+    "serif",
+    "latin-ui",
+  ];
+  let lastThemeReport = "";
+  function reportTheme() {
+    const root = document.documentElement;
+    if (!root || typeof window.getComputedStyle !== "function") return;
+    const computed = window.getComputedStyle(root);
+    /** @type {Record<string, string>} */
+    const palette = {};
+    for (const name of THEME_PROPERTIES) {
+      const value = computed.getPropertyValue("--" + name).trim();
+      if (value) palette[name] = value;
+    }
+    if (document.body) {
+      const body = window.getComputedStyle(document.body);
+      palette["body-bg"] = body.backgroundColor;
+      palette["body-fg"] = body.color;
+    }
+    const payload = {
+      theme: String(root.getAttribute("data-theme") || ""),
+      scheme: computed.colorScheme || "",
+      palette,
+    };
+    const signature = JSON.stringify(payload);
+    if (signature === lastThemeReport) return;
+    lastThemeReport = signature;
+    postArtifactMessage("textcast:theme", payload);
+  }
+  if (typeof MutationObserver === "function") {
+    new MutationObserver(() => reportTheme()).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "class", "style"],
+    });
+  }
+
+  // A sandboxed page cannot run a YouTube or Bilibili embed (the sandbox passes on to nested
+  // frames), so a Textcast page hands the chrome what to play and the chrome shows the player.
+  // Only the video's identity and start second cross; the chrome builds the embed URL itself.
+  Object.defineProperty(window, "textcastHostPlayer", {
+    configurable: true,
+    value: (spec) => {
+      const source = spec && typeof spec === "object" ? spec : {};
+      postArtifactMessage("textcast:play", {
+        kind: String(source.kind || ""),
+        id: String(source.id || ""),
+        page: Number(source.page) || 1,
+        start: Number(source.start) || 0,
+      });
+    },
+  });
+
+  // A link to another page of the same site (a Textcast transcript, its summary, the index) is
+  // followed by the chrome rather than by this frame: the server moves the review to that page and
+  // serves it with this SDK, so asking about text keeps working there. Anything else - an anchor
+  // on this page, another site, a new tab, a download - behaves as the page wrote it.
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!link || isTextcastUi(link) || link.hasAttribute("download")) return;
+    const target = String(link.getAttribute("target") || "").toLowerCase();
+    if (target && target !== "_self") return;
+    const href = String(link.getAttribute("href") || "").trim();
+    if (!href || href.startsWith("#") || href.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(href)) return;
+    if (!/\.html?$/i.test(href.split(/[?#]/)[0])) return;
+    event.preventDefault();
+    postArtifactMessage("textcast:navigate", { href: href.slice(0, 2000) });
+  });
 
   // The narrow fatal path. A local subresource the artifact declares but the server cannot serve
   // makes the review unusable rather than merely mislaid, so it bypasses the passive inbox. Only
@@ -882,7 +989,7 @@ export function createArtifactSdk(
   // viewer's network, not a defect in the artifact.
   function reportLocalAssetFailure(event) {
     const el = event.target;
-    if (!(el instanceof Element) || isLavishUi(el)) return;
+    if (!(el instanceof Element) || isTextcastUi(el)) return;
     const tag = String(el.tagName || "").toLowerCase();
     if (!["img", "script", "link", "source", "video", "audio", "iframe"].includes(tag)) return;
     const raw = String(el.getAttribute("src") || el.getAttribute("href") || "");
@@ -894,7 +1001,7 @@ export function createArtifactSdk(
       return;
     }
     if (resolved.origin !== window.location.origin) return;
-    postArtifactMessage("lavish:artifactAssetFailure", {
+    postArtifactMessage("textcast:artifactAssetFailure", {
       detail: "<" + tag + "> could not load " + resolved.pathname,
     });
   }
@@ -903,10 +1010,10 @@ export function createArtifactSdk(
 
   // ---------------------------------------------------------------------------
   // Review-context preservation. A live reload replaces this document wholesale, so anything the
-  // user typed or answered inside it is lost unless the chrome replays it. Lavish only ever
-  // replays state it owns: an open annotation card, and controls inside a `data-lavish-question`
-  // scope (the documented Lavish input contract). Application-owned form state is left alone
-  // because Lavish cannot tell an intentional reset from a preserved answer.
+  // user typed or answered inside it is lost unless the chrome replays it. Textcast Chat only ever
+  // replays state it owns: an open annotation card, and controls inside a `data-textcast-question`
+  // scope (the documented Textcast Chat input contract). Application-owned form state is left alone
+  // because Textcast Chat cannot tell an intentional reset from a preserved answer.
   // ---------------------------------------------------------------------------
 
   let activeCardContext = null;
@@ -932,10 +1039,10 @@ export function createArtifactSdk(
     }
   }
 
-  function lavishQuestionControls() {
+  function textcastQuestionControls() {
     const entries = [];
-    for (const scope of document.querySelectorAll("[data-lavish-question]")) {
-      const question = String(scope.getAttribute("data-lavish-question") || "");
+    for (const scope of document.querySelectorAll("[data-textcast-question]")) {
+      const question = String(scope.getAttribute("data-textcast-question") || "");
       const controls = [...scope.querySelectorAll("input,select,textarea")];
       controls.forEach((el, index) => {
         const control = /** @type {any} */ (el);
@@ -962,7 +1069,7 @@ export function createArtifactSdk(
   }
 
   function collectReviewState() {
-    const card = shadow ? shadow.querySelector(".lavish-annotation-card") : null;
+    const card = shadow ? shadow.querySelector(".textcast-annotation-card") : null;
     const textarea = card ? card.querySelector("textarea") : null;
     const text = textarea ? String(textarea.value || "") : "";
     return {
@@ -972,7 +1079,7 @@ export function createArtifactSdk(
         activeCardContext && activeCardContext.tag !== "text" && text.trim()
           ? { selector: String(activeCardContext.selector || ""), text: text.slice(0, 4000) }
           : null,
-      fields: lavishQuestionControls().map((entry) => ({
+      fields: textcastQuestionControls().map((entry) => ({
         key: entry.key,
         index: entry.index,
         question: entry.question,
@@ -987,7 +1094,7 @@ export function createArtifactSdk(
     if (reviewStateTimer) window.clearTimeout(reviewStateTimer);
     reviewStateTimer = window.setTimeout(() => {
       reviewStateTimer = 0;
-      postArtifactMessage("lavish:reviewState", { state: collectReviewState() });
+      postArtifactMessage("textcast:reviewState", { state: collectReviewState() });
     }, 120);
   }
 
@@ -995,7 +1102,7 @@ export function createArtifactSdk(
     if (!state || typeof state !== "object") return;
     const fields = Array.isArray(state.fields) ? state.fields : [];
     if (fields.length) {
-      const entries = lavishQuestionControls();
+      const entries = textcastQuestionControls();
       for (const field of fields) {
         const match =
           entries.find((entry) => entry.key === field.key) ||
@@ -1029,7 +1136,7 @@ export function createArtifactSdk(
           showAnnotationCard(late, { restoreText: String(card.text) });
           return;
         }
-        postArtifactMessage("lavish:reviewDraftUnrestorable", { selector: String(card.selector) });
+        postArtifactMessage("textcast:reviewDraftUnrestorable", { selector: String(card.selector) });
       }, REVIEW_DRAFT_ANCHOR_SETTLE_MS);
       return;
     }
@@ -1038,28 +1145,28 @@ export function createArtifactSdk(
 
   document.addEventListener("change", (event) => {
     const el = event.target;
-    if (el instanceof Element && el.closest("[data-lavish-question]")) scheduleReviewStateReport();
+    if (el instanceof Element && el.closest("[data-textcast-question]")) scheduleReviewStateReport();
   });
   document.addEventListener("input", (event) => {
     const el = event.target;
-    if (el instanceof Element && el.closest("[data-lavish-question]")) scheduleReviewStateReport();
+    if (el instanceof Element && el.closest("[data-textcast-question]")) scheduleReviewStateReport();
   });
 
   function ensureShadow() {
     if (shadow) return shadow;
 
     const host = document.createElement("div");
-    host.className = "lavish-annotation-root";
-    host.setAttribute("data-lavish-ui", "annotation-root");
+    host.className = "textcast-annotation-root";
+    host.setAttribute("data-textcast-ui", "annotation-root");
     document.documentElement.appendChild(host);
 
     shadow = host.attachShadow({ mode: "open" });
-    // Keep the artifact's own key handlers from seeing, and cancelling, typing in Lavish controls.
+    // Keep the artifact's own key handlers from seeing, and cancelling, typing in Textcast Chat controls.
     for (const type of ["keydown", "keypress", "keyup"]) {
       shadow.addEventListener(type, (event) => event.stopPropagation());
     }
     const style = document.createElement("style");
-    style.textContent = `:host{all:initial;position:fixed;z-index:2147483647;left:0;top:0;color-scheme:dark;--ink-900:#0f1115;--ink-800:#11141a;--ink-700:#171a21;--ink-600:#1c212b;--steel-700:#2a2f3a;--steel-600:#303745;--steel-500:#3c4557;--steel-400:#8c96aa;--steel-300:#aeb6c6;--steel-200:#b9c0cf;--steel-100:#d8deea;--cream-50:#fffbf3;--cream-100:#f7f3ea;--cream-200:#e8e1cf;--brass-500:#f4c95d;--brass-400:#ffd877;--brass-ink:#17130a;--bg:var(--ink-900);--bg-panel:var(--ink-800);--bg-elevated:var(--ink-600);--fg:var(--cream-100);--fg-faint:var(--steel-300);--border:var(--steel-600);--accent:#f4c95d;--accent-hover:#ffd877;--font-sans:Geist,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--radius-md:10px;--radius-xl:14px;--shadow-floating:0 20px 70px rgba(0,0,0,.35);font-family:var(--font-sans)}*{box-sizing:border-box}:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.lavish-text-highlight{position:fixed;pointer-events:none;background:rgba(244,201,93,.28);border-radius:2px;box-shadow:0 0 0 1px rgba(244,201,93,.45)}.lavish-annotation-card{position:fixed;width:min(320px,calc(100vw - 24px));padding:12px;border-radius:var(--radius-xl);background:var(--bg-panel);color:var(--fg);border:1px solid var(--accent);box-shadow:var(--shadow-floating);font:14px/1.4 var(--font-sans)}.lavish-heading{font-weight:700;margin-bottom:6px}.lavish-annotation-card textarea{width:100%;min-height:86px;resize:vertical;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg);color:var(--fg);padding:9px;font:inherit;font-family:var(--font-sans)}.lavish-annotation-card textarea::placeholder{color:var(--fg-faint)}.lavish-annotation-card .lavish-hint{margin-top:6px;font-size:11px;color:var(--fg-faint)}.lavish-annotation-card .lavish-hint-alert{color:#ff9d7a;font-weight:700}.lavish-annotation-card .lavish-row{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}.lavish-annotation-card button{border:0;border-radius:var(--radius-md);padding:8px 10px;font-family:var(--font-sans);font-size:13px;font-weight:700;cursor:pointer}.lavish-annotation-card button:active{opacity:.85}.lavish-annotation-card .lavish-send{background:var(--accent);color:var(--brass-ink)}.lavish-annotation-card .lavish-send:hover{background:var(--accent-hover)}.lavish-annotation-card .lavish-cancel{background:var(--steel-700);color:var(--fg)}.lavish-annotation-card.is-dropping{outline:2px dashed var(--accent);outline-offset:3px}.lavish-attachments{display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:176px;overflow-y:auto}.lavish-attachment-chip{display:flex;align-items:center;gap:8px;padding:6px;border-radius:var(--radius-md);background:var(--bg);border:1px solid var(--border)}.lavish-attachment-chip.is-error{border-color:#e0623d}.lavish-attachment-thumb{width:32px;height:32px;border-radius:6px;object-fit:cover;background:var(--ink-700);flex:0 0 auto}.lavish-attachment-thumb-empty{display:inline-block}.lavish-attachment-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 auto}.lavish-attachment-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lavish-attachment-status{font-size:11px;color:var(--fg-faint)}.lavish-attachment-status-error{color:#ff9d7a}.lavish-attachment-retry{flex:0 0 auto;padding:4px 8px;font-size:11px;font-weight:700;border-radius:8px;background:var(--steel-700);color:var(--fg);cursor:pointer;border:0}.lavish-attachment-remove{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0!important;border-radius:50%;background:transparent;color:rgba(255,255,255,.85);cursor:pointer;border:0}.lavish-attachment-remove:hover{background:rgba(255,255,255,.14);color:#fff}.lavish-attach-row{margin-top:8px}.lavish-attach{display:inline-flex;align-items:center;gap:6px;padding:6px 9px!important;background:var(--steel-700)!important;color:var(--fg)!important;font-size:12px!important}.lavish-attach:hover{background:var(--steel-600)!important}.lavish-reveal-marker{position:fixed;pointer-events:none;border:2px solid var(--accent);border-radius:4px;box-shadow:0 0 0 4px rgba(244,201,93,.22);animation:lavish-reveal-pulse 2.4s var(--ease,ease-out) forwards}@keyframes lavish-reveal-pulse{0%{opacity:0}12%{opacity:1}70%{opacity:1}100%{opacity:0}}`;
+    style.textContent = `:host{all:initial;position:fixed;z-index:2147483647;left:0;top:0;--lv-surface:var(--surface,#fdfdfb);--lv-field:var(--parchment,#f5f4ed);--lv-fg:var(--near-black,#141413);--lv-soft:var(--dark-warm,#3d3d3a);--lv-muted:var(--stone,#6b6a64);--lv-border:var(--border,#e8e6dc);--lv-line:var(--line,#d8d5c8);--lv-accent:var(--brand,#1b365d);--lv-accent-hover:var(--brand-light,#2d5a8a);--lv-on-accent:var(--on-brand,#faf9f5);--lv-tint:var(--brand-tint,#eef2f7);--lv-shadow:var(--shadow,rgba(20,20,19,.06));--lv-serif:var(--serif,Georgia,serif);--lv-ui:var(--latin-ui,system-ui,-apple-system,"Segoe UI",sans-serif);--lv-danger:#b4442f;font-family:var(--lv-ui);color:var(--lv-fg)}*{box-sizing:border-box}:focus-visible{outline:2px solid var(--lv-accent);outline-offset:2px}button{font-family:var(--lv-ui)}.textcast-text-highlight{position:fixed;pointer-events:none;background:var(--lv-tint);border-radius:2px;box-shadow:inset 0 -2px 0 var(--lv-accent);opacity:.9}.textcast-ask{position:fixed;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px 0 11px;border:0;border-radius:999px;background:var(--lv-fg);color:var(--lv-field);font-size:13px;font-weight:600;letter-spacing:.01em;cursor:pointer;box-shadow:0 6px 18px -6px rgba(0,0,0,.35),0 1px 3px rgba(0,0,0,.12);animation:textcast-pop .14s ease-out}.textcast-ask:hover{background:var(--lv-accent);color:var(--lv-on-accent)}@keyframes textcast-pop{from{opacity:0;transform:translateY(4px) scale(.96)}to{opacity:1;transform:none}}.textcast-annotation-card{position:fixed;width:min(340px,calc(100vw - 24px));padding:14px;border-radius:14px;background:var(--lv-surface);color:var(--lv-fg);border:1px solid var(--lv-border);box-shadow:0 18px 48px -16px rgba(0,0,0,.28),0 2px 8px var(--lv-shadow);font:14px/1.5 var(--lv-ui);animation:textcast-pop .16s ease-out}.textcast-heading{font-weight:600;font-size:13px;color:var(--lv-muted);margin-bottom:8px}.textcast-quote{margin:0 0 10px;padding:2px 0 2px 10px;border-left:2px solid var(--lv-accent);font-family:var(--lv-serif);font-size:14px;line-height:1.6;color:var(--lv-soft);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.textcast-annotation-card textarea{display:block;width:100%;min-height:78px;resize:vertical;border-radius:10px;border:1px solid var(--lv-border);background:var(--lv-field);color:var(--lv-fg);padding:9px 11px;font:inherit;outline:none;transition:border-color .12s,box-shadow .12s}.textcast-annotation-card textarea:focus{border-color:var(--lv-accent);box-shadow:0 0 0 3px var(--lv-tint)}.textcast-annotation-card textarea::placeholder{color:var(--lv-muted)}.textcast-annotation-card .textcast-hint{margin-top:8px;font-size:11px;color:var(--lv-muted)}.textcast-annotation-card .textcast-hint-alert{color:var(--lv-danger);font-weight:600}.textcast-annotation-card .textcast-row{display:flex;gap:6px;align-items:center;margin-top:10px}.textcast-row-gap{flex:1}.textcast-annotation-card button{border:0;border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}.textcast-annotation-card button:active{transform:translateY(1px)}.textcast-annotation-card .textcast-cancel{background:transparent;color:var(--lv-muted);padding-left:6px;padding-right:6px}.textcast-annotation-card .textcast-cancel:hover{color:var(--lv-fg)}.textcast-annotation-card .textcast-send{background:transparent;color:var(--lv-fg);border:1px solid var(--lv-line)}.textcast-annotation-card .textcast-send:hover{border-color:var(--lv-accent);color:var(--lv-accent)}.textcast-annotation-card .textcast-send-now{background:var(--lv-accent);color:var(--lv-on-accent)}.textcast-annotation-card .textcast-send-now:hover{background:var(--lv-accent-hover)}.textcast-annotation-card.is-dropping{outline:2px dashed var(--lv-accent);outline-offset:3px}.textcast-attachments{display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:176px;overflow-y:auto}.textcast-attachment-chip{display:flex;align-items:center;gap:8px;padding:6px;border-radius:10px;background:var(--lv-field);border:1px solid var(--lv-border)}.textcast-attachment-chip.is-error{border-color:var(--lv-danger)}.textcast-attachment-thumb{width:32px;height:32px;border-radius:6px;object-fit:cover;background:var(--lv-border);flex:0 0 auto}.textcast-attachment-thumb-empty{display:inline-block}.textcast-attachment-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 auto}.textcast-attachment-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.textcast-attachment-status{font-size:11px;color:var(--lv-muted)}.textcast-attachment-status-error{color:var(--lv-danger)}.textcast-attachment-retry{flex:0 0 auto;padding:4px 8px!important;font-size:11px!important;border-radius:8px;background:transparent;border:1px solid var(--lv-line)!important;color:var(--lv-fg);cursor:pointer}.textcast-attachment-remove{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0!important;border-radius:50%;background:transparent;color:var(--lv-muted);cursor:pointer;border:0}.textcast-attachment-remove:hover{background:var(--lv-border);color:var(--lv-fg)}.textcast-attach-row{margin-top:8px}.textcast-attach{display:inline-flex;align-items:center;gap:6px;padding:4px 6px!important;background:transparent!important;color:var(--lv-muted)!important;font-size:12px!important;font-weight:500!important}.textcast-attach:hover{color:var(--lv-accent)!important}.textcast-reveal-marker{position:fixed;pointer-events:none;border:2px solid var(--lv-accent);border-radius:6px;box-shadow:0 0 0 5px var(--lv-tint);animation:textcast-reveal-pulse 2.4s ease-out forwards}@keyframes textcast-reveal-pulse{0%{opacity:0}12%{opacity:1}70%{opacity:1}100%{opacity:0}}@media (prefers-reduced-motion:reduce){.textcast-ask,.textcast-annotation-card{animation:none}}`;
     shadow.appendChild(style);
     return shadow;
   }
@@ -1072,15 +1179,13 @@ export function createArtifactSdk(
       activeAttachments = null;
     }
     if (shadow) {
-      for (const el of [...shadow.querySelectorAll(".lavish-annotation-card")]) el.remove();
+      for (const el of [...shadow.querySelectorAll(".textcast-annotation-card")]) el.remove();
     }
-    clearHighlight(hovered);
     clearHighlight(selected);
-    hovered = null;
     clearTextHighlight();
     selected = null;
     // Only a card that was open has state to retire. Reporting `card: null` with nothing open
-    // (a page declaring data-lavish-annotate="off" closes at boot) would overwrite a stored
+    // (a page declaring data-textcast-annotate="off" closes at boot) would overwrite a stored
     // draft the chrome has not replayed yet, because that replay waits for the frame's load event.
     if (hadCard) scheduleReviewStateReport();
   }
@@ -1108,29 +1213,38 @@ export function createArtifactSdk(
 
     const rect = options.range ? options.range.getBoundingClientRect() : anchor.getBoundingClientRect();
     const card = document.createElement("div");
-    card.className = "lavish-annotation-card";
-    const heading = c.tag === "text" ? "Annotate text" : "Annotate &lt;" + c.tag + "&gt;";
-    const placeholder =
+    card.className = "textcast-annotation-card";
+    // A text note quotes the words it is about; an element note names the element.
+    const heading =
       c.tag === "text"
-        ? "Tell the agent what to change about this text..."
-        : "Tell the agent what to change about this element...";
+        ? '<blockquote class="textcast-quote">' + escapeAnnotationText(c.text) + "</blockquote>"
+        : '<div class="textcast-heading">' + escapeAnnotationText(t("Annotate <{tag}>", { tag: c.tag })) + "</div>";
+    const placeholder = escapeAnnotationText(
+      t(c.tag === "text" ? "Ask about this, or say what to change..." : "Tell the agent what to change..."),
+    );
     const sendNowHint = isApplePlatform() ? "⌘" : "Ctrl";
     card.innerHTML =
-      '<div class="lavish-heading">' +
       heading +
-      '</div><textarea placeholder="' +
+      '<textarea placeholder="' +
       placeholder +
-      '"></textarea><div class="lavish-attachments" data-attachments hidden></div>' +
-      '<div class="lavish-attach-row"><button class="lavish-attach" type="button">' +
+      '"></textarea><div class="textcast-attachments" data-attachments hidden></div>' +
+      '<div class="textcast-attach-row"><button class="textcast-attach" type="button">' +
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
-      "<span>Attach image</span></button>" +
-      '<input class="lavish-attach-input" type="file" accept="' +
+      "<span>" +
+      escapeAnnotationText(t("Attach image")) +
+      "</span></button>" +
+      '<input class="textcast-attach-input" type="file" accept="' +
       ATTACHMENT_IMAGE_TYPES.accept +
       '" multiple hidden></div>' +
-      '<div class="lavish-hint">Enter to queue &middot; ' +
-      sendNowHint +
-      "+Enter to send &middot; paste or drop an image" +
-      '</div><div class="lavish-row"><button class="lavish-cancel" type="button">Cancel</button><button class="lavish-send" type="button">Queue</button></div>';
+      '<div class="textcast-hint">' +
+      escapeAnnotationText(t("Enter to queue · {key}+Enter to send", { key: sendNowHint })) +
+      '</div><div class="textcast-row"><button class="textcast-cancel" type="button">' +
+      escapeAnnotationText(t("Cancel")) +
+      '</button><span class="textcast-row-gap"></span><button class="textcast-send" type="button">' +
+      escapeAnnotationText(t("Queue")) +
+      '</button><button class="textcast-send-now" type="button">' +
+      escapeAnnotationText(t("Send")) +
+      "</button></div>";
     root.appendChild(card);
 
     // Clamp the card fully inside the viewport. Called again whenever its height
@@ -1146,12 +1260,13 @@ export function createArtifactSdk(
     positionCard();
 
     const textarea = /** @type {HTMLTextAreaElement | null} */ (card.querySelector("textarea"));
-    const cancelButton = /** @type {HTMLButtonElement | null} */ (card.querySelector(".lavish-cancel"));
-    const sendButton = /** @type {HTMLButtonElement | null} */ (card.querySelector(".lavish-send"));
+    const cancelButton = /** @type {HTMLButtonElement | null} */ (card.querySelector(".textcast-cancel"));
+    const sendButton = /** @type {HTMLButtonElement | null} */ (card.querySelector(".textcast-send"));
+    const sendNowButton = /** @type {HTMLButtonElement | null} */ (card.querySelector(".textcast-send-now"));
     const attachmentsList = /** @type {HTMLDivElement | null} */ (card.querySelector("[data-attachments]"));
-    const attachButton = /** @type {HTMLButtonElement | null} */ (card.querySelector(".lavish-attach"));
-    const attachInput = /** @type {HTMLInputElement | null} */ (card.querySelector(".lavish-attach-input"));
-    const attachNotice = /** @type {HTMLDivElement | null} */ (card.querySelector(".lavish-hint"));
+    const attachButton = /** @type {HTMLButtonElement | null} */ (card.querySelector(".textcast-attach"));
+    const attachInput = /** @type {HTMLInputElement | null} */ (card.querySelector(".textcast-attach-input"));
+    const attachNotice = /** @type {HTMLDivElement | null} */ (card.querySelector(".textcast-hint"));
     if (!textarea || !cancelButton || !sendButton || !attachmentsList || !attachButton || !attachInput) return;
 
     // The card has one notice line, shared by the neutral keyboard hint and by
@@ -1164,10 +1279,10 @@ export function createArtifactSdk(
       if (!attachNotice) return;
       if (message) {
         attachNotice.textContent = message;
-        attachNotice.classList.add("lavish-hint-alert");
+        attachNotice.classList.add("textcast-hint-alert");
       } else {
         attachNotice.innerHTML = defaultHintHtml;
-        attachNotice.classList.remove("lavish-hint-alert");
+        attachNotice.classList.remove("textcast-hint-alert");
       }
     };
     const attachments = makeAttachmentsController(attachmentsList, { notify, onLayout: positionCard });
@@ -1241,6 +1356,13 @@ export function createArtifactSdk(
     sendButton.onclick = () => {
       tryQueue();
     };
+    if (sendNowButton) {
+      sendNowButton.onclick = () => {
+        const sendNow = !!textarea.value.trim() || attachments.hasReady();
+        // postMessage delivery is ordered, so the queued prompt lands before the send.
+        if (tryQueue() && sendNow) sendQueuedPrompts();
+      };
+    }
     textarea.addEventListener("keydown", (event) => {
       // WebKit fires compositionend before the IME-confirming keydown, leaving only keyCode 229 to mark it.
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
@@ -1257,7 +1379,7 @@ export function createArtifactSdk(
         closeCard();
       }
     });
-    // Unsent annotation text is review context Lavish owns, so it is reported to the chrome and
+    // Unsent annotation text is review context Textcast Chat owns, so it is reported to the chrome and
     // replayed after a live reload.
     textarea.addEventListener("input", scheduleReviewStateReport);
     if (typeof options.restoreText === "string") {
@@ -1289,15 +1411,15 @@ export function createArtifactSdk(
       const value = meta?.[field];
       if (typeof value === "string" || value === null) payload[field] = value;
     }
-    postArtifactMessage("lavish:documentMeta", payload);
+    postArtifactMessage("textcast:documentMeta", payload);
   }
 
-  /** @type {Window & { lavish?: unknown }} */ (window).lavish = {
+  /** @type {Window & { textcast?: unknown }} */ (window).textcast = {
     queuePrompt,
     sendQueuedPrompts,
     endSession,
     getQueuedPrompts: () => [],
-    setStatus: (message) => postArtifactMessage("lavish:status", { message: String(message) }),
+    setStatus: (message) => postArtifactMessage("textcast:status", { message: String(message) }),
     setDocumentMeta,
   };
 
@@ -1306,41 +1428,34 @@ export function createArtifactSdk(
     // without the source check the artifact could post to itself and drive the SDK.
     if (event.source !== parent) return;
     const msg = event.data || {};
-    if (msg.type === "lavish:setAnnotationMode") setAnnotationMode(msg.enabled);
-    if (msg.type === "lavish:attachmentResult") {
+    if (msg.type === "textcast:setAnnotationMode") setAnnotationMode(msg.enabled);
+    if (msg.type === "textcast:attachmentResult") {
       if (!isTrustedAttachmentResult(event, { parentWindow: parent, nonce: ATTACHMENT_NONCE })) return;
       activeAttachments?.handleResult(msg.localId, msg.ok, msg.id, msg.error);
     }
-    if (msg.type === "lavish:requestSnapshot") {
-      postArtifactMessage("lavish:snapshot", {
+    if (msg.type === "textcast:requestSnapshot") {
+      postArtifactMessage("textcast:snapshot", {
         snapshot: "",
         snapshot_request_id: typeof msg.snapshot_request_id === "string" ? msg.snapshot_request_id : "",
       });
     }
-    if (msg.type === "lavish:restoreScroll") {
+    if (msg.type === "textcast:restoreScroll") {
       window.scrollTo(Number(msg.x) || 0, Number(msg.y) || 0);
     }
-    if (msg.type === "lavish:restoreReviewState") restoreReviewState(msg.state);
-    if (msg.type === "lavish:revealElement") revealElement(msg.selector);
-    if (msg.type === "lavish:queuedAnchors") {
-      queuedAnchorSelectors = new Set(Array.isArray(msg.selectors) ? msg.selectors.map(String) : []);
-    }
-    if (msg.type === "lavish:annotateElement" && annotationMode) {
-      const target = safeQuerySelector(msg.selector);
-      if (target) showAnnotationCard(target);
-    }
+    if (msg.type === "textcast:restoreReviewState") restoreReviewState(msg.state);
+    if (msg.type === "textcast:revealElement") revealElement(msg.selector);
   });
 
-  // Bring an element into view and flash it. The marker is Lavish UI and is never annotatable.
+  // Bring an element into view and flash it. The marker is Textcast Chat UI and is never annotatable.
   function revealElement(selector) {
     const target = selector === "html" ? document.documentElement : safeQuerySelector(selector);
     if (!(target instanceof Element)) return;
     target.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
     const root = ensureShadow();
-    for (const el of [...root.querySelectorAll(".lavish-reveal-marker")]) el.remove();
+    for (const el of [...root.querySelectorAll(".textcast-reveal-marker")]) el.remove();
     const rect = target.getBoundingClientRect();
     const marker = document.createElement("div");
-    marker.className = "lavish-reveal-marker";
+    marker.className = "textcast-reveal-marker";
     marker.style.left = rect.left + "px";
     marker.style.top = rect.top + "px";
     marker.style.width = Math.max(rect.width, 4) + "px";
@@ -1358,7 +1473,7 @@ export function createArtifactSdk(
     (event) => {
       if (!isModeToggleHotkeyEvent(event)) return;
       event.preventDefault();
-      postArtifactMessage("lavish:toggleAnnotationMode");
+      postArtifactMessage("textcast:toggleAnnotationMode");
     },
     true,
   );
@@ -1372,104 +1487,105 @@ export function createArtifactSdk(
       if (scrollFrame) return;
       scrollFrame = window.requestAnimationFrame(() => {
         scrollFrame = 0;
-        postArtifactMessage("lavish:scroll", { x: window.scrollX, y: window.scrollY });
+        postArtifactMessage("textcast:scroll", { x: window.scrollX, y: window.scrollY });
       });
     },
     { passive: true },
   );
 
+  // Annotation is text-first: selecting words offers a small Ask button beside the selection, and
+  // only that button opens the card. The page's own clicks, links, and controls are never
+  // intercepted, so a reading page stays fully usable while annotation is on.
+  function hideAskButton() {
+    offeredSelection = null;
+    if (askButton) askButton.remove();
+    askButton = null;
+  }
+
+  function positionAskButton() {
+    if (!askButton || !offeredSelection) return;
+    const rects = [...offeredSelection.range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
+    const last = rects[rects.length - 1] || offeredSelection.range.getBoundingClientRect();
+    const first = rects[0] || last;
+    const width = askButton.offsetWidth;
+    const height = askButton.offsetHeight;
+    const left = Math.min(Math.max(8, last.right - width / 2), window.innerWidth - width - 8);
+    let top = last.bottom + 8;
+    if (top + height > window.innerHeight - 8) top = Math.max(8, first.top - height - 8);
+    askButton.style.left = left + "px";
+    askButton.style.top = top + "px";
+  }
+
+  function offerSelection() {
+    if (!annotationMode || activeCardContext) return hideAskButton();
+    const c = textSelectionContext(document.getSelection());
+    if (!c) return hideAskButton();
+    offeredSelection = c;
+    if (!askButton) {
+      const root = ensureShadow();
+      askButton = document.createElement("button");
+      askButton.type = "button";
+      askButton.className = "textcast-ask";
+      askButton.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><span>' +
+        escapeAnnotationText(t("Ask")) +
+        "</span>";
+      // Keep the page selection alive while the button is pressed.
+      askButton.addEventListener("mousedown", (event) => event.preventDefault());
+      askButton.addEventListener("click", () => {
+        const offered = offeredSelection;
+        hideAskButton();
+        if (offered) showAnnotationCard(offered.element, { context: offered, range: offered.range });
+      });
+      root.appendChild(askButton);
+    }
+    positionAskButton();
+  }
+
+  let selectionTimer = 0;
+  function scheduleSelectionOffer(delay) {
+    window.clearTimeout(selectionTimer);
+    selectionTimer = window.setTimeout(offerSelection, delay);
+  }
   document.addEventListener(
-    "mouseover",
+    "pointerdown",
     (event) => {
-      if (
-        !annotationMode ||
-        isLavishUi(event.target) ||
-        isLavishAction(event.target) ||
-        isInteractiveControl(event.target)
-      )
-        return;
-      const target = annotationTargetEl(event.target);
-      if (target === selected) return;
-      if (hovered && hovered !== selected) clearHighlight(hovered);
-      hovered = target;
-      highlightElement(hovered);
+      if (isTextcastUi(event.target)) return;
+      pointerSelecting = true;
+      hideAskButton();
     },
     true,
   );
-
   document.addEventListener(
-    "mouseout",
-    () => {
-      if (hovered && hovered !== selected) {
-        clearHighlight(hovered);
-        hovered = null;
-      }
-    },
-    true,
-  );
-
-  document.addEventListener(
-    "mouseup",
+    "pointerup",
     (event) => {
-      if (
-        !annotationMode ||
-        isLavishUi(event.target) ||
-        isLavishAction(event.target) ||
-        isInteractiveControl(event.target)
-      )
-        return;
-
-      const c = textSelectionContext(document.getSelection());
-      if (!c) return;
-
-      ignoreNextClick = true;
-      showAnnotationCard(c.element, { context: c, range: c.range });
+      pointerSelecting = false;
+      if (!isTextcastUi(event.target)) scheduleSelectionOffer(0);
     },
     true,
   );
-
+  // A drag that ends outside this frame never delivers its pointerup here; the next move with no
+  // button held closes the gesture instead, so the selection still gets its Ask button.
   document.addEventListener(
-    "click",
+    "pointermove",
     (event) => {
-      if (
-        !annotationMode ||
-        isLavishUi(event.target) ||
-        isLavishAction(event.target) ||
-        isInteractiveControl(event.target)
-      )
-        return;
-      // Cmd-click (macOS) or Ctrl-click (elsewhere) on a link follows it (the browser opens a new
-      // tab) instead of annotating, so links stay usable without leaving annotate mode. Meta off
-      // macOS is the Super/Windows key, not a follow gesture, so it annotates like a plain click.
-      // Checked before the queued-note branch so the modifier always wins, and it clears a pending
-      // text-selection swallow so the next plain click is not eaten.
-      const followModifier = isApplePlatform() ? event.metaKey : event.ctrlKey;
-      if (followModifier && /** @type {Element} */ (event.target)?.closest?.("a[href]")) {
-        ignoreNextClick = false;
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      if (ignoreNextClick) {
-        ignoreNextClick = false;
-        return;
-      }
-      // A click on an element that already carries a queued note reopens that note.
-      const clicked = queuedAnchorSelectors.size ? context(event.target) : null;
-      const selector = clicked?.selector && queuedAnchorSelectors.has(clicked.selector) ? clicked.selector : "";
-      if (selector) {
-        closeCard();
-        postArtifactMessage("lavish:editQueuedAnchor", { selector });
-        return;
-      }
-      showAnnotationCard(event.target);
+      if (!pointerSelecting || event.buttons !== 0) return;
+      pointerSelecting = false;
+      scheduleSelectionOffer(0);
     },
     true,
   );
+  // Keyboard selection and touch selection handles end without a pointerup on the page.
+  document.addEventListener("selectionchange", () => {
+    if (pointerSelecting) return;
+    scheduleSelectionOffer(250);
+  });
+  window.addEventListener("scroll", () => positionAskButton(), { passive: true });
+  window.addEventListener("resize", () => positionAskButton(), { passive: true });
 
   setAnnotationMode(annotationMode);
   // Report the page default once; subsequent mode changes belong to the chrome.
-  postArtifactMessage("lavish:annotationMode", { enabled: initialAnnotationMode });
+  postArtifactMessage("textcast:annotationMode", { enabled: initialAnnotationMode });
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", reportReady, { once: true });
   } else {
@@ -1479,7 +1595,7 @@ export function createArtifactSdk(
   // Report the agent-declared revision registry so the chrome can offer its
   // legend. Read-only: the SDK never marks up the page for it, because a
   // highlight painted here would make the served artifact differ from the file
-  // opened without Lavish. The message is sent even when the artifact declares
+  // opened without textcast. The message is sent even when the artifact declares
   // nothing, so a reload that removed the registry clears a stale legend.
   function reportArtifactRevisions() {
     let payload = { revisions: [], marks: [] };
@@ -1488,7 +1604,7 @@ export function createArtifactSdk(
     } catch {
       // A malformed registry costs the reader a legend, never the review.
     }
-    postArtifactMessage("lavish:revisions", payload);
+    postArtifactMessage("textcast:revisions", payload);
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", reportArtifactRevisions, { once: true });

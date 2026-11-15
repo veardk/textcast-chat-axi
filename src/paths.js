@@ -25,24 +25,24 @@ export function isWildcardHost(host) {
   }
 }
 
-// Address the server binds to (LAVISH_AXI_HOST). Defaults to loopback. A wildcard value
+// Address the server binds to (TEXTCAST_CHAT_AXI_HOST). Defaults to loopback. A wildcard value
 // (0.0.0.0 or ::) is never listened on; resolveListenHosts maps it to loopback.
 export function bindHost(env = process.env) {
-  return env.LAVISH_AXI_HOST?.trim() || LOOPBACK_HOST;
+  return env.TEXTCAST_CHAT_AXI_HOST?.trim() || LOOPBACK_HOST;
 }
 
 /**
  * Concrete listen addresses. Never includes 0.0.0.0 / ::.
  * The first entry is the primary (requested) host. Loopback is always included: it is the one
- * address every CLI probes whatever its own LAVISH_AXI_HOST says, so a server pinned to a
+ * address every CLI probes whatever its own TEXTCAST_CHAT_AXI_HOST says, so a server pinned to a
  * Tailscale or LAN address is still found by a client configured without one instead of that
- * client spawning a second daemon on the same port. When LAVISH_AXI_HOST is unset, the Tailscale
+ * client spawning a second daemon on the same port. When TEXTCAST_CHAT_AXI_HOST is unset, the Tailscale
  * IPv4 is added when present.
  * @param {{ host?: string, env?: NodeJS.ProcessEnv, tailscale?: { ipv4?: string } | null, extraHosts?: string[] }} [options]
  * @returns {string[]}
  */
 export function resolveListenHosts({ host, env = process.env, tailscale = null, extraHosts = [] } = {}) {
-  const envHost = env.LAVISH_AXI_HOST?.trim() || "";
+  const envHost = env.TEXTCAST_CHAT_AXI_HOST?.trim() || "";
   const autoTailscale = !envHost;
   const requested = host || bindHost(env);
   const primary = isWildcardHost(requested) ? LOOPBACK_HOST : requested || LOOPBACK_HOST;
@@ -105,7 +105,7 @@ export async function resolveConcreteListenHosts(hosts, { lookup = dnsLookup, ke
  */
 export function resolveLinkHost({ env = process.env, tailscale = null, fallbackHost = LOOPBACK_HOST } = {}) {
   if (tailscale?.magicDnsName) return tailscale.magicDnsName;
-  const explicit = env.LAVISH_AXI_LINK_HOST?.trim();
+  const explicit = env.TEXTCAST_CHAT_AXI_LINK_HOST?.trim();
   if (explicit) return explicit;
   return isWildcardHost(fallbackHost) ? LOOPBACK_HOST : fallbackHost || LOOPBACK_HOST;
 }
@@ -116,18 +116,18 @@ export function clientHost(env = process.env) {
   return resolveListenHosts({ env })[0];
 }
 
-// Hostname written into the session URLs the server generates (LAVISH_AXI_LINK_HOST).
+// Hostname written into the session URLs the server generates (TEXTCAST_CHAT_AXI_LINK_HOST).
 // Defaults to the host the CLI dials.
 export function linkHost(env = process.env) {
-  return env.LAVISH_AXI_LINK_HOST?.trim() || clientHost(env);
+  return env.TEXTCAST_CHAT_AXI_LINK_HOST?.trim() || clientHost(env);
 }
 
 // Extra Host header values the server's DNS-rebinding guard accepts beyond the
-// loopback names and the resolved bind/link host, set via LAVISH_AXI_ALLOWED_HOSTS
+// loopback names and the resolved bind/link host, set via TEXTCAST_CHAT_AXI_ALLOWED_HOSTS
 // (whitespace-separated). A lone "*" disables the guard entirely - an explicit
 // opt-out for operators fronting the server with their own auth/proxy.
 export function extraAllowedHosts(env = process.env) {
-  return (env.LAVISH_AXI_ALLOWED_HOSTS || "").split(/\s+/).filter(Boolean);
+  return (env.TEXTCAST_CHAT_AXI_ALLOWED_HOSTS || "").split(/\s+/).filter(Boolean);
 }
 
 // Brackets an IPv6 literal so it can be safely interpolated into a URL authority.
@@ -138,14 +138,14 @@ export function hostForUrl(host) {
 }
 
 export function stateDir() {
-  return process.env.LAVISH_AXI_STATE_DIR || path.join(os.homedir(), ".textcast-chat-axi");
+  return process.env.TEXTCAST_CHAT_AXI_STATE_DIR || path.join(os.homedir(), ".textcast-chat-axi");
 }
 
 export function stateFile() {
   return path.join(stateDir(), "state.json");
 }
 
-// Which Lavish installation a server belongs to, reported by /health. A CLI only ever stops a
+// Which Textcast Chat installation a server belongs to, reported by /health. A CLI only ever stops a
 // duplicate daemon that shares its own state file, so another user's (or another test's) server on
 // the same port at a different address is never touched. Resolve the directory, not the state file:
 // state.json may not exist yet when the server first reports its identity.
@@ -173,5 +173,5 @@ export async function ensureStateDir() {
 }
 
 export function defaultPort() {
-  return Number(process.env.LAVISH_AXI_PORT || 4397);
+  return Number(process.env.TEXTCAST_CHAT_AXI_PORT || 4397);
 }

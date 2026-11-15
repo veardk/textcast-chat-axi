@@ -114,6 +114,9 @@ export class SessionStore {
     const session = {
       key,
       file: absolute,
+      // The page on screen. A review starts on its file and can move to another page of the same
+      // site (`setPage`); opening the file again brings it back to the file.
+      page: absolute,
       url,
       status: existingStatus === "feedback" && existingPrompts.length === 0 ? "open" : existingStatus,
       pending_prompts: existing.pending_prompts || 0,
@@ -190,6 +193,8 @@ export class SessionStore {
       return { ended: true, ended_by: session.ended_by };
     }
     let normalized = prompts.map(normalizePrompt);
+    // A note says which page it was written on only when that is not the session's own file.
+    for (const { prompt } of normalized) if (prompt.page === session.file) delete prompt.page;
     if (!restoring) {
       const acknowledgedIds = new Set(
         [
@@ -271,6 +276,18 @@ export class SessionStore {
     session.updated_at = new Date().toISOString();
     await this.writeState(state);
     return { ...session, fresh_feedback: !restoring && acceptedPrompts.length > 0 };
+  }
+
+  async setPage(key, page) {
+    return this.runExclusive(async () => {
+      const state = await this.readState();
+      const session = state.sessions[key];
+      if (!session) return null;
+      session.page = String(page);
+      session.updated_at = new Date().toISOString();
+      await this.writeState(state);
+      return session;
+    });
   }
 
   async issueReviewerHandoff(key) {
@@ -622,6 +639,11 @@ export async function canonicalFile(file) {
   return realpath(absolute);
 }
 
+/** The HTML file on screen for a session: its current page, or its own file. */
+export function sessionPage(session) {
+  return typeof session?.page === "string" && session.page ? session.page : session?.file;
+}
+
 export function sessionKey(file) {
   return crypto.createHash("sha256").update(file).digest("hex").slice(0, 16);
 }
@@ -655,6 +677,8 @@ function normalizePrompt(prompt) {
   if (promptId) normalized.prompt_id = promptId;
   const target = normalizeTarget(prompt.target);
   if (target) normalized.target = target;
+  const page = typeof prompt.page === "string" ? prompt.page : "";
+  if (page && page.length <= 4096 && path.isAbsolute(page) && /\.html?$/i.test(page)) normalized.page = page;
   const { refs, malformed } = normalizeAttachmentRefs(prompt.attachments);
   if (refs.length > 0) normalized.attachments = refs;
   return { prompt: normalized, malformed };

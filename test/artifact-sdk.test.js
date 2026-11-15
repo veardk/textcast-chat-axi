@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveLavishQueueKey, isModeToggleHotkeyEvent, isNativeInteractiveControl } from "../src/artifact-sdk.js";
+import { deriveTextcastQueueKey, isModeToggleHotkeyEvent, isNativeInteractiveControl } from "../src/artifact-sdk.js";
 
 function node(tag, attrs = {}, children = []) {
   const el = {
@@ -53,7 +53,7 @@ function matchesSelectorList(el, selectorList) {
 
 function matchesSelector(el, selector) {
   if (selector === "form" || selector === "fieldset") return el.tagName.toLowerCase() === selector;
-  if (selector === "[data-lavish-question]") return el.getAttribute("data-lavish-question") !== null;
+  if (selector === "[data-textcast-question]") return el.getAttribute("data-textcast-question") !== null;
   if (selector === "[contenteditable]:not([contenteditable='false'])") {
     const value = el.getAttribute("contenteditable");
     return value !== null && value !== "false";
@@ -150,75 +150,75 @@ test("isNativeInteractiveControl allows details as a text selection ancestor", (
   assert.equal(isNativeInteractiveControl(secondParagraph), false);
 });
 
-test("deriveLavishQueueKey uses explicit queueKey first", () => {
+test("deriveTextcastQueueKey uses explicit queueKey first", () => {
   const input = node("input", { type: "radio", name: "plan" });
 
-  assert.equal(deriveLavishQueueKey(input, { queueKey: "deployment-plan" }), "deployment-plan");
+  assert.equal(deriveTextcastQueueKey(input, { queueKey: "deployment-plan" }), "deployment-plan");
 });
 
-test("deriveLavishQueueKey allows explicit empty queueKey to suppress derivation", () => {
+test("deriveTextcastQueueKey allows explicit empty queueKey to suppress derivation", () => {
   const button = node("button");
-  node("section", { "data-lavish-question": "deployment-plan" }, [button]);
+  node("section", { "data-textcast-question": "deployment-plan" }, [button]);
 
-  assert.equal(deriveLavishQueueKey(button, { queueKey: "" }), "");
+  assert.equal(deriveTextcastQueueKey(button, { queueKey: "" }), "");
 });
 
-test("deriveLavishQueueKey groups controls inside data-lavish-question", () => {
+test("deriveTextcastQueueKey groups controls inside data-textcast-question", () => {
   const first = node("button");
   const second = node("button");
-  node("section", { "data-lavish-question": "deployment-plan" }, [first, second]);
+  node("section", { "data-textcast-question": "deployment-plan" }, [first, second]);
 
-  assert.equal(deriveLavishQueueKey(first), "question:deployment-plan");
-  assert.equal(deriveLavishQueueKey(second), "question:deployment-plan");
+  assert.equal(deriveTextcastQueueKey(first), "question:deployment-plan");
+  assert.equal(deriveTextcastQueueKey(second), "question:deployment-plan");
 });
 
-test("deriveLavishQueueKey groups radio options by scoped group name", () => {
+test("deriveTextcastQueueKey groups radio options by scoped group name", () => {
   const planA = node("input", { id: "plan-a", type: "radio", name: "plan", value: "A" });
   const planB = node("input", { id: "plan-b", type: "radio", name: "plan", value: "B" });
   node("form", { id: "deploy" }, [planA, planB]);
 
-  assert.equal(deriveLavishQueueKey(planA), "radio:form:deploy:plan");
-  assert.equal(deriveLavishQueueKey(planB), "radio:form:deploy:plan");
+  assert.equal(deriveTextcastQueueKey(planA), "radio:form:deploy:plan");
+  assert.equal(deriveTextcastQueueKey(planB), "radio:form:deploy:plan");
 });
 
-test("deriveLavishQueueKey keeps same radio names independent across scopes", () => {
+test("deriveTextcastQueueKey keeps same radio names independent across scopes", () => {
   const first = node("input", { type: "radio", name: "plan", value: "A" });
   const second = node("input", { type: "radio", name: "plan", value: "B" });
   node("form", { id: "deploy-one" }, [first]);
   node("form", { id: "deploy-two" }, [second]);
 
-  assert.notEqual(deriveLavishQueueKey(first), deriveLavishQueueKey(second));
+  assert.notEqual(deriveTextcastQueueKey(first), deriveTextcastQueueKey(second));
 });
 
-test("deriveLavishQueueKey does not infer plain button grouping without question metadata", () => {
+test("deriveTextcastQueueKey does not infer plain button grouping without question metadata", () => {
   const button = node("button");
 
-  assert.equal(deriveLavishQueueKey(button), "");
+  assert.equal(deriveTextcastQueueKey(button), "");
 });
 
-test("deriveLavishQueueKey keys checkbox toggles per checkbox, not per group", () => {
+test("deriveTextcastQueueKey keys checkbox toggles per checkbox, not per group", () => {
   const first = node("input", { type: "checkbox", name: "feature", value: "search" });
   const second = node("input", { type: "checkbox", name: "feature", value: "billing" });
   node("form", { id: "features" }, [first, second]);
 
-  assert.notEqual(deriveLavishQueueKey(first), deriveLavishQueueKey(second));
+  assert.notEqual(deriveTextcastQueueKey(first), deriveTextcastQueueKey(second));
 });
 
-test("deriveLavishQueueKey does not collide checkbox default values", () => {
+test("deriveTextcastQueueKey does not collide checkbox default values", () => {
   const first = node("input", { id: "search", type: "checkbox", name: "feature" });
   const second = node("input", { id: "billing", type: "checkbox", name: "feature" });
   first.value = "on";
   second.value = "on";
   node("form", { id: "features" }, [first, second]);
 
-  assert.notEqual(deriveLavishQueueKey(first), deriveLavishQueueKey(second));
+  assert.notEqual(deriveTextcastQueueKey(first), deriveTextcastQueueKey(second));
 });
 
-test("deriveLavishQueueKey keys named selects as fields", () => {
+test("deriveTextcastQueueKey keys named selects as fields", () => {
   const select = node("select", { name: "region" });
   node("form", { id: "deploy" }, [select]);
 
-  assert.equal(deriveLavishQueueKey(select), "field:form:deploy:region");
+  assert.equal(deriveTextcastQueueKey(select), "field:form:deploy:region");
 });
 
 test("isModeToggleHotkeyEvent matches Cmd/Ctrl+I regardless of case", () => {

@@ -1,10 +1,10 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
-export const ARTIFACT_HTML_ERROR = "Lavish Editor expects an HTML file";
+export const ARTIFACT_HTML_ERROR = "Textcast Chat expects an HTML file";
 
 /**
- * Match the CLI: Lavish reviews HTML files, so only `.html` / `.htm` (any case) count.
+ * Match the CLI: Textcast Chat reviews HTML files, so only `.html` / `.htm` (any case) count.
  * @param {unknown} file
  * @returns {boolean}
  */
@@ -21,6 +21,34 @@ export function isHtmlPath(file) {
  */
 export function artifactTreeRoot(file) {
   return path.dirname(file);
+}
+
+/**
+ * The site a review may move around in: the nearest directory, at most four levels up, that holds a
+ * Textcast `textcast.json` (the output root with its index and every page), or else the file's own
+ * directory. Only HTML files inside it can become the session's current page.
+ * @param {string} file
+ * @returns {Promise<string>}
+ */
+export async function artifactSiteRoot(file) {
+  let dir = path.dirname(file);
+  for (let depth = 0; depth < 4; depth += 1) {
+    const marker = await stat(path.join(dir, "textcast.json")).catch(() => null);
+    if (marker && marker.isFile()) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.dirname(file);
+}
+
+/**
+ * @param {string} root
+ * @param {string} file
+ */
+export function isInsideTree(root, file) {
+  const relative = path.relative(root, file);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 export class ArtifactPathError extends Error {

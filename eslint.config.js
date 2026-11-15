@@ -6,7 +6,7 @@ import globals from "globals";
 
 export default defineConfig(js.configs.recommended, eslintConfigPrettier, {
   files: ["**/*.js"],
-  ignores: ["dist/", "node_modules/", ".textcast-chat-axi/", "lavish-code-review.html"],
+  ignores: ["dist/", "node_modules/", ".textcast-chat-axi/", "textcast-code-review.html"],
   languageOptions: {
     ecmaVersion: "latest",
     sourceType: "module",

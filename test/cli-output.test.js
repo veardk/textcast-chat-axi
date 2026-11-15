@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -11,8 +11,8 @@ import WebSocket from "ws";
 
 import { AxiError } from "axi-sdk-js";
 
-process.env.LAVISH_AXI_HOST = "127.0.0.1";
-process.env.LAVISH_AXI_LINK_HOST = "127.0.0.1";
+process.env.TEXTCAST_CHAT_AXI_HOST = "127.0.0.1";
+process.env.TEXTCAST_CHAT_AXI_LINK_HOST = "127.0.0.1";
 
 import {
   collapseHomeDirectory,
@@ -21,6 +21,8 @@ import {
   createPollOutput,
   createServerSpawnOptions,
   createUserEndedOpenOutput,
+  isLocalSourceEntry,
+  localSourceChangedSince,
   detectInvokingAgent,
   fetchJson,
   getCommandHelp,
@@ -78,9 +80,9 @@ function assertObservablePollWakePath(text) {
   assert.doesNotMatch(text, /foreground command may run.*run the poll as a background task/i);
 }
 
-test("home help names LAVISH_AXI_ALLOWED_HOSTS for the 403 forbidden host case", () => {
+test("home help names TEXTCAST_CHAT_AXI_ALLOWED_HOSTS for the 403 forbidden host case", () => {
   const output = createHomeOutput({ bin: "textcast-chat-axi", sessions: [] });
-  const hostHelp = output.help.find((item) => item.includes("LAVISH_AXI_ALLOWED_HOSTS"));
+  const hostHelp = output.help.find((item) => item.includes("TEXTCAST_CHAT_AXI_ALLOWED_HOSTS"));
 
   assert.ok(hostHelp, "home help names the allowlist variable");
   assert.match(hostHelp, /403 `forbidden host`/);
@@ -158,7 +160,7 @@ test("top-level help renders static home output without dynamic sessions", async
       {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
         encoding: "utf8",
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: stateDir },
+        env: { ...process.env, TEXTCAST_CHAT_AXI_STATE_DIR: stateDir },
       },
     );
 
@@ -171,7 +173,7 @@ test("top-level help renders static home output without dynamic sessions", async
     assert.match(result.stdout, /never kill it/);
     assert.match(result.stdout, /feedback remains queued until delivery/);
     assert.doesNotMatch(result.stdout, /above 10 minutes/);
-    assert.doesNotMatch(result.stdout, /lavish-design/);
+    assert.doesNotMatch(result.stdout, /textcast-design/);
     assert.doesNotMatch(result.stdout, /sessions\[/);
     assert.doesNotMatch(result.stdout, /Known IDs/);
   } finally {
@@ -241,7 +243,7 @@ test("a user-ended open refuses with a status agents can branch on, not a URL to
 
   assert.equal(output.session.file, "/tmp/artifact.html");
   assert.equal(output.session.status, "user-ended");
-  assert.match(output.next_step, /user explicitly ended this Lavish Editor session from the browser/);
+  assert.match(output.next_step, /user explicitly ended this Textcast Chat session from the browser/);
   assert.match(output.next_step, /did not reopen it/);
   assert.match(output.next_step, /Do not reopen unless the user asks for further review/);
   assert.match(output.next_step, /textcast-chat-axi \/tmp\/artifact\.html --reopen/);
@@ -327,7 +329,7 @@ test("poll feedback emits prompts, failures, then next step, and no DOM snapshot
       ],
       {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: stateDir, LAVISH_AXI_PORT: String(address.port) },
+        env: { ...process.env, TEXTCAST_CHAT_AXI_STATE_DIR: stateDir, TEXTCAST_CHAT_AXI_PORT: String(address.port) },
       },
     );
     let stdout = "";
@@ -447,7 +449,7 @@ test("a poll reporting the session ended by the user tells the agent to stop and
 
   assert.equal(output.session.status, "ended");
   assert.equal(output.session.ended_by, "user");
-  assert.match(output.next_step, /user ended this Lavish Editor session/);
+  assert.match(output.next_step, /user ended this Textcast Chat session/);
   assert.match(output.next_step, /Stop polling/);
   assert.match(output.next_step, /do not run `textcast-chat-axi \/tmp\/report\.html` to reopen it/);
   assert.match(output.next_step, /deliver any remaining updates directly in this conversation/i);
@@ -500,10 +502,10 @@ test("the final feedback batch before an agent end preserves ended_by and allows
 
   assert.equal(output.session.session_ended, true);
   assert.equal(output.session.ended_by, "agent");
-  assert.match(output.next_step, /last feedback before the Lavish Editor session ended/);
+  assert.match(output.next_step, /last feedback before the Textcast Chat session ended/);
   assert.match(output.next_step, /textcast-chat-axi \/tmp\/report\.html`\s+to open a fresh session/);
   assert.doesNotMatch(output.next_step, /--reopen/);
-  assert.doesNotMatch(output.next_step, /user ended this Lavish Editor session/);
+  assert.doesNotMatch(output.next_step, /user ended this Textcast Chat session/);
 });
 
 test("final user-ended feedback still reports a fatal artifact failure without reopening", () => {
@@ -519,7 +521,7 @@ test("final user-ended feedback still reports a fatal artifact failure without r
   });
 
   assert.match(output.next_step, /fatal artifact failure/);
-  assert.match(output.next_step, /confirm it renders without reopening this ended Lavish session/);
+  assert.match(output.next_step, /confirm it renders without reopening this ended Textcast Chat session/);
   assert.doesNotMatch(output.next_step, /--reopen/);
 });
 
@@ -560,12 +562,12 @@ test("poll wait messages tell watching agents the silence is normal", () => {
   assert.match(interrupted, /feedback remains queued until delivery/);
 });
 
-test("Herdr poll chime is disabled unless both Lavish and Herdr opt in", () => {
+test("Herdr poll chime is disabled unless both Textcast Chat and Herdr opt in", () => {
   assert.equal(herdrPollChimeEnabled({}), false);
   assert.equal(herdrPollChimeEnabled({ HERDR_ENV: "1" }), false);
-  assert.equal(herdrPollChimeEnabled({ LAVISH_AXI_HERDR_CHIME: "1" }), false);
-  assert.equal(herdrPollChimeEnabled({ HERDR_ENV: "1", LAVISH_AXI_HERDR_CHIME: "0" }), false);
-  assert.equal(herdrPollChimeEnabled({ HERDR_ENV: "1", LAVISH_AXI_HERDR_CHIME: "1" }), true);
+  assert.equal(herdrPollChimeEnabled({ TEXTCAST_CHAT_AXI_HERDR_CHIME: "1" }), false);
+  assert.equal(herdrPollChimeEnabled({ HERDR_ENV: "1", TEXTCAST_CHAT_AXI_HERDR_CHIME: "0" }), false);
+  assert.equal(herdrPollChimeEnabled({ HERDR_ENV: "1", TEXTCAST_CHAT_AXI_HERDR_CHIME: "1" }), true);
 });
 
 test("Herdr poll chime requests attention without making notification failure fatal", async () => {
@@ -573,7 +575,7 @@ test("Herdr poll chime requests attention without making notification failure fa
   /** @type {import("node:child_process").ChildProcess | undefined} */
   let child;
   const notified = notifyHerdrPollReady({
-    env: { HERDR_ENV: "1", LAVISH_AXI_HERDR_CHIME: "1" },
+    env: { HERDR_ENV: "1", TEXTCAST_CHAT_AXI_HERDR_CHIME: "1" },
     runner(command, args, options) {
       calls.push({ command, args, options });
       child = spawn(process.execPath, ["-e", "process.exit(0)"], options);
@@ -591,9 +593,9 @@ test("Herdr poll chime requests attention without making notification failure fa
       args: [
         "notification",
         "show",
-        "Lavish review ready",
+        "Textcast Chat review ready",
         "--body",
-        "The artifact is open and Lavish is polling for your feedback.",
+        "The artifact is open and Textcast Chat is polling for your feedback.",
         "--sound",
         "request",
       ],
@@ -603,7 +605,7 @@ test("Herdr poll chime requests attention without making notification failure fa
 
   assert.equal(
     notifyHerdrPollReady({
-      env: { HERDR_ENV: "1", LAVISH_AXI_HERDR_CHIME: "1" },
+      env: { HERDR_ENV: "1", TEXTCAST_CHAT_AXI_HERDR_CHIME: "1" },
       runner() {
         throw new Error("Herdr unavailable");
       },
@@ -614,7 +616,7 @@ test("Herdr poll chime requests attention without making notification failure fa
 
 test("Herdr failures and a stalled notification do not delay poll feedback", { timeout: 10_000 }, async (t) => {
   const server = createServer((_req, res) => {
-    res.setHeader("Lavish-Poll-State", "listening");
+    res.setHeader("Textcast-Poll-State", "listening");
     res.end(JSON.stringify({ status: "feedback", prompts: [{ text: "Review this" }] }));
   });
   server.listen(0, "127.0.0.1");
@@ -622,7 +624,7 @@ test("Herdr failures and a stalled notification do not delay poll feedback", { t
   t.after(() => server.close());
   const address = server.address();
   assert.ok(address && typeof address === "object");
-  const env = { HERDR_ENV: "1", LAVISH_AXI_HERDR_CHIME: "1" };
+  const env = { HERDR_ENV: "1", TEXTCAST_CHAT_AXI_HERDR_CHIME: "1" };
 
   for (const behavior of ["missing", "rejected", "stalled"]) {
     await t.test(behavior, async () => {
@@ -751,7 +753,7 @@ test("spawned poll with piped stderr banners once and leaves re-run guidance whe
       [fileURLToPath(new URL("../bin/textcast-chat-axi.js", import.meta.url)), "poll", artifact],
       {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: stateDir, LAVISH_AXI_PORT: String(server.port) },
+        env: { ...process.env, TEXTCAST_CHAT_AXI_STATE_DIR: stateDir, TEXTCAST_CHAT_AXI_PORT: String(server.port) },
       },
     );
 
@@ -850,6 +852,32 @@ test("local built CLI opens force a server restart while source and installed ru
   );
 });
 
+test("a source checkout replaces a server started before its code last changed", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  assert.equal(isLocalSourceEntry(`${root}/bin/textcast-chat-axi.js`, true), true);
+  assert.equal(isLocalSourceEntry(`${root}/dist/cli.mjs`, true), false);
+  assert.equal(isLocalSourceEntry(`${root}/bin/textcast-chat-axi.js`, false), false);
+
+  const dir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-source-test-`);
+  try {
+    const file = path.join(dir, "chrome-client.js");
+    await writeFile(file, "", "utf8");
+    await writeFile(path.join(dir, "notes.md"), "", "utf8");
+    const changed = new Date("2026-01-01T00:00:10Z");
+    await utimes(file, changed, changed);
+    assert.equal(await localSourceChangedSince(changed.getTime() - 1000, dir), true);
+    assert.equal(await localSourceChangedSince(changed.getTime() + 1000, dir), false);
+    assert.equal(await localSourceChangedSince(undefined, dir), true, "a server too old to say when it started");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("restart is a command, not a file to open", () => {
+  assert.deepEqual(normalizeArgv(["restart"]), ["restart"]);
+  assert.deepEqual(normalizeArgv(["restart", "page.html"]), ["restart", "page.html"]);
+});
+
 test("shouldRestartServer reuses a server running the same version", () => {
   assert.equal(shouldRestartServer("0.1.4", { ok: true, version: "0.1.4" }), false);
 });
@@ -860,7 +888,7 @@ test("shouldRestartServer restarts a same-version server after a Tailscale trans
   assert.equal(serverReplacementReason("0.1.4", health), "");
 });
 
-test("shouldRestartServer restarts same-version Lavish servers when forced", () => {
+test("shouldRestartServer restarts same-version Textcast Chat servers when forced", () => {
   assert.equal(shouldRestartServer("0.1.4", { ok: true, app: "textcast-chat-axi", version: "0.1.4" }, true), true);
   assert.equal(shouldRestartServer("0.1.4", { ok: true, app: "other", version: "0.1.4" }, true), false);
 });
@@ -946,21 +974,21 @@ test("shouldKillProcessOnPort does not kill unidentified health responders", () 
   assert.equal(shouldKillProcessOnPort("0.1.4", { ok: true, app: "other", version: "0.1.3" }), false);
 });
 
-test("shouldKillProcessOnPort kills pre-handshake Lavish servers after shutdown fails", () => {
+test("shouldKillProcessOnPort kills pre-handshake Textcast Chat servers after shutdown fails", () => {
   assert.equal(shouldKillProcessOnPort("0.1.4", { ok: true }), true);
 });
 
-test("shouldKillProcessOnPort only kills Lavish servers with a mismatched version", () => {
+test("shouldKillProcessOnPort only kills Textcast Chat servers with a mismatched version", () => {
   assert.equal(shouldKillProcessOnPort("0.1.4", { ok: true, app: "textcast-chat-axi", version: "0.1.3" }), true);
   assert.equal(shouldKillProcessOnPort("0.1.4", { ok: true, app: "textcast-chat-axi", version: "0.1.4" }), false);
 });
 
-test("shouldKillProcessOnPort leaves a Lavish server that is newer than the CLI", () => {
+test("shouldKillProcessOnPort leaves a Textcast Chat server that is newer than the CLI", () => {
   assert.equal(shouldKillProcessOnPort("0.1.4", { ok: true, app: "textcast-chat-axi", version: "0.1.5" }), false);
   assert.equal(shouldKillProcessOnPort("0.1.10", { ok: true, app: "textcast-chat-axi", version: "0.1.9" }), true);
 });
 
-test("shutdownServerOnPort kills pre-handshake Lavish servers when shutdown does not free the port", async () => {
+test("shutdownServerOnPort kills pre-handshake Textcast Chat servers when shutdown does not free the port", async () => {
   let shutdowns = 0;
   let kills = 0;
   const portFreeResults = [false, true];
@@ -977,7 +1005,7 @@ test("shutdownServerOnPort kills pre-handshake Lavish servers when shutdown does
       kills += 1;
       return true;
     },
-    processMatchesLavish: () => true,
+    processMatchesTextcast: () => true,
   });
 
   assert.equal(shutdowns, 1);
@@ -1001,12 +1029,12 @@ test("shutdownServerOnPort ignores unidentified health responders", async () => 
       kills += 1;
       return true;
     },
-    processMatchesLavish: () => false,
+    processMatchesTextcast: () => false,
   });
 
   assert.equal(shutdowns, 0);
   assert.equal(kills, 0);
-  assert.deepEqual(output, { server: { status: "not-lavish", port: 4397 } });
+  assert.deepEqual(output, { server: { status: "not-textcast", port: 4397 } });
 });
 
 test("polling a file without an active session tells the agent to open it first", () => {
@@ -1015,20 +1043,20 @@ test("polling a file without an active session tells the agent to open it first"
     (error) => {
       assert.ok(error instanceof AxiError);
       assert.equal(error.code, "NOT_FOUND");
-      assert.match(error.message, /No active Lavish Editor session/);
+      assert.match(error.message, /No active Textcast Chat session/);
       assert.ok(error.suggestions.some((item) => item.includes("textcast-chat-axi /tmp/report.html")));
       return true;
     },
   );
 });
 
-test("network fetch failures become structured Lavish server errors", async () => {
+test("network fetch failures become structured Textcast Chat server errors", async () => {
   await assert.rejects(
     () => fetchJson("http://127.0.0.1:1/api/poll"),
     (error) => {
       assert.ok(error instanceof AxiError);
       assert.equal(error.code, "SERVER_ERROR");
-      assert.match(error.message, /Lavish Editor server connection failed/);
+      assert.match(error.message, /Textcast Chat server connection failed/);
       assert.ok(error.suggestions.some((item) => item.includes("textcast-chat-axi server --verbose")));
       return true;
     },
@@ -1081,7 +1109,7 @@ test("fetchJson reports interrupted response body failures without retrying", as
       (error) => {
         assert.ok(error instanceof AxiError);
         assert.equal(error.code, "SERVER_ERROR");
-        assert.match(error.message, /Lavish Editor poll response was interrupted/);
+        assert.match(error.message, /Textcast Chat poll response was interrupted/);
         return true;
       },
     );
@@ -1094,16 +1122,16 @@ test("fetchJson reports interrupted response body failures without retrying", as
 test("stop command shuts down the running server on the configured port", async () => {
   const dir = await mkdtemp(`${os.tmpdir()}/textcast-chat-axi-stop-test-`);
   const server = await serve({ port: 0, stateFile: `${dir}/state.json`, version: "9.9.9-test" });
-  const previousStateDir = process.env.LAVISH_AXI_STATE_DIR;
-  process.env.LAVISH_AXI_STATE_DIR = dir;
+  const previousStateDir = process.env.TEXTCAST_CHAT_AXI_STATE_DIR;
+  process.env.TEXTCAST_CHAT_AXI_STATE_DIR = dir;
   try {
     const output = await stopCommand(["--port", String(server.port)]);
     assert.deepEqual(output, { server: { status: "stopped", port: server.port } });
     await server.done;
     await assert.rejects(() => fetch(`http://127.0.0.1:${server.port}/health`), /fetch failed|ECONNREFUSED/);
   } finally {
-    if (previousStateDir === undefined) delete process.env.LAVISH_AXI_STATE_DIR;
-    else process.env.LAVISH_AXI_STATE_DIR = previousStateDir;
+    if (previousStateDir === undefined) delete process.env.TEXTCAST_CHAT_AXI_STATE_DIR;
+    else process.env.TEXTCAST_CHAT_AXI_STATE_DIR = previousStateDir;
     await server.close();
     await rm(dir, { force: true, recursive: true });
   }
@@ -1175,7 +1203,7 @@ test("textcast-chat-axi stop tells the server it was stopped, and names no sessi
 // one silently degrades the feature to "nobody reloads, everybody gets a banner".
 test("opening an artifact names that session as the one to reload across a version upgrade", async () => {
   const recorder = await startShutdownRecorder();
-  const dir = await mkdtemp(path.join(os.tmpdir(), "lavish-open-reload-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "textcast-open-reload-"));
   const stateDir = path.join(dir, "state");
   const nested = path.join(dir, "pages");
   await mkdir(nested, { recursive: true });
@@ -1198,9 +1226,9 @@ test("opening an artifact names that session as the one to reload across a versi
         cwd: fileURLToPath(new URL("..", import.meta.url)),
         env: {
           ...process.env,
-          LAVISH_AXI_PORT: String(recorder.port),
-          LAVISH_AXI_STATE_DIR: stateDir,
-          LAVISH_AXI_TELEMETRY: "0",
+          TEXTCAST_CHAT_AXI_PORT: String(recorder.port),
+          TEXTCAST_CHAT_AXI_STATE_DIR: stateDir,
+          TEXTCAST_CHAT_AXI_TELEMETRY: "0",
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -1242,7 +1270,7 @@ test("open can resume a session without opening another browser window", () => {
   assert.equal(shouldOpenBrowser(["--no-open", "artifact.html"], {}), false);
   assert.equal(shouldOpenBrowser(["artifact.html", "--no-open"], {}), false);
   assert.equal(shouldOpenBrowser(["--reopen", "artifact.html"], {}), true);
-  assert.equal(shouldOpenBrowser(["artifact.html"], { LAVISH_AXI_NO_OPEN: "1" }), false);
+  assert.equal(shouldOpenBrowser(["artifact.html"], { TEXTCAST_CHAT_AXI_NO_OPEN: "1" }), false);
   assert.equal(shouldOpenBrowser(["artifact.html"], {}), true);
   assert.match(getCommandHelp("open"), /--no-open/);
   assert.doesNotMatch(getCommandHelp("open"), /--no-gate/);
@@ -1261,5 +1289,20 @@ test("home output teaches agents to review Textcast pages", () => {
   assert.equal("playbooks" in output, false);
   assert.ok(output.help.some((item) => item.includes("textcast-chat-axi <html-file>")));
   assert.ok(!output.help.some((item) => item.includes("playbook")));
-  assert.ok(!output.help.some((item) => item.includes("`.lavish/`")));
+  assert.ok(!output.help.some((item) => item.includes("`.textcast/`")));
+});
+
+test("an ended review tells the agent to stop with stop_polling", () => {
+  const ended = createPollOutput({ file: "/tmp/report.html", response: { status: "ended", ended_by: "user" } });
+  assert.equal(ended.stop_polling, true);
+  assert.match(ended.next_step, /^stop_polling is true/);
+
+  const last = createPollOutput({
+    file: "/tmp/report.html",
+    response: { status: "feedback", prompts: [], session_ended: true, ended_by: "user" },
+  });
+  assert.equal(last.stop_polling, true);
+
+  const open = createPollOutput({ file: "/tmp/report.html", response: { status: "feedback", prompts: [] } });
+  assert.equal("stop_polling" in open, false);
 });

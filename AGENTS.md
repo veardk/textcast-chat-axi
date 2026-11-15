@@ -4,14 +4,13 @@ This file is loaded every session. It keeps only rules that apply to almost ever
 
 - [README.md](README.md) owns the user-facing contract: features, CLI flags, environment variables, keyboard shortcuts, and session-end etiquette.
 - CLI output owns what agents are told while using textcast-chat-axi: `textcast-chat-axi --help` and per-command help (`src/cli.js`). Textcast's own SKILL.md decides when to use it; do not copy CLI-owned instructions there.
-- [VISION.md](VISION.md) owns the acceptance policy. Change it only through the author.
 - [docs/invariants.md](docs/invariants.md) owns architecture internals, security rationale, and easy-to-reintroduce failure modes. Read the section for the area you are editing before changing it.
 - Update the owner when a contract changes. Edit this file only when an every-session rule changes.
 
 ## Commands
 
 ```sh
-pnpm run check          # build, lint, format check, typecheck, and tests
+pnpm run check        # the single cross-platform repository gate
 pnpm run build          # bundle dist/cli.mjs and copy chrome assets into dist
 pnpm test               # node:test runner (test/*.test.js)
 pnpm run lint           # ESLint over bin src test scripts
@@ -20,18 +19,18 @@ pnpm run typecheck      # tsc --noEmit (checkJs)
 ```
 
 One file: `node --test test/server.test.js`. One name: `node --test --test-name-pattern "createOpenOutput" test/cli-output.test.js`.
-Opt-in browser suites (`test/*.browser.test.js`) need `chrome-devtools-axi` and `LAVISH_AXI_BROWSER_E2E=1`.
-Seven-tab pool regression: `LAVISH_AXI_BROWSER_E2E=1 node --test test/event-transport.browser.test.js`.
+Opt-in browser suites (`test/*.browser.test.js`) need `chrome-devtools-axi` and `TEXTCAST_CHAT_AXI_BROWSER_E2E=1`.
+Seven-tab pool regression: `TEXTCAST_CHAT_AXI_BROWSER_E2E=1 node --test test/event-transport.browser.test.js`.
 `prepack` and `prepare` both run `build`.
 
 ## Project conventions
 
 - Node 22+, ESM-only JavaScript (`"type": "module"`). No TypeScript source. `.js` files are validated with `checkJs`.
 - Use TDD for bug fixes and new features (see the `test-driven-development` skill).
-- Run `pnpm run check` before pushing.
+- Run `pnpm run check` before opening or updating a Pull Request.
 - Do not hand-edit `CHANGELOG.md` or `.release-please-manifest.json`. Release-please owns them.
-- Human-authored PRs to `main` go through [no-mistakes](https://github.com/kunchenguid/no-mistakes) >= 1.46.0. [CONTRIBUTING.md](CONTRIBUTING.md) owns the gate, the attestation contract, and the workflow-pin rules.
-- Tests that start the server set `LAVISH_AXI_STATE_DIR` and use an ephemeral port.
+- External contributors should open an Issue before writing a patch. Pull Requests are currently limited to repository collaborators; [CONTRIBUTING.md](CONTRIBUTING.md) owns the contribution workflow.
+- Tests that start the server set `TEXTCAST_CHAT_AXI_STATE_DIR` and use an ephemeral port.
 - `run()` returns on `--version` / `-v` / `-V` before `ensureStateDir` (`test/cli-version.test.js`). New startup work goes after that short-circuit.
 - `canonicalFile` runs `realpath`. Two paths to the same file are one session.
 - `normalizeArgv` must let AXI `RESERVED_COMMANDS` (including `update`) pass through. A bare `textcast-chat-axi update` must not become `open update`.
@@ -41,10 +40,10 @@ Seven-tab pool regression: `LAVISH_AXI_BROWSER_E2E=1 node --test test/event-tran
 Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure mode.
 
 - The session key is the canonical artifact path. It is not a secret. No route may treat key possession as authorization. [Process model](docs/invariants.md#process-model).
-- Never signal a listener by port alone. Stop only a Lavish PID bound to that exact address, or `POST /shutdown` on an owned server. [Process model](docs/invariants.md#process-model).
+- Never signal a listener by port alone. Stop only a Textcast Chat PID bound to that exact address, or `POST /shutdown` on an owned server. [Process model](docs/invariants.md#process-model).
 - Adopt, replace, or stop only a server `isOwnedServer` owns. Another installation's server at a control address is a `SERVER_ERROR`, never used, replaced, or stopped. [Process model](docs/invariants.md#process-model).
 - Every server replacement passes all previously requested hosts through `inheritedListenHosts` (`--also-listen`), dropping only IPs no longer on a local interface. [Process model](docs/invariants.md#process-model).
-- Loopback is always requested. An unresolvable `LAVISH_AXI_HOST` is kept (`keepUnresolved`) and retried, never silently dropped. [Process model](docs/invariants.md#process-model).
+- Loopback is always requested. An unresolvable `TEXTCAST_CHAT_AXI_HOST` is kept (`keepUnresolved`) and retried, never silently dropped. [Process model](docs/invariants.md#process-model).
 - A wildcard listen request becomes loopback, and an alias that resolves to an all-interfaces address is refused. Never open a wildcard listener. [Process model](docs/invariants.md#process-model).
 - Health probes use `node:http` and destroy the socket on every exit. Do not use `fetch`. [Process model](docs/invariants.md#process-model).
 - Loopback binds first and is the port lock. A failed requested address stays in `pendingBinds` and is retried. Declare request-handler timers before the first bind. [Process model](docs/invariants.md#process-model).
@@ -56,9 +55,11 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - The chrome page (`/session/:key`) answers `X-Frame-Options: DENY` and `frame-ancestors 'none'`. Keep that header off `/artifact/*`, which is framed. [Request flow](docs/invariants.md#request-flow).
 - The artifact route injects only the one SDK `<script>` tag. Served artifact bytes otherwise match the file on disk. [Request flow](docs/invariants.md#request-flow).
 - `/api/sessions` refuses a path that is not a regular `.html`/`.htm` file after `realpath`. [Request flow](docs/invariants.md#request-flow).
-- Artifact asset serving (`/artifact/:key/<path>`) stays inside that session's HTML-file directory, resolves with `realpath`, and never serves a symlink target outside that tree. [Request flow](docs/invariants.md#request-flow).
+- Artifact asset serving (`/artifact/:key/<path>`) stays inside the directory of the session's current page (`sessionPage`), resolves with `realpath`, and never serves a symlink target outside that tree. [Request flow](docs/invariants.md#request-flow).
+- The current page only moves through `POST /api/:key/page`, which accepts an HTML file inside `artifactSiteRoot(session.file)` (the nearest `textcast.json` directory, else the file's own directory) and nothing else. Reopening the file resets the page to it. Every route that reads the page on screen goes through `sessionPage(session)`, never `session.file`.
+- Chrome and Ask-card copy is written in English and wrapped in `t()`; `src/chrome-i18n.js` holds the other locales keyed by that English, and `test/chrome-i18n.test.js` fails on a wrapped literal with no Chinese entry.
 - Only a user prompt and the narrow fatal artifact-failure path may wake `textcast-chat-axi poll`. [Request flow](docs/invariants.md#request-flow).
-- The loading cover lifts on the SDK's `lavish:ready` report, which never goes to the server. [Request flow](docs/invariants.md#request-flow).
+- Nothing covers or hides the page while it loads. Failures the chrome cannot fix show in the dismissable load notice (`showLoadNotice`). [Request flow](docs/invariants.md#request-flow).
 - The chrome mints each queued prompt's `prompt_id` (never from the iframe) and removes a queued note only when the transcript acknowledges that id. Evicted ids stay on `chat_ack_ids`. [Request flow](docs/invariants.md#request-flow).
 - Only agent chat entries render as HTML. User entries are always escaped. [Request flow](docs/invariants.md#request-flow).
 - A note's Sending state is derived from the existing send bookkeeping, never tracked separately. [Request flow](docs/invariants.md#request-flow).
@@ -72,9 +73,9 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - `takeFeedback` is destructive. A disconnected poll restores through `queuePrompts` `restore`: prepend, do not re-plan, re-emit `feedback`, and exempt only the request-wide attachment-ref cap. [Request flow](docs/invariants.md#request-flow).
 - A disconnected-poll restore never overwrites newer `artifact_failures` recorded after the take. [Request flow](docs/invariants.md#request-flow).
 - The active artifact load is durable in `session.artifact_load`. Only a newer `beginArtifactLoad` retires it, and only an explicit takeover reload replaces a superseded reviewer. [Artifact loads](docs/invariants.md#artifact-loads).
-- Reload and loading-cover recovery probe `/health` before navigating. Do not call `location.reload()` directly for these recovery actions; the superseded-reviewer takeover card may reload directly after its 409 response. Sticky "Lavish is not running." copy is never cleared by a later successful load. [Live reload](docs/invariants.md#live-reload).
+- Reload and loading-cover recovery probe `/health` before navigating. Do not call `location.reload()` directly for these recovery actions; the superseded-reviewer takeover card may reload directly after its 409 response. Sticky "Textcast Chat is not running." copy is never cleared by a later successful load. [Live reload](docs/invariants.md#live-reload).
 - Every recovery `/health` probe is bounded by an abort timeout, and its caller restores the control whether the probe answers, fails, or times out. [Live reload](docs/invariants.md#live-reload).
-- Sticky copy never makes the loading cover sticky. Every failure card keeps the bounded timeout and the **Show anyway** bypass. [Live reload](docs/invariants.md#live-reload).
+- A sticky notice is cleared only by the user, and every notice can always be dismissed. [Live reload](docs/invariants.md#live-reload).
 - Shutdown banner text must be true for the `reason` that fired. Idle shutdown reloads nothing. [Live reload](docs/invariants.md#live-reload).
 - `chrome-outdated` never reloads by itself, and a restart shows the banner instead of reloading while an unsent draft exists. The log-only shutdown `cause` is never widened into `reason`. [Live reload](docs/invariants.md#live-reload).
 - Review-state restore sets values directly and dispatches no synthetic `change`/`input` events. [Live reload](docs/invariants.md#live-reload).
@@ -97,13 +98,13 @@ Each line is the rule. [docs/invariants.md](docs/invariants.md) has the failure 
 - SDK helpers that the browser must call are exported functions in a module `serializeModuleHelpers` inlines. No module-level constants. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - Serialized SDK helper modules export only functions. `serializeModuleHelpers` throws on any other export. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - A text annotation's `prompt.selector` names the container, not the selected range. Never target text by selector alone. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
-- Annotation handlers ignore native controls, editable regions, and `data-lavish-action` elements. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
+- Annotation handlers ignore native controls, editable regions, and `data-textcast-action` elements. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - `resetRevisionLegend()` runs only when `replaceArtifactFrame` actually assigns `frame.src`. Reject over-long revision ids and selectors. Lookups use `Map`/`Set`. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - The revision legend's per-row cap derives from `revisionPalette()` length, never a second number. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - A keyboard shortcut that must work in both chrome and the artifact needs a capture-phase listener in both `src/chrome-client.js` and `src/artifact-sdk.js`, and it requires a modifier. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 - `MOBILE_SHEET_MEDIA` matches the CSS phone breakpoint, and the collapsed sheet is a `translateY`, never a height change. The desktop `panel-collapsed` class never applies at phone width. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
-- `CHROME_BOOT_FAILSAFE_JS` stays inlined before the `<script src="/chrome-client.js">` tag so the loading-cover escape works when the client script hangs. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
-- A recoverable first artifact load retries through `ARTIFACT_LOAD_RECOVERY_DELAYS_MS` and then surfaces `setLayoutGateFailure`. `superseded` and `out-of-order` never retry. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
+- `CHROME_BOOT_FAILSAFE_JS` stays inlined before the `<script src="/chrome-client.js">` tag so the load notice still appears when the client script hangs. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
+- A recoverable first artifact load retries through `ARTIFACT_LOAD_RECOVERY_DELAYS_MS` and then surfaces `showLoadNotice`. `superseded` and `out-of-order` never retry. [Things to know when editing](docs/invariants.md#things-to-know-when-editing).
 
 ## Maintaining this file
 

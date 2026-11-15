@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import WebSocket from "ws";
 
-process.env.LAVISH_AXI_HOST = "127.0.0.1";
-process.env.LAVISH_AXI_LINK_HOST = "127.0.0.1";
+process.env.TEXTCAST_CHAT_AXI_HOST = "127.0.0.1";
+process.env.TEXTCAST_CHAT_AXI_LINK_HOST = "127.0.0.1";
 
 import { postAgentReply, VERSION } from "../src/cli.js";
 import { serve } from "../src/server.js";
@@ -50,20 +50,20 @@ function runCli(args, { cwd = REPO_ROOT, env = process.env, stdin } = {}) {
 }
 
 function chromeSessionData(html) {
-  const match = String(html).match(/<script id="lavish-session" type="application\/json">([\s\S]*?)<\/script>/);
-  assert.ok(match, "chrome page embeds lavish-session JSON");
+  const match = String(html).match(/<script id="textcast-session" type="application\/json">([\s\S]*?)<\/script>/);
+  assert.ok(match, "chrome page embeds textcast-session JSON");
   return JSON.parse(match[1]);
 }
 
 function cliEnv(stateDir, port) {
   return {
     ...process.env,
-    LAVISH_AXI_STATE_DIR: stateDir,
-    LAVISH_AXI_PORT: String(port),
-    LAVISH_AXI_HOST: "127.0.0.1",
-    LAVISH_AXI_LINK_HOST: "127.0.0.1",
-    LAVISH_AXI_TELEMETRY: "0",
-    LAVISH_AXI_NO_OPEN: "1",
+    TEXTCAST_CHAT_AXI_STATE_DIR: stateDir,
+    TEXTCAST_CHAT_AXI_PORT: String(port),
+    TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+    TEXTCAST_CHAT_AXI_LINK_HOST: "127.0.0.1",
+    TEXTCAST_CHAT_AXI_TELEMETRY: "0",
+    TEXTCAST_CHAT_AXI_NO_OPEN: "1",
   };
 }
 
@@ -112,7 +112,7 @@ async function openLiveEvents(base, key) {
  * @param {{ open?: boolean }} [options]
  */
 async function withArtifact(fn, { open = true } = {}) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "lavish-reply-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "textcast-reply-"));
   const stateDir = path.join(dir, "state");
   await mkdir(stateDir);
   const artifact = path.join(dir, "artifact.html");
@@ -159,7 +159,7 @@ async function queuePrompt(base, key, text) {
 }
 
 test("reply help and top-level help say when to prefer reply over poll --agent-reply", async () => {
-  const stateDir = await mkdtemp(path.join(os.tmpdir(), "lavish-reply-help-"));
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "textcast-reply-help-"));
   const env = cliEnv(stateDir, 0);
   try {
     const top = await runCli(["--help"], { env });
@@ -275,7 +275,7 @@ test("reply refuses a missing session, an unreachable server, and a non-success 
     async ({ artifact, env }) => {
       const missing = await runCli(["reply", artifact, "--agent-reply", "nobody is reviewing"], { env });
       assert.notEqual(missing.status, 0);
-      assert.match(missing.stdout, /No active Lavish Editor session for this file/);
+      assert.match(missing.stdout, /No active Textcast Chat session for this file/);
       assert.match(missing.stdout, /NOT_FOUND/);
       assert.match(missing.stdout, /textcast-chat-axi/);
       assert.doesNotMatch(missing.stdout, /status: sent/);
@@ -285,11 +285,11 @@ test("reply refuses a missing session, an unreachable server, and a non-success 
 
   const holder = createServer((_req, res) => {
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ version: "not-lavish" }));
+    res.end(JSON.stringify({ version: "not-textcast" }));
   });
   await new Promise((resolve) => holder.listen(0, "127.0.0.1", () => resolve()));
   const port = /** @type {import("node:net").AddressInfo} */ (holder.address()).port;
-  const dir = await mkdtemp(path.join(os.tmpdir(), "lavish-reply-down-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "textcast-reply-down-"));
   const artifact = path.join(dir, "artifact.html");
   await writeFile(artifact, "<!doctype html><html><body>ok</body></html>", "utf8");
   try {
@@ -297,7 +297,7 @@ test("reply refuses a missing session, an unreachable server, and a non-success 
       env: cliEnv(path.join(dir, "state"), port),
     });
     assert.notEqual(down.status, 0);
-    assert.match(down.stdout, /occupied by a non-Lavish server|server connection failed|server did not start/);
+    assert.match(down.stdout, /occupied by a non-textcast server|server connection failed|server did not start/);
     assert.match(down.stdout, /SERVER_ERROR/);
     assert.doesNotMatch(down.stdout, /status: sent/);
   } finally {
@@ -348,7 +348,7 @@ test("reply refuses user-ended and agent-ended sessions without changing the tra
 });
 
 test("reply rejects missing, conflicting, empty, and unreadable reply input", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "lavish-reply-flags-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "textcast-reply-flags-"));
   const artifact = path.join(dir, "artifact.html");
   await writeFile(artifact, "<!doctype html><html><body>ok</body></html>", "utf8");
   const env = cliEnv(path.join(dir, "state"), 0);

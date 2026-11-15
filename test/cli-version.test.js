@@ -23,13 +23,13 @@ test("isVersionOnlyArgv matches exactly the SDK's version-flag shapes", () => {
 });
 
 test("--version prints the version and skips state-dir init", async (t) => {
-  const stateParent = await mkdtemp(path.join(tmpdir(), "lavish-version-"));
+  const stateParent = await mkdtemp(path.join(tmpdir(), "textcast-version-"));
   const stateDir = path.join(stateParent, "state");
   t.after(async () => {
     await rm(stateParent, { recursive: true, force: true });
   });
 
-  const env = { ...process.env, LAVISH_AXI_STATE_DIR: stateDir };
+  const env = { ...process.env, TEXTCAST_CHAT_AXI_STATE_DIR: stateDir };
 
   for (const flag of ["--version", "-v", "-V"]) {
     const { stdout } = await execFileAsync(process.execPath, [BIN, flag], { env });
@@ -42,14 +42,14 @@ test("--version prints the version and skips state-dir init", async (t) => {
 });
 
 test("a non-version invocation still runs the state-dir init the fast path skips", async (t) => {
-  const stateParent = await mkdtemp(path.join(tmpdir(), "lavish-version-control-"));
+  const stateParent = await mkdtemp(path.join(tmpdir(), "textcast-version-control-"));
   const stateDir = path.join(stateParent, "state");
   t.after(async () => {
     await rm(stateParent, { recursive: true, force: true });
   });
 
   await execFileAsync(process.execPath, [BIN, "--help"], {
-    env: { ...process.env, LAVISH_AXI_STATE_DIR: stateDir },
+    env: { ...process.env, TEXTCAST_CHAT_AXI_STATE_DIR: stateDir },
   });
 
   assert.equal(existsSync(stateDir), true);

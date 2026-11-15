@@ -7,5 +7,7 @@
       "release-type": "node",
       "package-name": "textcast-chat-axi"
     }
-  }
+  },
+  "bootstrap-sha": "0fe7ec0609e98f81a9c5bbba63e70a04881b9c66",
+  "include-component-in-tag": false
 }

@@ -1,49 +1,59 @@
 # Contributing
 
-Thanks for wanting to contribute.
-One rule up front:
+Thanks for your interest in `textcast-chat-axi`.
 
-**Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/kunchenguid/no-mistakes).**
-We require this to reduce the maintainer's burden of reviewing and merging contributions.
+The project currently keeps product direction and release decisions with the maintainer. External contributors should open an Issue first with the problem, use case, or proposal. Pull Requests are currently limited to repository collaborators. This lets us agree on scope before anyone spends time implementing a direction that may not fit the project.
 
-`no-mistakes` puts a local git proxy in front of your real remote.
-Pushing through it runs an AI-driven review/test/lint pipeline in an isolated worktree, forwards the push upstream only after every check passes, and opens a clean PR automatically.
+## Issues
 
-A GitHub Actions check (`Require no-mistakes`) runs on PRs targeting `main` and fails if the body is missing the deterministic signature that no-mistakes writes.
-It also requires the machine-readable pipeline attestation that no-mistakes >= 1.46.0 writes next to that signature: the `review`, `test`, and `document` steps must all be recorded as `completed`, and the attested `head_sha` must be the PR's current head.
-The check runs on opened, edited, synchronize, and reopened, including pushed commits. That is safe because no-mistakes #994 writes the attestation before it pushes, so a pipeline-pushed head already has a matching body; a commit pushed outside the pipeline still fails until you `git push no-mistakes` again so the body carries an attestation for the new head.
-The release and dependency bots are exempt so their automation keeps working, but regular contributor PRs without the signature and a current attestation will not be reviewed or merged.
+- **Bug:** use the [Bug report](https://github.com/veardk/textcast-chat-axi/issues/new?template=bug_report.yml) form. Include reproduction steps, your Node version, operating system, and complete relevant CLI output.
+- **Feature or improvement:** describe what you are trying to accomplish and where the current workflow falls short before proposing an implementation.
+- **Usage question:** read the README and CLI help first. If the answer is still unclear, open an Issue with a minimal reproduction.
 
-`.github/workflows/no-mistakes-required.yml` is a thin caller of the shared `kunchenguid/no-mistakes` composite action, pinned to an immutable commit SHA and never `@main`.
-Enforcement logic and its tests live upstream. Change them there, and bump this repo's pin in a deliberate separate PR.
-This repo still owns its `on:`, `paths-ignore`, `concurrency`, `permissions`, job name, and author-exemption `if:`.
+## Local development
 
-## Workflow
+Node 22 or newer and pnpm 11 are required.
 
-Workflow requires `no-mistakes` v1.46.0 or newer.
-Earlier versions can route pushes to a fork, but they do not write the pipeline attestation required by this repository's PR gate.
+```sh
+pnpm install --frozen-lockfile
+pnpm run check
+```
 
-1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent repo (`git@github.com:veardk/textcast-chat-axi.git`).
-2. Create a branch and make your changes.
-3. Initialize or refresh the gate with your fork as the push target: `no-mistakes init --fork-url git@github.com:<you>/textcast-chat-axi.git`.
-4. Commit your changes.
-5. Push through the gate instead of pushing to `origin`:
+`pnpm run check` is the single repository quality gate. It runs the build, ESLint, Prettier check, type check, and test suite. Fix every failure before committing or requesting review.
 
-   ```sh
-   git push no-mistakes
-   ```
+Before submitting a change, confirm that:
 
-6. Run `no-mistakes` to attach to the pipeline, watch findings, and auto-fix or review as needed.
-7. Once the pipeline passes, it pushes the branch to your fork and opens the PR against this parent repo for you.
+- the change has corresponding tests, or the Pull Request explains why new tests are unnecessary;
+- the README, CLI help, and `docs/invariants.md` agree with the behavior;
+- no `node_modules/`, local state, credentials, or temporary build files are included;
+- `pnpm run check` passes.
 
-See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/start-here/quick-start/) for the full first-run walkthrough.
+## Pull Requests
 
-## Repo Conventions
+Only repository collaborators currently open Pull Requests. Use the repository Pull Request template and include:
 
-- Node 22+, ESM-only JavaScript, and TypeScript `checkJs` validation.
-- Run `pnpm run check` before pushing.
-- Do not hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
+- the concrete user problem and resulting behavior;
+- the scope of the change;
+- the checks and tests that were run;
+- any checks that were not run, with the reason;
+- screenshots or a recording for visual or interaction changes.
 
-## Questions
+A passing check is required but does not guarantee acceptance. The maintainer also reviews product fit, security, compatibility, maintainability, and documentation.
 
-Open an issue, or talk to me on [Discord](https://discord.gg/Wsy2NpnZDu).
+## Commits and releases
+
+Use Conventional Commits, for example:
+
+```text
+feat: add page switching for related Textcast pages
+fix: preserve queued notes after reconnect
+chore: update browser compatibility notes
+```
+
+After changes land on `main`, Release Please creates or updates a release Pull Request from the commit history. Merging that release Pull Request creates the GitHub Release and publishes the corresponding npm version through GitHub Actions.
+
+Do not edit `CHANGELOG.md` or `.release-please-manifest.json` by hand; Release Please owns them.
+
+## License and attribution
+
+This project is licensed under the MIT License. The local review architecture is derived from the local review capabilities of [`lavish-axi`](https://github.com/kunchenguid/lavish-axi); the original license and copyright notice remain in [LICENSE](LICENSE). New code and documentation must comply with this project's MIT License.

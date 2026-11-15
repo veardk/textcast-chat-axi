@@ -1,0 +1,30 @@
+name: Feature request
+description: Describe a real use case or improvement
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to accomplish?
+      description: Describe the goal and use case before describing a solution.
+      placeholder: I want to use textcast-chat-axi to… but currently…
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What do you propose?
+      description: Include examples, sketches, or relevant links if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Current workaround
+      description: How do you accomplish this today, and where does it fall short?
+  - type: input
+    id: version
+    attributes:
+      label: Version and environment
+      placeholder: "textcast-chat-axi 0.1.0 / macOS 15 / Node v24"

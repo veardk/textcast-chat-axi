@@ -22,7 +22,7 @@ const SERVER_ENTRY = fileURLToPath(new URL("../bin/textcast-chat-axi-server.js",
 const UNBINDABLE_HOST = "192.0.2.1";
 
 async function withTempDir(run) {
-  const dir = await mkdtemp(path.join(tmpdir(), "lavish-bind-durability-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "textcast-bind-durability-"));
   try {
     return await run(dir);
   } finally {
@@ -76,7 +76,7 @@ test("a degraded bind stays quiet while the requested address is still unavailab
       port: 0,
       stateFile: path.join(dir, "state.json"),
       version: "9.9.9-test",
-      env: { LAVISH_AXI_HOST: UNBINDABLE_HOST },
+      env: { TEXTCAST_CHAT_AXI_HOST: UNBINDABLE_HOST },
       log: () => {},
       idleTimeoutMs: null,
     });
@@ -119,14 +119,14 @@ test("a stale control-channel server is replaced only once per CLI invocation", 
       try {
         await withEnv(
           {
-            LAVISH_AXI_PORT: String(port),
-            LAVISH_AXI_HOST: "127.0.0.1",
-            LAVISH_AXI_STATE_DIR: dir,
-            LAVISH_AXI_NO_OPEN: "1",
-            LAVISH_AXI_TELEMETRY: "0",
+            TEXTCAST_CHAT_AXI_PORT: String(port),
+            TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+            TEXTCAST_CHAT_AXI_STATE_DIR: dir,
+            TEXTCAST_CHAT_AXI_NO_OPEN: "1",
+            TEXTCAST_CHAT_AXI_TELEMETRY: "0",
             // The real server this spawns can take the port once the fake closes; let it idle out
             // instead of outliving the test.
-            LAVISH_AXI_IDLE_TIMEOUT_MS: "1000",
+            TEXTCAST_CHAT_AXI_IDLE_TIMEOUT_MS: "1000",
           },
           async () => {
             try {
@@ -160,7 +160,7 @@ test("a stale control-channel server is replaced only once per CLI invocation", 
 
 test("an occupied loopback control address prevents binding another listener", async () => {
   await withTempDir(async (dir) => {
-    // Drops each connection: startup probes an occupied loopback port for a Lavish owner, and a
+    // Drops each connection: startup probes an occupied loopback port for a Textcast Chat owner, and a
     // connection nobody reads would hold this server's close() open.
     const squatter = createServer((socket) => socket.destroy());
     await new Promise((resolve) => squatter.listen({ port: 0, host: "127.0.0.1" }, () => resolve(undefined)));
@@ -197,7 +197,7 @@ test("an occupied loopback control address prevents binding another listener", a
 test("an occupied requested address does not report network_stale after loopback fallback", async () => {
   await withTempDir(async (dir) => {
     const occupiedHost = "::1";
-    // Drops each connection: startup probes an occupied loopback port for a Lavish owner, and a
+    // Drops each connection: startup probes an occupied loopback port for a Textcast Chat owner, and a
     // connection nobody reads would hold this server's close() open.
     const squatter = createServer((socket) => socket.destroy());
     await new Promise((resolve, reject) => {
@@ -210,7 +210,7 @@ test("an occupied requested address does not report network_stale after loopback
         port: occupiedPort,
         stateFile: path.join(dir, "state.json"),
         version: "9.9.9-test",
-        env: { LAVISH_AXI_HOST: occupiedHost },
+        env: { TEXTCAST_CHAT_AXI_HOST: occupiedHost },
         log: () => {},
         idleTimeoutMs: null,
       });
@@ -237,7 +237,7 @@ test("a sole unbindable host falls back to loopback instead of leaving no listen
     const logs = [];
     // Before the fix this rejected: the "has anything bound yet" guard ran before the retry and
     // before any fallback, so a single pinned host that could not bind exited with no listener at
-    // all and the CLI reported "Lavish Editor server did not start".
+    // all and the CLI reported "Textcast Chat server did not start".
     const server = await serve({
       port: 0,
       stateFile: path.join(dir, "state.json"),
@@ -276,7 +276,7 @@ test("a bind that cannot succeed anywhere still fails loudly and names the cause
   await withTempDir(async (dir) => {
     // Occupy loopback so even the fallback has nowhere to go: the retry must terminate and the
     // failure must still surface, rather than the loop spinning or swallowing the reason.
-    // Drops each connection: startup probes an occupied loopback port for a Lavish owner, and a
+    // Drops each connection: startup probes an occupied loopback port for a Textcast Chat owner, and a
     // connection nobody reads would hold this server's close() open.
     const squatter = createServer((socket) => socket.destroy());
     await new Promise((resolve) => squatter.listen({ port: 0, host: "127.0.0.1" }, () => resolve(undefined)));
@@ -432,11 +432,11 @@ test("a clean detached-server shutdown exits 0 without an error in server.log", 
     const child = spawn(process.execPath, [SERVER_ENTRY, "server", "--port", String(port)], {
       env: {
         ...process.env,
-        LAVISH_AXI_STATE_DIR: dir,
-        LAVISH_AXI_HOST: "127.0.0.1",
-        LAVISH_AXI_NO_OPEN: "1",
-        LAVISH_AXI_TELEMETRY: "0",
-        LAVISH_AXI_IDLE_TIMEOUT_MS: "off",
+        TEXTCAST_CHAT_AXI_STATE_DIR: dir,
+        TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+        TEXTCAST_CHAT_AXI_NO_OPEN: "1",
+        TEXTCAST_CHAT_AXI_TELEMETRY: "0",
+        TEXTCAST_CHAT_AXI_IDLE_TIMEOUT_MS: "off",
       },
       stdio: ["ignore", fd, fd],
     });
@@ -471,7 +471,7 @@ test("a clean detached-server shutdown exits 0 without an error in server.log", 
 
 test("a detached server crash writes a timestamped line to server.log", async () => {
   await withTempDir(async (dir) => {
-    // Drops each connection: startup probes an occupied loopback port for a Lavish owner, and a
+    // Drops each connection: startup probes an occupied loopback port for a Textcast Chat owner, and a
     // connection nobody reads would hold this server's close() open.
     const squatter = createServer((socket) => socket.destroy());
     await new Promise((resolve) => squatter.listen({ port: 0, host: "127.0.0.1" }, () => resolve(undefined)));
@@ -482,10 +482,10 @@ test("a detached server crash writes a timestamped line to server.log", async ()
       const child = spawn(process.execPath, [SERVER_ENTRY, "server", "--port", String(occupiedPort)], {
         env: {
           ...process.env,
-          LAVISH_AXI_STATE_DIR: dir,
-          LAVISH_AXI_HOST: "127.0.0.1",
-          LAVISH_AXI_NO_OPEN: "1",
-          LAVISH_AXI_TELEMETRY: "0",
+          TEXTCAST_CHAT_AXI_STATE_DIR: dir,
+          TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+          TEXTCAST_CHAT_AXI_NO_OPEN: "1",
+          TEXTCAST_CHAT_AXI_TELEMETRY: "0",
         },
         stdio: ["ignore", fd, fd],
       });
@@ -510,8 +510,8 @@ test(
         `import net from "node:net";
 const originalEmit = net.Server.prototype.emit;
 net.Server.prototype.emit = function (event, ...args) {
-  if (event === "listening" && !this.__lavishPostListenRepro) {
-    this.__lavishPostListenRepro = true;
+  if (event === "listening" && !this.__textcastPostListenRepro) {
+    this.__textcastPostListenRepro = true;
     setImmediate(() => this.emit("error", new Error("post-listen-repro")));
   }
   return originalEmit.call(this, event, ...args);
@@ -528,11 +528,11 @@ net.Server.prototype.emit = function (event, ...args) {
         env: {
           ...process.env,
           NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
-          LAVISH_AXI_STATE_DIR: dir,
-          LAVISH_AXI_HOST: "127.0.0.1",
-          LAVISH_AXI_NO_OPEN: "1",
-          LAVISH_AXI_TELEMETRY: "0",
-          LAVISH_AXI_IDLE_TIMEOUT_MS: "off",
+          TEXTCAST_CHAT_AXI_STATE_DIR: dir,
+          TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+          TEXTCAST_CHAT_AXI_NO_OPEN: "1",
+          TEXTCAST_CHAT_AXI_TELEMETRY: "0",
+          TEXTCAST_CHAT_AXI_IDLE_TIMEOUT_MS: "off",
         },
         stdio: ["ignore", fd, fd],
       });
@@ -561,7 +561,7 @@ net.Server.prototype.emit = function (event, ...args) {
       const log = await readFile(logFile, "utf8");
       assert.match(
         log,
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \[lavish\] HTTP server error: post-listen-repro$/m,
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \[textcast\] HTTP server error: post-listen-repro$/m,
       );
     });
   },
@@ -577,11 +577,11 @@ test("an uncaught server exception is timestamped before deterministic exit", { 
       env: {
         ...process.env,
         NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
-        LAVISH_AXI_STATE_DIR: dir,
-        LAVISH_AXI_HOST: "127.0.0.1",
-        LAVISH_AXI_NO_OPEN: "1",
-        LAVISH_AXI_TELEMETRY: "0",
-        LAVISH_AXI_IDLE_TIMEOUT_MS: "off",
+        TEXTCAST_CHAT_AXI_STATE_DIR: dir,
+        TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+        TEXTCAST_CHAT_AXI_NO_OPEN: "1",
+        TEXTCAST_CHAT_AXI_TELEMETRY: "0",
+        TEXTCAST_CHAT_AXI_IDLE_TIMEOUT_MS: "off",
       },
       stdio: ["ignore", fd, fd],
     });
@@ -595,7 +595,7 @@ test("an uncaught server exception is timestamped before deterministic exit", { 
     const log = await readFile(logFile, "utf8");
     assert.match(
       log,
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \[lavish\] uncaught exception: Error: uncaught-repro$/m,
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \[textcast\] uncaught exception: Error: uncaught-repro$/m,
     );
   });
 });
@@ -628,7 +628,7 @@ test("the control channel finds a fallen-back server on loopback", async () => {
       port: 0,
       stateFile: path.join(dir, "state.json"),
       version: "9.9.9-test",
-      env: { LAVISH_AXI_HOST: UNBINDABLE_HOST },
+      env: { TEXTCAST_CHAT_AXI_HOST: UNBINDABLE_HOST },
       log: () => {},
       idleTimeoutMs: null,
     });
@@ -636,9 +636,9 @@ test("the control channel finds a fallen-back server on loopback", async () => {
       assert.deepEqual(server.hosts, ["127.0.0.1"]);
       const output = await withEnv(
         {
-          LAVISH_AXI_PORT: String(server.port),
-          LAVISH_AXI_HOST: UNBINDABLE_HOST,
-          LAVISH_AXI_STATE_DIR: dir,
+          TEXTCAST_CHAT_AXI_PORT: String(server.port),
+          TEXTCAST_CHAT_AXI_HOST: UNBINDABLE_HOST,
+          TEXTCAST_CHAT_AXI_STATE_DIR: dir,
         },
         () => stopCommand([]),
       );
@@ -650,29 +650,29 @@ test("the control channel finds a fallen-back server on loopback", async () => {
 });
 
 test(
-  "discovery prefers Lavish on loopback over a hanging or foreign requested address",
+  "discovery prefers Textcast Chat on loopback over a hanging or foreign requested address",
   { timeout: 10_000 },
   async () => {
     await withTempDir(async (dir) => {
-      const lavish = await serve({
+      const textcast = await serve({
         port: 0,
         stateFile: path.join(dir, "state.json"),
         version: "9.9.9-test",
-        env: { LAVISH_AXI_HOST: "127.0.0.1" },
+        env: { TEXTCAST_CHAT_AXI_HOST: "127.0.0.1" },
         hosts: ["127.0.0.1"],
         log: () => {},
         idleTimeoutMs: null,
       });
-      const port = lavish.port;
+      const port = textcast.port;
       const hanging = createHttpServer(() => {});
       await new Promise((resolve) => hanging.listen({ host: "::1", port }, () => resolve(undefined)));
       try {
         const started = Date.now();
         const output = await withEnv(
           {
-            LAVISH_AXI_PORT: String(port),
-            LAVISH_AXI_HOST: "::1",
-            LAVISH_AXI_STATE_DIR: dir,
+            TEXTCAST_CHAT_AXI_PORT: String(port),
+            TEXTCAST_CHAT_AXI_HOST: "::1",
+            TEXTCAST_CHAT_AXI_STATE_DIR: dir,
           },
           () => stopCommand([]),
         );
@@ -680,35 +680,35 @@ test(
         assert.ok(Date.now() - started < 1500, `discovery stalled for ${Date.now() - started}ms`);
       } finally {
         await new Promise((resolve) => hanging.close(() => resolve(undefined)));
-        await lavish.close().catch(() => {});
+        await textcast.close().catch(() => {});
       }
     });
 
     await withTempDir(async (dir) => {
-      const lavish = await serve({
+      const textcast = await serve({
         port: 0,
         stateFile: path.join(dir, "state.json"),
         version: "9.9.9-test",
-        env: { LAVISH_AXI_HOST: "127.0.0.1" },
+        env: { TEXTCAST_CHAT_AXI_HOST: "127.0.0.1" },
         hosts: ["127.0.0.1"],
         log: () => {},
         idleTimeoutMs: null,
       });
-      const port = lavish.port;
+      const port = textcast.port;
       const foreign = await listenHealth("::1", port, { ok: true, app: "other", version: "0.0.0" });
       try {
         const output = await withEnv(
           {
-            LAVISH_AXI_PORT: String(port),
-            LAVISH_AXI_HOST: "::1",
-            LAVISH_AXI_STATE_DIR: dir,
+            TEXTCAST_CHAT_AXI_PORT: String(port),
+            TEXTCAST_CHAT_AXI_HOST: "::1",
+            TEXTCAST_CHAT_AXI_STATE_DIR: dir,
           },
           () => stopCommand([]),
         );
         assert.equal(output.server.status, "stopped");
       } finally {
         await new Promise((resolve) => foreign.close(() => resolve(undefined)));
-        await lavish.close().catch(() => {});
+        await textcast.close().catch(() => {});
       }
     });
 
@@ -717,20 +717,20 @@ test(
     try {
       const output = await withEnv(
         {
-          LAVISH_AXI_PORT: String(foreignPort),
-          LAVISH_AXI_HOST: "::1",
+          TEXTCAST_CHAT_AXI_PORT: String(foreignPort),
+          TEXTCAST_CHAT_AXI_HOST: "::1",
         },
         () => stopCommand([]),
       );
-      assert.equal(output.server.status, "not-lavish");
+      assert.equal(output.server.status, "not-textcast");
     } finally {
       await new Promise((resolve) => foreignOnly.close(() => resolve(undefined)));
     }
 
     const none = await withEnv(
       {
-        LAVISH_AXI_PORT: "1",
-        LAVISH_AXI_HOST: UNBINDABLE_HOST,
+        TEXTCAST_CHAT_AXI_PORT: "1",
+        TEXTCAST_CHAT_AXI_HOST: UNBINDABLE_HOST,
       },
       () => stopCommand([]),
     );

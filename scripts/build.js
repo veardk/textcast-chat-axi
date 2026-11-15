@@ -15,7 +15,7 @@ await esbuild.build({
   format: "esm",
   target: "node22",
   define: {
-    "process.env.LAVISH_AXI_BUILD_VERSION": JSON.stringify(packageJson.version),
+    "process.env.TEXTCAST_CHAT_AXI_BUILD_VERSION": JSON.stringify(packageJson.version),
   },
 });
 

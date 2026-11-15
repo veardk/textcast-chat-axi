@@ -9,8 +9,8 @@ import test from "node:test";
 
 import { AxiError } from "axi-sdk-js";
 
-process.env.LAVISH_AXI_HOST = "127.0.0.1";
-process.env.LAVISH_AXI_LINK_HOST = "127.0.0.1";
+process.env.TEXTCAST_CHAT_AXI_HOST = "127.0.0.1";
+process.env.TEXTCAST_CHAT_AXI_LINK_HOST = "127.0.0.1";
 
 import { createOpenOutput, createPollOutput, getCommandHelp, resolveAgentReply, VERSION } from "../src/cli.js";
 import { serve } from "../src/server.js";
@@ -36,8 +36,8 @@ function assertConciseFirstGuidance(text) {
 }
 
 function chromeSessionData(html) {
-  const match = String(html).match(/<script id="lavish-session" type="application\/json">([\s\S]*?)<\/script>/);
-  assert.ok(match, "chrome page embeds lavish-session JSON");
+  const match = String(html).match(/<script id="textcast-session" type="application\/json">([\s\S]*?)<\/script>/);
+  assert.ok(match, "chrome page embeds textcast-session JSON");
   return JSON.parse(match[1]);
 }
 
@@ -127,7 +127,7 @@ test("resolveAgentReply keeps the inline --agent-reply string", async () => {
 });
 
 test("resolveAgentReply reads --agent-reply-file and stdin, and refuses the unsafe shapes", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "lavish-agent-reply-resolve-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "textcast-agent-reply-resolve-"));
   try {
     const replyFile = path.join(dir, "reply.md");
     await writeFile(replyFile, STRUCTURED_REPLY, "utf8");
@@ -210,7 +210,7 @@ test("resolveAgentReply reads --agent-reply-file and stdin, and refuses the unsa
 });
 
 test("poll rejects over-limit agent reply files and stdin with an actionable error", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "lavish-agent-reply-limit-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "textcast-agent-reply-limit-"));
   const jsonLimitBytes = 2 * 1024 * 1024;
   const envelopeBytes = Buffer.byteLength(JSON.stringify({ agent_reply: "" }));
   const oversizedReply = Buffer.alloc(jsonLimitBytes - envelopeBytes + 1, "a");
@@ -218,8 +218,8 @@ test("poll rejects over-limit agent reply files and stdin with an actionable err
   await writeFile(replyFile, oversizedReply);
   const env = {
     ...process.env,
-    LAVISH_AXI_STATE_DIR: path.join(dir, "state"),
-    LAVISH_AXI_TELEMETRY: "0",
+    TEXTCAST_CHAT_AXI_STATE_DIR: path.join(dir, "state"),
+    TEXTCAST_CHAT_AXI_TELEMETRY: "0",
   };
   try {
     for (const result of [
@@ -241,7 +241,7 @@ test("poll rejects over-limit agent reply files and stdin with an actionable err
 });
 
 test("poll --agent-reply-file and stdin land multiline Markdown in the transcript and chrome html", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "lavish-agent-reply-e2e-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "textcast-agent-reply-e2e-"));
   const stateDir = path.join(dir, "state");
   await mkdir(stateDir);
   const artifact = path.join(dir, "artifact.html");
@@ -256,12 +256,12 @@ test("poll --agent-reply-file and stdin land multiline Markdown in the transcrip
   });
   const env = {
     ...process.env,
-    LAVISH_AXI_STATE_DIR: stateDir,
-    LAVISH_AXI_PORT: String(server.port),
-    LAVISH_AXI_HOST: "127.0.0.1",
-    LAVISH_AXI_LINK_HOST: "127.0.0.1",
-    LAVISH_AXI_TELEMETRY: "0",
-    LAVISH_AXI_NO_OPEN: "1",
+    TEXTCAST_CHAT_AXI_STATE_DIR: stateDir,
+    TEXTCAST_CHAT_AXI_PORT: String(server.port),
+    TEXTCAST_CHAT_AXI_HOST: "127.0.0.1",
+    TEXTCAST_CHAT_AXI_LINK_HOST: "127.0.0.1",
+    TEXTCAST_CHAT_AXI_TELEMETRY: "0",
+    TEXTCAST_CHAT_AXI_NO_OPEN: "1",
   };
   try {
     const base = `http://127.0.0.1:${server.port}`;

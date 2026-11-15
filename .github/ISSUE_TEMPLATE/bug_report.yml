@@ -1,5 +1,5 @@
 name: Bug report
-description: Something went wrong with Lavish Editor
+description: Something went wrong with textcast-chat-axi
 labels: ["bug"]
 body:
   - type: textarea
