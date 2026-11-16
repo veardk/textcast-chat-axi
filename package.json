@@ -1,6 +1,6 @@
 {
   "name": "textcast-chat-axi",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "packageManager": "pnpm@11.1.1",
   "description": "Reading-companion and revision AXI for Textcast",
   "type": "module",
