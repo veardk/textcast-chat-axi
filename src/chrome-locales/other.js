@@ -74,6 +74,8 @@ export const OTHER_STRINGS = {
     "No agent is listening": "لا يوجد وكيل متصل",
     Delivering: "جارٍ التسليم",
     "Agent is busy; delivered on its next poll": "الوكيل مشغول؛ ستصل الرسالة عند استماعه التالي",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "لا يزال الوكيل يعمل. رسالتك في قائمة الانتظار وستُرسل عندما يصبح جاهزًا.",
     "Unsent annotation": "ملاحظة غير مرسلة",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "حُذف الموضع الذي ارتبطت به هذه الملاحظة أو استُبدل في الصفحة، لذا تعذّر إبقاؤها مفتوحة. نصك محفوظ هنا:",
@@ -235,6 +237,8 @@ export const OTHER_STRINGS = {
     "No agent is listening": "कोई एजेंट ऑनलाइन नहीं",
     Delivering: "पहुँचाया जा रहा है",
     "Agent is busy; delivered on its next poll": "एजेंट व्यस्त है; अगली बार सुनने पर पहुँचेगा",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "एजेंट अभी काम कर रहा है। आपका संदेश कतार में है और तैयार होते ही भेजा जाएगा।",
     "Unsent annotation": "न भेजी गई टिप्पणी",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "जिस हिस्से से यह टिप्पणी जुड़ी थी, वह पेज से हटाया या बदला गया, इसलिए इसे वहीं खुला नहीं रखा जा सका। आपका लिखा यहाँ सुरक्षित है:",
@@ -396,6 +400,8 @@ export const OTHER_STRINGS = {
     "No agent is listening": "Không có agent trực",
     Delivering: "Đang chuyển",
     "Agent is busy; delivered on its next poll": "Agent đang bận; sẽ nhận được ở lần nghe tiếp theo",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "Agent vẫn đang xử lý. Tin nhắn của bạn đã vào hàng chờ và sẽ được gửi khi agent sẵn sàng.",
     "Unsent annotation": "Ghi chú chưa gửi",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Phần nội dung gắn với ghi chú này đã bị xóa hoặc thay thế trên trang, nên không thể giữ ghi chú tại chỗ. Nội dung bạn viết được lưu ở đây:",
@@ -557,6 +563,8 @@ export const OTHER_STRINGS = {
     "No agent is listening": "ไม่มีเอเจนต์ออนไลน์",
     Delivering: "กำลังส่งถึง",
     "Agent is busy; delivered on its next poll": "เอเจนต์ไม่ว่าง จะได้รับเมื่อรับฟังครั้งถัดไป",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "เอเจนต์ยังทำงานอยู่ ข้อความของคุณอยู่ในคิวและจะส่งเมื่อพร้อม",
     "Unsent annotation": "หมายเหตุที่ยังไม่ส่ง",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "ส่วนที่หมายเหตุนี้ผูกอยู่ถูกลบหรือแทนที่ในหน้า จึงเปิดค้างไว้ที่เดิมไม่ได้ ข้อความของคุณเก็บไว้ที่นี่:",
@@ -716,6 +724,8 @@ export const OTHER_STRINGS = {
     "No agent is listening": "Tidak ada agen yang siaga",
     Delivering: "Mengantarkan",
     "Agent is busy; delivered on its next poll": "Agen sedang sibuk; pesan diterima saat ia mendengarkan lagi",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "Agen masih bekerja. Pesanmu sudah masuk antrean dan akan terkirim saat agen siap.",
     "Unsent annotation": "Catatan belum terkirim",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Bagian yang terkait dengan catatan ini dihapus atau diganti di halaman, jadi catatan tidak bisa tetap di tempatnya. Teks Anda disimpan di sini:",
@@ -877,6 +887,8 @@ export const OTHER_STRINGS = {
     "No agent is listening": "Bağlı ajan yok",
     Delivering: "İletiliyor",
     "Agent is busy; delivered on its next poll": "Ajan meşgul; bir sonraki dinlemede iletilecek",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "Ajan hâlâ çalışıyor. Mesajın sırada ve hazır olduğunda gönderilecek.",
     "Unsent annotation": "Gönderilmemiş not",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Bu notun bağlı olduğu kısım sayfadan silindi ya da değiştirildi, bu yüzden not yerinde açık tutulamadı. Yazdıklarınız burada saklanıyor:",

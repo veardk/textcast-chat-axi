@@ -76,6 +76,8 @@ export const EUROPEAN_STRINGS = {
     "No agent is listening": "Aucun agent à l’écoute",
     Delivering: "Envoi en cours",
     "Agent is busy; delivered on its next poll": "L’agent est occupé ; message transmis à sa prochaine écoute",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "L'agent travaille encore. Votre message est en file d'attente et partira dès qu'il sera prêt.",
     "Unsent annotation": "Annotation non envoyée",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Le passage auquel cette note était attachée a été supprimé ou remplacé dans la page, elle n’a donc pas pu rester ouverte. Votre texte est conservé ici :",
@@ -238,6 +240,8 @@ export const EUROPEAN_STRINGS = {
     "No agent is listening": "Kein Agent verbunden",
     Delivering: "Wird zugestellt",
     "Agent is busy; delivered on its next poll": "Agent ist beschäftigt; Zustellung beim nächsten Zuhören",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "Der Agent arbeitet noch. Deine Nachricht ist eingereiht und wird gesendet, sobald er bereit ist.",
     "Unsent annotation": "Nicht gesendete Anmerkung",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Die Stelle, an der diese Anmerkung hing, wurde auf der Seite entfernt oder ersetzt, daher konnte sie nicht offen bleiben. Ihr Text ist hier gesichert:",
@@ -399,6 +403,8 @@ export const EUROPEAN_STRINGS = {
     "No agent is listening": "Ningún agente escuchando",
     Delivering: "Entregando",
     "Agent is busy; delivered on its next poll": "El agente está ocupado; se entregará cuando vuelva a escuchar",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "El agente sigue trabajando. Tu mensaje está en cola y se enviará cuando esté listo.",
     "Unsent annotation": "Anotación sin enviar",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "El fragmento al que estaba unida esta nota se eliminó o reemplazó en la página, así que no pudo quedarse abierta. Tu texto se guarda aquí:",
@@ -560,6 +566,8 @@ export const EUROPEAN_STRINGS = {
     "No agent is listening": "Nenhum agente ouvindo",
     Delivering: "Entregando",
     "Agent is busy; delivered on its next poll": "O agente está ocupado; será entregue quando ele voltar a ouvir",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "O agente ainda está trabalhando. Sua mensagem está na fila e será enviada quando ele estiver pronto.",
     "Unsent annotation": "Anotação não enviada",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "O trecho ao qual esta nota estava ligada foi removido ou substituído na página, por isso ela não pôde ficar aberta. Seu texto está guardado aqui:",
@@ -721,6 +729,8 @@ export const EUROPEAN_STRINGS = {
     "No agent is listening": "Nessun agente in ascolto",
     Delivering: "Consegna in corso",
     "Agent is busy; delivered on its next poll": "L’agente è occupato; verrà consegnato al prossimo ascolto",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "L'agente sta ancora lavorando. Il messaggio è in coda e verrà inviato appena è pronto.",
     "Unsent annotation": "Nota non inviata",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Il punto a cui era collegata questa nota è stato rimosso o sostituito nella pagina, quindi non è potuta restare aperta. Il tuo testo è conservato qui:",
@@ -883,6 +893,8 @@ export const EUROPEAN_STRINGS = {
     "No agent is listening": "Агент не на связи",
     Delivering: "Доставка",
     "Agent is busy; delivered on its next poll": "Агент занят; сообщение придёт, когда он снова начнёт слушать",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "Агент ещё работает. Сообщение поставлено в очередь и отправится, когда он будет готов.",
     "Unsent annotation": "Неотправленная заметка",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Фрагмент, к которому была привязана заметка, удалён или заменён на странице, поэтому её не удалось сохранить на месте. Ваш текст сохранён здесь:",

@@ -74,6 +74,8 @@ export const CJK_STRINGS = {
     "No agent is listening": "智慧體未在線",
     Delivering: "正在送達",
     "Agent is busy; delivered on its next poll": "智慧體正忙，下次監聽時送達",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "智慧體還在處理，訊息已排隊，等它處理完會自動傳送。",
     "Unsent annotation": "未傳送的註記",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "頁面裡這則註記對應的內容被刪除或替換了，註記無法保留在原處。你寫的內容保存在這裡：",
@@ -230,6 +232,8 @@ export const CJK_STRINGS = {
     "No agent is listening": "エージェント未接続",
     Delivering: "送信中",
     "Agent is busy; delivered on its next poll": "エージェントが処理中です。次の待機時に届きます",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "エージェントはまだ処理中です。メッセージは待機列に入り、準備ができ次第送信されます。",
     "Unsent annotation": "未送信の注釈",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "この注釈を付けた箇所がページから削除または置き換えられたため、元の位置に残せませんでした。入力した内容はここに保存されています：",
@@ -391,6 +395,8 @@ export const CJK_STRINGS = {
     "No agent is listening": "에이전트 연결 안 됨",
     Delivering: "전달 중",
     "Agent is busy; delivered on its next poll": "에이전트가 바쁩니다. 다음 대기 때 전달됩니다",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "에이전트가 아직 처리 중입니다. 메시지는 대기열에 들어가며 준비되면 자동으로 전송됩니다.",
     "Unsent annotation": "보내지 않은 메모",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "이 메모가 달린 내용이 페이지에서 삭제되거나 바뀌어 원래 자리에 둘 수 없었습니다. 작성한 내용은 여기에 보관됩니다:",

@@ -293,6 +293,9 @@ let reconnectCopyTimer;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let sendHintTimer;
 let sendHintPersistent = false;
+// Send was pressed while the agent was busy: the notes wait in the queue and go out by themselves
+// the moment a poll is listening again.
+let sendWhenAgentReady = false;
 /** @type {{ kind: "preparation" | "submission" | "terminal", operation: object, preparationType?: string } | null} */
 let sendFailureOwner = null;
 let sendAcknowledgementWarningVisible = false;
@@ -675,7 +678,8 @@ function updateSendState() {
   // A terminal send owns the exact review batch, so freeze interactions inside the
   // artifact without disabling annotation mode. Disabling annotation mode closes the
   // SDK card and destroys an unsent draft before delivery has actually succeeded.
-  frame.inert = ended || terminalReserved;
+  // An ended session only stops feedback: the page itself stays scrollable, clickable and playable.
+  frame.inert = terminalReserved;
   sendButton.disabled = ended || terminalReserved;
   if (sendAndEndButton) sendAndEndButton.disabled = ended || Boolean(terminalSubmission?.inFlight);
   annotationSwitch.disabled = ended || terminalReserved;
@@ -755,6 +759,7 @@ const DEFAULT_SEND_HINT = t(
   "Nothing queued in this tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.",
 );
 const EMPTY_SEND_HINT_HOLD_MS = 9000;
+const QUEUED_UNTIL_READY_HINT = t("The agent is still working. Your message is queued and sends when it is ready.");
 const EMPTY_END_HINT = t("Nothing to send. To end without feedback, use End session in the More menu (⋮).");
 
 function showSendHint(message = DEFAULT_SEND_HINT, holdMs = 2600, focusInput = true) {
@@ -891,10 +896,14 @@ function chatBubbleHtml(entry) {
 // Delivery receipt (docs/delivery-acks.md): the per-note view of what the server observed. Seen,
 // Working, and Done are stamps on the entry, so the row is derived from it on every render and
 // never tracked here. Before Seen, the row says why, from the presence the live stream reports.
-// The three steps are the emoji of the Telegram ack protocol the receipt mirrors (seen, working,
-// done); a step that has not happened is the same glyph dimmed, and every step carries its label
-// and time as `title` and `aria-label`, so hover and screen readers both say the word.
-const RECEIPT_EMOJI = { Seen: "\u{1F440}", Working: "\u{1F6E0}️", Done: "✅" };
+// The row shows only the furthest step reached, as a small line icon and its word (one check:
+// seen, a turning ring: working, two checks: done); hover and screen readers get every step with
+// its time.
+const RECEIPT_ICONS = {
+  Seen: '<path d="M5 12.5l4.2 4.2L19 7"/>',
+  Working: '<path d="M12 4a8 8 0 1 1-8 8"/>',
+  Done: '<path d="M2 12.5l4.2 4.2L16 7"/><path d="M11.5 15.8l.9.9L22 7"/>',
+};
 
 function receiptTime(at) {
   const date = new Date(String(at));
@@ -903,19 +912,29 @@ function receiptTime(at) {
     : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function receiptStepHtml(label, at) {
-  const ticked = Boolean(at);
-  const text = ticked ? t(label) + " " + receiptTime(at) : t(label + ": not yet");
+function receiptStepText(label, at) {
+  return at ? t(label) + " " + receiptTime(at) : t(label + ": not yet");
+}
+
+function receiptStateHtml(entry) {
+  const step = entry.done_at ? "Done" : entry.working_at ? "Working" : "Seen";
+  const summary = [
+    receiptStepText("Seen", entry.delivered_at),
+    receiptStepText("Working", entry.working_at),
+    receiptStepText("Done", entry.done_at),
+  ].join(" · ");
   return (
-    '<span class="receipt-step' +
-    (ticked ? " is-done" : "") +
+    '<span class="receipt-state is-' +
+    step.toLowerCase() +
     '" role="img" aria-label="' +
-    escapeHtml(text) +
+    escapeHtml(summary) +
     '" title="' +
-    escapeHtml(text) +
-    '">' +
-    RECEIPT_EMOJI[label] +
-    "</span>"
+    escapeHtml(summary) +
+    '"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    RECEIPT_ICONS[step] +
+    '</svg><span class="receipt-label">' +
+    escapeHtml(t(step)) +
+    "</span></span>"
   );
 }
 
@@ -938,10 +957,9 @@ function receiptHtml(entry) {
   if (!hasReceipt(entry)) return "";
   return (
     '<div class="receipt">' +
-    receiptStepHtml("Seen", entry.delivered_at) +
-    receiptStepHtml("Working", entry.working_at) +
-    receiptStepHtml("Done", entry.done_at) +
-    (entry.delivered_at ? "" : '<span class="receipt-note">' + escapeHtml(receiptNoteText()) + "</span>") +
+    (entry.delivered_at || entry.done_at
+      ? receiptStateHtml(entry)
+      : '<span class="receipt-note">' + escapeHtml(receiptNoteText()) + "</span>") +
     "</div>"
   );
 }
@@ -1105,6 +1123,11 @@ function setAgentPresence(state) {
   renderSheetSummary();
   refreshUnseenReceipts();
   if (presenceBanner) presenceBanner.hidden = ended || agentPresence !== "waiting";
+  if (sendWhenAgentReady && agentPresence === "listening" && !ended) {
+    sendWhenAgentReady = false;
+    if (sendHint.textContent === QUEUED_UNTIL_READY_HINT) hideSendHint(true);
+    if (queued.length) sendQueued(false);
+  }
 
   // A supervisor-owned process-only listener is busy on the agent's behalf. It must not make the
   // composer look like an idle captain turn while the owning agent is offline.
@@ -1250,7 +1273,7 @@ async function refreshChromeLoadHandoff(requestSequence) {
   const data = await response.json().catch(() => ({}));
   const token = String(data?.chrome_load_token || "");
   if (!response.ok || !token) throw new Error("failed to refresh chrome handoff");
-  if (requestSequence !== artifactLoadRequestSequence || ended) return false;
+  if (requestSequence !== artifactLoadRequestSequence) return false;
   chromeLoadToken = token;
   const revision = Number(data?.artifact_revision);
   const loadToken = String(data?.artifact_load_token || "");
@@ -2431,6 +2454,12 @@ function sendQueued(endAfter) {
     }
     return;
   }
+  if (!shouldEnd && (agentPresence === "working" || agentPresence === "external")) {
+    sendWhenAgentReady = true;
+    showSendHint(QUEUED_UNTIL_READY_HINT, null, false);
+    render();
+    return;
+  }
   if (!sendFailureOwner) hideSendHint(true);
   if (shouldEnd) {
     const terminal = {
@@ -3091,6 +3120,7 @@ async function endSession(terminal = null) {
 function markSessionEnded() {
   if (ended) return;
   ended = true;
+  sendWhenAgentReady = false;
   pendingAcknowledgements.clear();
   clearSendAcknowledgementWarning();
   terminalSubmission = null;
@@ -3143,7 +3173,6 @@ function cancelArtifactLoadRecovery() {
 // `out-of-order` outcome never lands here: another reviewer or a newer request in this same
 // chrome owns the artifact, and retrying would fight it.
 function scheduleArtifactLoadRecovery() {
-  if (ended) return false;
   const delay = ARTIFACT_LOAD_RECOVERY_DELAYS_MS[artifactLoadRecoveryAttempt];
   if (delay === undefined) return false;
   artifactLoadRecoveryAttempt += 1;
@@ -3151,7 +3180,7 @@ function scheduleArtifactLoadRecovery() {
   cancelArtifactLoadRecovery();
   artifactLoadRecoveryTimer = setTimeout(() => {
     artifactLoadRecoveryTimer = undefined;
-    if (ended || sequence !== artifactLoadRequestSequence) return;
+    if (sequence !== artifactLoadRequestSequence) return;
     replaceArtifactFrame({ recoveryRetry: true }).catch(() => {});
   }, delay);
   artifactLoadRecoveryTimer?.unref?.();
@@ -3201,7 +3230,7 @@ async function replaceArtifactFrame({ recoveryRetry = false } = {}) {
   // outage window. Giving up here is what leaves the review permanently unloaded.
   const recoverLater = () => {
     preservePreviousLoad();
-    if (requestSequence !== artifactLoadRequestSequence || ended) return false;
+    if (requestSequence !== artifactLoadRequestSequence) return false;
     if (scheduleArtifactLoadRecovery()) return false;
     // Out of retries. Only say so when there is nothing on screen to say it over: a chrome that
     // already shows an artifact keeps showing it rather than losing a usable review.
@@ -3224,7 +3253,7 @@ async function replaceArtifactFrame({ recoveryRetry = false } = {}) {
   let transportAttempt = 0;
   let handoffRefreshAttempted = false;
   while (true) {
-    if (requestSequence !== artifactLoadRequestSequence || ended) return false;
+    if (requestSequence !== artifactLoadRequestSequence) return false;
     try {
       const response = await fetch("/api/" + key + "/artifact-loads/begin", {
         method: "POST",
@@ -3282,7 +3311,7 @@ async function replaceArtifactFrame({ recoveryRetry = false } = {}) {
       await new Promise((resolve) => window.setTimeout(resolve, delay));
     }
   }
-  if (requestSequence !== artifactLoadRequestSequence || ended) return false;
+  if (requestSequence !== artifactLoadRequestSequence) return false;
   const revision = Number(load?.artifact_revision);
   const token = String(load?.artifact_load_token || "");
   if (!Number.isSafeInteger(revision) || revision < 0 || !token) return recoverLater();
@@ -3321,7 +3350,7 @@ function reloadArtifact() {
 // a page of this site; a refusal leaves the current page as it is.
 let navigationInFlight = false;
 async function navigateArtifact(href) {
-  if (ended || navigationInFlight || typeof href !== "string" || !href) return;
+  if (navigationInFlight || typeof href !== "string" || !href) return;
   navigationInFlight = true;
   try {
     const response = await fetch("/api/" + key + "/page", {
