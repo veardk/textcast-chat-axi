@@ -45,7 +45,9 @@ export const CJK_STRINGS = {
     "Send & End": "傳送並結束",
     "Send to Agent": "傳送",
     "Session ended.": "對話已結束。",
-    "Return to your agent to continue.": "回到智慧體那邊繼續。",
+    "To talk here again, copy this and send it to any agent.": "想在這裡繼續對話，複製下面這段傳給任意一個智慧體。",
+    "Talk with me in this Textcast window:": "用這個 Textcast 視窗和我對話：",
+    "Then follow the next_step it prints.": "執行後依照它輸出的 next_step 繼續。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "這個頁面已在另一個分頁開啟。未傳送的內容只保存在輸入它的分頁裡，在這裡接手不會帶過來。",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -198,7 +200,10 @@ export const CJK_STRINGS = {
     "Send & End": "送信して終了",
     "Send to Agent": "送信",
     "Session ended.": "セッションは終了しました。",
-    "Return to your agent to continue.": "続きはエージェントの画面で行ってください。",
+    "To talk here again, copy this and send it to any agent.":
+      "ここで会話を続けるには、下の文をコピーして任意のエージェントに送ってください。",
+    "Talk with me in this Textcast window:": "この Textcast ウィンドウで私と会話してください：",
+    "Then follow the next_step it prints.": "実行後は、出力される next_step に従ってください。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "このページは別のタブでも開かれています。未送信の内容は入力したタブにだけ保存され、ここで引き継いでも移りません。",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -356,7 +361,10 @@ export const CJK_STRINGS = {
     "Send & End": "보내고 종료",
     "Send to Agent": "보내기",
     "Session ended.": "세션이 종료되었습니다.",
-    "Return to your agent to continue.": "에이전트 화면으로 돌아가 계속하세요.",
+    "To talk here again, copy this and send it to any agent.":
+      "여기서 대화를 이어가려면 아래 내용을 복사해 아무 에이전트에게나 보내세요.",
+    "Talk with me in this Textcast window:": "이 Textcast 창에서 나와 대화해 주세요:",
+    "Then follow the next_step it prints.": "실행한 뒤 출력되는 next_step을 따르세요.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "이 페이지가 다른 탭에서도 열려 있습니다. 보내지 않은 내용은 입력한 탭에만 저장되며, 여기서 이어받아도 옮겨지지 않습니다.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":

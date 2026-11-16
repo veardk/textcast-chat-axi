@@ -45,7 +45,9 @@ export const OTHER_STRINGS = {
     "Send & End": "إرسال وإنهاء",
     "Send to Agent": "إرسال",
     "Session ended.": "انتهت الجلسة.",
-    "Return to your agent to continue.": "عُد إلى الوكيل للمتابعة.",
+    "To talk here again, copy this and send it to any agent.": "للمتابعة هنا مجددًا، انسخ هذا النص وأرسله إلى أي وكيل.",
+    "Talk with me in this Textcast window:": "تحدّث معي في نافذة Textcast هذه:",
+    "Then follow the next_step it prints.": "ثم اتبع next_step الذي يطبعه.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "هذه الصفحة مفتوحة في علامة تبويب أخرى. تبقى الردود غير المرسلة في علامة التبويب التي كتبتها فيها، والمتابعة هنا لا تنقلها.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -203,7 +205,10 @@ export const OTHER_STRINGS = {
     "Send & End": "भेजें और समाप्त करें",
     "Send to Agent": "भेजें",
     "Session ended.": "सत्र समाप्त हो गया।",
-    "Return to your agent to continue.": "जारी रखने के लिए अपने एजेंट के पास लौटें।",
+    "To talk here again, copy this and send it to any agent.":
+      "यहाँ फिर से बात करने के लिए, इसे कॉपी करके किसी भी एजेंट को भेजें।",
+    "Talk with me in this Textcast window:": "इस Textcast विंडो में मुझसे बात करो:",
+    "Then follow the next_step it prints.": "फिर इसके आउटपुट में दिए next_step का पालन करो।",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "यह पेज दूसरे टैब में खुला है। न भेजे गए जवाब उसी टैब में रहते हैं जहाँ आपने उन्हें लिखा; यहाँ जारी रखने से वे साथ नहीं आते।",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -361,7 +366,10 @@ export const OTHER_STRINGS = {
     "Send & End": "Gửi và kết thúc",
     "Send to Agent": "Gửi",
     "Session ended.": "Phiên đã kết thúc.",
-    "Return to your agent to continue.": "Quay lại agent của bạn để tiếp tục.",
+    "To talk here again, copy this and send it to any agent.":
+      "Để trò chuyện lại ở đây, hãy sao chép đoạn này và gửi cho bất kỳ agent nào.",
+    "Talk with me in this Textcast window:": "Hãy trò chuyện với tôi trong cửa sổ Textcast này:",
+    "Then follow the next_step it prints.": "Sau đó làm theo next_step mà lệnh in ra.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Trang này đang mở ở một tab khác. Nội dung chưa gửi chỉ lưu ở tab bạn đã nhập; tiếp tục ở đây sẽ không mang chúng theo.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -519,7 +527,10 @@ export const OTHER_STRINGS = {
     "Send & End": "ส่งและจบ",
     "Send to Agent": "ส่ง",
     "Session ended.": "เซสชันสิ้นสุดแล้ว",
-    "Return to your agent to continue.": "กลับไปที่เอเจนต์ของคุณเพื่อทำต่อ",
+    "To talk here again, copy this and send it to any agent.":
+      "หากต้องการคุยต่อที่นี่ ให้คัดลอกข้อความนี้แล้วส่งให้เอเจนต์ใดก็ได้",
+    "Talk with me in this Textcast window:": "คุยกับฉันในหน้าต่าง Textcast นี้:",
+    "Then follow the next_step it prints.": "จากนั้นทำตาม next_step ที่คำสั่งแสดงออกมา",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "หน้านี้เปิดอยู่ในแท็บอื่น ข้อความที่ยังไม่ส่งจะอยู่ในแท็บที่พิมพ์ไว้เท่านั้น การทำต่อที่นี่จะไม่นำมาด้วย",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -675,7 +686,10 @@ export const OTHER_STRINGS = {
     "Send & End": "Kirim & akhiri",
     "Send to Agent": "Kirim",
     "Session ended.": "Sesi berakhir.",
-    "Return to your agent to continue.": "Kembali ke agen Anda untuk melanjutkan.",
+    "To talk here again, copy this and send it to any agent.":
+      "Untuk mengobrol lagi di sini, salin teks ini lalu kirim ke agen mana pun.",
+    "Talk with me in this Textcast window:": "Ngobrol denganku di jendela Textcast ini:",
+    "Then follow the next_step it prints.": "Lalu ikuti next_step yang ditampilkannya.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Halaman ini terbuka di tab lain. Jawaban yang belum terkirim tetap di tab tempat Anda mengetiknya; melanjutkan di sini tidak membawanya.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -833,7 +847,10 @@ export const OTHER_STRINGS = {
     "Send & End": "Gönder ve bitir",
     "Send to Agent": "Gönder",
     "Session ended.": "Oturum sona erdi.",
-    "Return to your agent to continue.": "Devam etmek için ajanınıza dönün.",
+    "To talk here again, copy this and send it to any agent.":
+      "Burada yeniden konuşmak için bunu kopyalayıp herhangi bir ajana gönderin.",
+    "Talk with me in this Textcast window:": "Bu Textcast penceresinde benimle konuş:",
+    "Then follow the next_step it prints.": "Ardından çıktısındaki next_step'i izle.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Bu sayfa başka bir sekmede açık. Gönderilmemiş yanıtlar yazıldıkları sekmede kalır; burada devam etmek onları taşımaz.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":

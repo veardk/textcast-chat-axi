@@ -46,7 +46,10 @@ export const EUROPEAN_STRINGS = {
     "Send & End": "Envoyer et terminer",
     "Send to Agent": "Envoyer",
     "Session ended.": "Session terminée.",
-    "Return to your agent to continue.": "Retournez auprès de votre agent pour continuer.",
+    "To talk here again, copy this and send it to any agent.":
+      "Pour reprendre la conversation ici, copiez ce texte et envoyez-le à n'importe quel agent.",
+    "Talk with me in this Textcast window:": "Discute avec moi dans cette fenêtre Textcast :",
+    "Then follow the next_step it prints.": "Ensuite, suis le next_step qu'elle affiche.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Cette page est ouverte dans un autre onglet. Les réponses non envoyées restent dans l’onglet où vous les avez saisies ; reprendre ici ne les transfère pas.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -205,7 +208,10 @@ export const EUROPEAN_STRINGS = {
     "Send & End": "Senden & beenden",
     "Send to Agent": "Senden",
     "Session ended.": "Sitzung beendet.",
-    "Return to your agent to continue.": "Kehren Sie zu Ihrem Agenten zurück, um fortzufahren.",
+    "To talk here again, copy this and send it to any agent.":
+      "Um hier weiterzusprechen, kopiere diesen Text und sende ihn an einen beliebigen Agenten.",
+    "Talk with me in this Textcast window:": "Sprich mit mir in diesem Textcast-Fenster:",
+    "Then follow the next_step it prints.": "Folge danach dem next_step, den der Befehl ausgibt.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Diese Seite ist in einem anderen Tab geöffnet. Nicht gesendete Antworten bleiben in dem Tab, in dem Sie sie eingegeben haben; das Übernehmen hier bringt sie nicht mit.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -363,7 +369,10 @@ export const EUROPEAN_STRINGS = {
     "Send & End": "Enviar y terminar",
     "Send to Agent": "Enviar",
     "Session ended.": "Sesión terminada.",
-    "Return to your agent to continue.": "Vuelve con tu agente para continuar.",
+    "To talk here again, copy this and send it to any agent.":
+      "Para volver a conversar aquí, copia esto y envíalo a cualquier agente.",
+    "Talk with me in this Textcast window:": "Habla conmigo en esta ventana de Textcast:",
+    "Then follow the next_step it prints.": "Después, sigue el next_step que muestre.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Esta página está abierta en otra pestaña. Las respuestas sin enviar se quedan en la pestaña donde las escribiste; continuar aquí no las trae.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -521,7 +530,10 @@ export const EUROPEAN_STRINGS = {
     "Send & End": "Enviar e encerrar",
     "Send to Agent": "Enviar",
     "Session ended.": "Sessão encerrada.",
-    "Return to your agent to continue.": "Volte ao seu agente para continuar.",
+    "To talk here again, copy this and send it to any agent.":
+      "Para voltar a conversar aqui, copie isto e envie para qualquer agente.",
+    "Talk with me in this Textcast window:": "Converse comigo nesta janela do Textcast:",
+    "Then follow the next_step it prints.": "Depois, siga o next_step que ele mostrar.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Esta página está aberta em outra aba. Respostas não enviadas ficam na aba onde foram digitadas; continuar aqui não as traz.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -679,7 +691,10 @@ export const EUROPEAN_STRINGS = {
     "Send & End": "Invia e termina",
     "Send to Agent": "Invia",
     "Session ended.": "Sessione terminata.",
-    "Return to your agent to continue.": "Torna dal tuo agente per continuare.",
+    "To talk here again, copy this and send it to any agent.":
+      "Per riprendere la conversazione qui, copia questo testo e invialo a un agente qualsiasi.",
+    "Talk with me in this Textcast window:": "Parla con me in questa finestra di Textcast:",
+    "Then follow the next_step it prints.": "Poi segui il next_step che stampa.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Questa pagina è aperta in un’altra scheda. Le risposte non inviate restano nella scheda in cui le hai scritte; continuare qui non le porta con sé.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
@@ -838,7 +853,10 @@ export const EUROPEAN_STRINGS = {
     "Send & End": "Отправить и завершить",
     "Send to Agent": "Отправить",
     "Session ended.": "Сессия завершена.",
-    "Return to your agent to continue.": "Чтобы продолжить, вернитесь к агенту.",
+    "To talk here again, copy this and send it to any agent.":
+      "Чтобы снова поговорить здесь, скопируйте этот текст и отправьте любому агенту.",
+    "Talk with me in this Textcast window:": "Поговори со мной в этом окне Textcast:",
+    "Then follow the next_step it prints.": "Затем следуй next_step из его вывода.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Эта страница открыта в другой вкладке. Неотправленные ответы остаются во вкладке, где вы их ввели; если продолжить здесь, они не перенесутся.",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":

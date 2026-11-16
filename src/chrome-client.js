@@ -147,7 +147,10 @@ const outdatedBanner = /** @type {HTMLDivElement} */ (document.getElementById("o
 const outdatedText = /** @type {HTMLSpanElement} */ (document.getElementById("outdatedText"));
 const outdatedReloadButton = /** @type {HTMLButtonElement} */ (document.getElementById("outdatedReload"));
 const outdatedDismissButton = /** @type {HTMLButtonElement} */ (document.getElementById("outdatedDismiss"));
-const endedOverlay = /** @type {HTMLDivElement} */ (document.getElementById("endedOverlay"));
+const reconnectCard = /** @type {HTMLDivElement} */ (document.getElementById("reconnectCard"));
+const reconnectText = /** @type {HTMLPreElement} */ (document.getElementById("reconnectText"));
+const reconnectCopyButton = /** @type {HTMLButtonElement} */ (document.getElementById("reconnectCopy"));
+const reconnectCopyText = /** @type {HTMLSpanElement} */ (document.getElementById("reconnectCopyText"));
 const loadNotice = /** @type {HTMLDivElement} */ (document.getElementById("loadNotice"));
 const loadNoticeTitle = /** @type {HTMLDivElement} */ (document.getElementById("loadNoticeTitle"));
 const loadNoticeCopy = /** @type {HTMLParagraphElement} */ (document.getElementById("loadNoticeCopy"));
@@ -286,6 +289,7 @@ let artifactLoadRecoveryTimer;
 let artifactSilenceTimer;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let copyHintTimer;
+let reconnectCopyTimer;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let sendHintTimer;
 let sendHintPersistent = false;
@@ -673,7 +677,7 @@ function updateSendState() {
   // SDK card and destroys an unsent draft before delivery has actually succeeded.
   frame.inert = ended || terminalReserved;
   sendButton.disabled = ended || terminalReserved;
-  sendAndEndButton.disabled = ended || Boolean(terminalSubmission?.inFlight);
+  if (sendAndEndButton) sendAndEndButton.disabled = ended || Boolean(terminalSubmission?.inFlight);
   annotationSwitch.disabled = ended || terminalReserved;
   chatInput.disabled = ended || terminalReserved;
   chatAttachButton.disabled = ended || terminalReserved;
@@ -1307,13 +1311,13 @@ function setSheetOpen(open) {
 }
 
 // Re-derives every sheet attribute from the phone layout, sheet-open, and session-ended state so a
-// viewport crossing the breakpoint in either direction cannot make an ended panel interactive or
-// leave a closed dock trapping focus.
+// viewport crossing the breakpoint in either direction cannot make an ended composer interactive or
+// leave a closed dock trapping focus. The conversation itself stays scrollable once ended.
 function applySheetState() {
   const mobile = isMobileSheet();
   const open = mobile && sheetOpen;
   document.body.classList.toggle("sheet-open", open);
-  panelScroll.inert = ended;
+  panelScroll.inert = false;
   chatComposer.inert = ended;
   applyConversationVisibility();
 }
@@ -3096,7 +3100,6 @@ function markSessionEnded() {
   closeRevisionsDrawer();
   renderRevisionLegend();
   annotationSwitch.disabled = true;
-  moreButton.disabled = true;
   chatInput.disabled = true;
   updateSendState();
   applySheetState();
@@ -3105,7 +3108,18 @@ function markSessionEnded() {
   if (outdatedBanner) outdatedBanner.hidden = true;
   hideLoadNotice();
   postToFrame({ type: "textcast:setAnnotationMode", enabled: false });
-  endedOverlay.hidden = false;
+  // The page stays readable; only the composer gives way to the text that reconnects an agent.
+  chatComposer.hidden = true;
+  reconnectCard.hidden = false;
+}
+
+function copyReconnectPrompt() {
+  copyText(reconnectText.textContent || "");
+  reconnectCopyText.textContent = t("Copied");
+  clearTimeout(reconnectCopyTimer);
+  reconnectCopyTimer = setTimeout(() => {
+    reconnectCopyText.textContent = t("Copy");
+  }, 1600);
 }
 
 function copyFilePath() {
@@ -3707,7 +3721,8 @@ function toggleAnnotationMode() {
 annotationSwitch.onclick = toggleAnnotationMode;
 
 sendButton.onclick = () => sendQueued(false);
-sendAndEndButton.onclick = () => sendQueued(true);
+if (sendAndEndButton) sendAndEndButton.onclick = () => sendQueued(true);
+reconnectCopyButton.onclick = copyReconnectPrompt;
 moreButton.onclick = () => {
   closeRevisionsDrawer();
   toggleMenu(moreButton, moreMenu);

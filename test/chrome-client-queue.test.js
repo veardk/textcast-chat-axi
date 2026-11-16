@@ -1064,99 +1064,6 @@ test("a redundant zero-prompt send clears obsolete stall guidance", async () => 
   assert.equal(chrome.element("sendHint").classList.contains("persistent"), false);
 });
 
-test("a failed terminal-only end shows retry guidance", async () => {
-  const calls = [];
-  let releasePromptPost = () => {};
-  const promptPost = new Promise((resolve) => {
-    releasePromptPost = () => resolve({ ok: true });
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      calls.push(url);
-      if (String(url).endsWith("/prompts")) return promptPost;
-      if (String(url).endsWith("/end")) return { ok: false };
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("chatInput").value = "Shared terminal batch";
-  chrome.element("send").click();
-  chrome.sendSnapshot("first snapshot");
-  await flushPromises();
-
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("terminal snapshot");
-  releasePromptPost();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(calls.filter((url) => String(url).endsWith("/prompts")).length, 1);
-  assert.equal(calls.filter((url) => String(url).endsWith("/end")).length, 1);
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /click Send & End to retry the same batch/i);
-});
-
-test("a failed in-flight POST preserves and runs a completed later Send & End", async () => {
-  const posts = [];
-  let rejectFirstPost = () => {};
-  const firstPost = new Promise((_, reject) => {
-    rejectFirstPost = () => reject(new Error("network unavailable"));
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (posts.length === 1) await firstPost;
-      return { ok: true };
-    },
-  });
-
-  chrome.element("chatInput").value = "First batch";
-  chrome.element("send").click();
-  chrome.sendSnapshot("uid=1 first");
-  await flushPromises();
-  assert.equal(posts.length, 1);
-
-  chrome.element("chatInput").value = "Final batch";
-  chrome.element("sendAndEnd").click();
-  const finalRequest = chrome.postedToFrame.at(-1);
-  chrome.sendFrameMessage({
-    type: "textcast:snapshot",
-    snapshot: "uid=2 final",
-    snapshot_request_id: finalRequest.snapshot_request_id,
-  });
-  chrome.sendFrameMessage({
-    type: "textcast:queuePrompt",
-    prompt: { prompt: "Unsent later work", selector: "h2", tag: "annotation", text: "Later" },
-  });
-
-  rejectFirstPost();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(posts.length, 2);
-  assert.deepEqual(
-    posts[1].body.prompts.map((prompt) => prompt.prompt),
-    ["First batch", "Final batch"],
-  );
-  assert.equal(posts[1].body.domSnapshot, "uid=2 final");
-  assert.equal(posts[1].body.endSession, true);
-  assert.equal(
-    posts.flatMap((post) => post.body.prompts).filter((prompt) => prompt.prompt === "Final batch").length,
-    1,
-  );
-  assert.deepEqual(
-    chrome.queued().map((prompt) => prompt.prompt),
-    [],
-  );
-  assert.equal(chrome.element("sendHint").hidden, true);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), false);
-  assert.equal(chrome.element("sendAndEnd").disabled, true);
-});
-
 test("a later successful batch clears an earlier failure after delivering everything", async () => {
   const posts = [];
   let rejectFirstPost = () => {};
@@ -1187,346 +1094,6 @@ test("a later successful batch clears an earlier failure after delivering everyt
   assert.equal(chrome.queued().length, 0);
   assert.equal(chrome.element("sendHint").hidden, true);
   assert.equal(chrome.element("sendHint").classList.contains("persistent"), false);
-});
-
-test("Send & End falls back without a snapshot and preserves the atomic end intent", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      return { ok: true };
-    },
-  });
-  chrome.element("chatInput").value = "Final answer";
-
-  chrome.element("sendAndEnd").click();
-  chrome.runTimers(5000);
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(posts.length, 1);
-  assert.equal(posts[0].url, "/api/abc/prompts");
-  assert.equal(posts[0].body.domSnapshot, "");
-  assert.equal(posts[0].body.endSession, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, true);
-});
-
-test("Send & End reserves its terminal batch and only retries that batch after failure", async () => {
-  const posts = [];
-  let rejectFirstPost = () => {};
-  const firstPost = new Promise((_, reject) => {
-    rejectFirstPost = () => reject(new Error("network unavailable"));
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (posts.length === 1) await firstPost;
-      return { ok: true };
-    },
-  });
-  chrome.element("chatInput").value = "Terminal batch";
-
-  chrome.element("sendAndEnd").click();
-  const firstRequest = chrome.postedToFrame.at(-1);
-  assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, true);
-  assert.equal(chrome.element("annotation").disabled, true);
-  assert.equal(chrome.element("chatInput").disabled, true);
-  assert.equal(chrome.element("end").disabled, true);
-  chrome.sendFrameMessage({
-    type: "textcast:queuePrompt",
-    prompt: { prompt: "Rejected later annotation", selector: "h2", tag: "annotation", text: "Later" },
-  });
-  chrome.element("chatInput").value = "Rejected later send";
-  chrome.element("send").click();
-  chrome.sendFrameMessage({
-    type: "textcast:snapshot",
-    snapshot: "uid=1 terminal",
-    snapshot_request_id: firstRequest.snapshot_request_id,
-  });
-  await flushPromises();
-  assert.equal(posts.length, 1);
-  chrome.element("end").click();
-  await flushPromises();
-  assert.equal(posts.length, 1);
-
-  rejectFirstPost();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.equal(chrome.element("annotation").disabled, true);
-  assert.equal(chrome.element("chatInput").disabled, true);
-  assert.equal(chrome.element("end").disabled, true);
-  assert.deepEqual(
-    chrome.queued().map((prompt) => prompt.prompt),
-    ["Terminal batch"],
-  );
-
-  const reloaded = await createChromeHarness({
-    storage: chrome.storage,
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      return { ok: true };
-    },
-  });
-  assert.equal(reloaded.element("send").disabled, true);
-  assert.equal(reloaded.element("sendAndEnd").disabled, false);
-  assert.equal(reloaded.element("annotation").disabled, true);
-  assert.equal(reloaded.element("chatInput").disabled, true);
-  assert.equal(reloaded.element("end").disabled, true);
-
-  reloaded.element("sendAndEnd").click();
-  const retryRequest = reloaded.postedToFrame.at(-1);
-  assert.equal(typeof retryRequest.snapshot_request_id, "string");
-  assert.equal(reloaded.element("sendAndEnd").disabled, true);
-  reloaded.sendFrameMessage({
-    type: "textcast:snapshot",
-    snapshot: "uid=2 retry",
-    snapshot_request_id: retryRequest.snapshot_request_id,
-  });
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(posts.length, 2);
-  assert.deepEqual(
-    posts.map((post) => post.body.prompts.map((prompt) => prompt.prompt)),
-    [["Terminal batch"], ["Terminal batch"]],
-  );
-  assert.equal(posts[1].body.domSnapshot, "uid=2 retry");
-  assert.equal(posts[1].body.endSession, true);
-  assert.equal(reloaded.queued().length, 0);
-  assert.equal(reloaded.element("sendAndEnd").disabled, true);
-});
-
-test("Send & End locks the artifact without closing an open annotation draft before delivery", async () => {
-  const prompt = { uid: "", prompt: "Already queued", selector: "h1", tag: "element", text: "Heading" };
-  const chrome = await createChromeHarness({
-    storedQueue: [prompt],
-    fetchImpl: async (url) => {
-      if (!String(url).endsWith("/prompts")) return { ok: true, json: async () => ({}) };
-      return {
-        ok: false,
-        status: 400,
-        json: async () => ({ rejected: [{ reason: "not-found" }] }),
-      };
-    },
-  });
-  const disableMessagesBefore = chrome.postedToFrame.filter(
-    (message) => message.type === "textcast:setAnnotationMode" && message.enabled === false,
-  ).length;
-
-  chrome.element("sendAndEnd").click();
-
-  assert.equal(chrome.frame.inert, true, "the artifact is interaction-locked while the terminal send owns it");
-  assert.equal(
-    chrome.postedToFrame.filter((message) => message.type === "textcast:setAnnotationMode" && message.enabled === false)
-      .length,
-    disableMessagesBefore,
-    "reserving Send & End must not tell the SDK to close its live annotation card",
-  );
-
-  chrome.sendSnapshot("");
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.frame.inert, false, "an actionable rejection restores the untouched artifact draft");
-});
-
-test("reload restores a completed terminal reservation after its prompt was delivered elsewhere", async () => {
-  const storage = new Map();
-  let finishOrdinarySend = () => {};
-  const ordinarySend = new Promise((resolve) => {
-    finishOrdinarySend = () => resolve({ ok: true });
-  });
-  let originalEndAttempts = 0;
-  const chrome = await createChromeHarness({
-    storage,
-    storedQueue: [{ uid: "", prompt: "Deliver then end", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/prompts")) return ordinarySend;
-      if (String(url).endsWith("/end")) {
-        originalEndAttempts += 1;
-        return new Promise(() => {});
-      }
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("send").click();
-  chrome.sendSnapshot("ordinary snapshot");
-  await flushPromises();
-
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("terminal snapshot");
-  await flushPromises();
-
-  finishOrdinarySend();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(storage.get("textcast-chat-axi:terminal:abc"), "true");
-  assert.equal(originalEndAttempts, 1);
-
-  const reloadedRequests = [];
-  const reloaded = await createChromeHarness({
-    storage,
-    fetchImpl: async (url, init = {}) => {
-      reloadedRequests.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-  assert.equal(reloaded.queued().length, 0);
-  assert.equal(reloaded.element("send").disabled, true);
-  assert.equal(reloaded.element("sendAndEnd").disabled, false);
-
-  reloaded.element("sendAndEnd").click();
-  reloaded.sendSnapshot("retry snapshot");
-  await flushPromises();
-  await flushPromises();
-
-  assert.deepEqual(reloadedRequests, [{ url: "/api/abc/end", body: null }]);
-  assert.equal(storage.has("textcast-chat-axi:terminal:abc"), false);
-  assert.equal(reloaded.element("sendAndEnd").disabled, true);
-});
-
-test("an actionable terminal attachment rejection restores editable review controls", async () => {
-  const prompt = {
-    uid: "",
-    prompt: "Review this image",
-    selector: "",
-    tag: "message",
-    text: "Freeform message",
-    attachments: [{ id: "missing.png", name: "missing.png" }],
-  };
-  const chrome = await createChromeHarness({
-    storedQueue: [prompt],
-    fetchImpl: async (url) => {
-      if (!String(url).endsWith("/prompts")) return { ok: true, json: async () => ({}) };
-      return {
-        ok: false,
-        status: 400,
-        json: async () => ({ rejected: [{ reason: "not-found" }] }),
-      };
-    },
-  });
-
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("");
-  await flushPromises();
-  await flushPromises();
-
-  assert.deepEqual(publicQueued(chrome), [prompt]);
-  assert.equal(chrome.element("send").disabled, false);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.equal(chrome.element("annotation").disabled, false);
-  assert.equal(chrome.element("chatInput").disabled, false);
-  assert.equal(chrome.element("end").disabled, false);
-  assert.match(chrome.element("sendHint").textContent, /no longer available/i);
-});
-
-test("a transient terminal failure names Send & End as the retry action", async () => {
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Final feedback", selector: "", tag: "message", text: "Freeform message" }],
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/prompts")) throw new Error("network unavailable");
-      return { ok: true, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("");
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.match(chrome.element("sendHint").textContent, /click Send & End to retry the same batch/i);
-  assert.doesNotMatch(chrome.element("sendHint").textContent, /click Send to Agent/i);
-});
-
-test("an older successful send preserves newer terminal retry guidance", async () => {
-  let releaseFirstPost = () => {};
-  const firstPost = new Promise((resolve) => {
-    releaseFirstPost = () => resolve({ ok: true });
-  });
-  let promptPostCount = 0;
-  let chrome;
-  chrome = await createChromeHarness({
-    fetchImpl: async (url) => {
-      if (!String(url).endsWith("/prompts")) return { ok: true, json: async () => ({}) };
-      promptPostCount += 1;
-      if (promptPostCount === 1) {
-        chrome.element("chatInput").value = "Terminal batch";
-        chrome.element("sendAndEnd").click();
-        chrome.sendSnapshot("terminal snapshot");
-        return firstPost;
-      }
-      throw new Error("terminal network unavailable");
-    },
-  });
-
-  chrome.element("chatInput").value = "Ordinary batch";
-  chrome.element("send").click();
-  chrome.sendSnapshot("ordinary snapshot");
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(promptPostCount, 2);
-  assert.match(chrome.element("sendHint").textContent, /click Send & End to retry the same batch/i);
-  releaseFirstPost();
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.equal(chrome.element("sendHint").classList.contains("persistent"), true);
-  assert.match(chrome.element("sendHint").textContent, /click Send & End to retry the same batch/i);
-});
-
-test("an older late Send failure preserves newer terminal retry guidance", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Shared batch", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url, init = {}) => {
-      if (!String(url).endsWith("/prompts")) return { ok: true, json: async () => ({}) };
-      posts.push(JSON.parse(init.body));
-      throw new Error("network unavailable");
-    },
-  });
-
-  chrome.element("send").click();
-  const ordinaryRequest = chrome.postedToFrame.at(-1);
-  chrome.element("sendAndEnd").click();
-  const terminalRequest = chrome.postedToFrame.at(-1);
-
-  chrome.sendFrameMessage({
-    type: "textcast:snapshot",
-    snapshot: "terminal snapshot",
-    snapshot_request_id: terminalRequest.snapshot_request_id,
-  });
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(posts.length, 1);
-  assert.equal(posts[0].endSession, true);
-  assert.match(chrome.element("sendHint").textContent, /click Send & End to retry the same batch/i);
-
-  chrome.sendFrameMessage({
-    type: "textcast:snapshot",
-    snapshot: "older ordinary snapshot",
-    snapshot_request_id: ordinaryRequest.snapshot_request_id,
-  });
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(posts.length, 2);
-  assert.equal(posts[1].endSession, undefined);
-  assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.match(chrome.element("sendHint").textContent, /click Send & End to retry the same batch/i);
-  assert.doesNotMatch(chrome.element("sendHint").textContent, /click Send to Agent to retry/i);
 });
 
 test("a failed timeout fallback keeps the queue and a timely retry sends it once", async () => {
@@ -2478,36 +2045,6 @@ test("queued annotation prompts still deliver while a composer chip uploads", as
   );
   assert.equal(chrome.element("chatInput").value, "Held back", "the composer message stays for a later send");
   assert.equal(chrome.queued().length, 0, "the annotation was delivered, not stranded");
-});
-
-test("Send & End with a failed composer chip delivers prompts but holds the end", async () => {
-  const promptBodies = [];
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Fix the header", selector: "h1", tag: "element", text: "Header" }],
-    sessionData: { ...defaultSessionData, attachmentMaxBytes: 1024, attachmentMaxCount: 4 },
-    fetchImpl: async (url, init) => {
-      if (String(url).endsWith("/prompts")) {
-        promptBodies.push(JSON.parse(init.body));
-        return { ok: true, json: async () => ({}) };
-      }
-      return { ok: false, json: async () => ({ error: "storage full" }) };
-    },
-  });
-  chrome.element("chatInput").dispatch("paste", clipboardEvent(pastedImage("doomed.png")));
-  await flushPromises();
-  await flushPromises();
-
-  chrome.element("sendAndEnd").click();
-  assert.match(chrome.element("chatAttachmentNotice").textContent, /retry or remove/i);
-  assert.ok(chrome.postedToFrame.some((m) => m.type === "textcast:requestSnapshot"));
-  chrome.sendSnapshot("uid=1 body");
-  await flushPromises();
-  await flushPromises();
-
-  // Ending now would strand the chip the user is clearly still working on, so
-  // the queued prompts go out WITHOUT the end flag.
-  assert.equal(promptBodies.length, 1);
-  assert.equal(promptBodies[0].endSession, undefined);
 });
 
 test("a size-refused image cannot eat a cap slot from a valid one in the same paste", async () => {
@@ -4115,126 +3652,15 @@ test("send controls stay enabled while the agent works and lock only once the se
   });
 
   assert.equal(chrome.element("send").disabled, false);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
 
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "working" }) });
   assert.equal(chrome.element("send").disabled, false);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
 
-  chrome.sendFrameMessage({
-    type: "textcast:queuePrompt",
-    prompt: { prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" },
-  });
-  chrome.element("sendAndEnd").onclick();
-  chrome.sendSnapshot("uid=1 body");
+  chrome.element("end").onclick();
   await flushPromises();
   await flushPromises();
 
   assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, true);
-});
-
-test("chrome send and end carries the end intent with queued prompts", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      return { ok: true };
-    },
-  });
-
-  chrome.sendFrameMessage({
-    type: "textcast:queuePrompt",
-    prompt: { prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" },
-  });
-  chrome.element("sendAndEnd").onclick();
-  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:requestSnapshot");
-
-  chrome.sendSnapshot("uid=1 body");
-  await flushPromises();
-  await flushPromises();
-
-  assert.deepEqual(
-    posts.map((post) => post.url),
-    ["/api/abc/prompts"],
-  );
-  assertPromptIdentity(posts[0].body.prompts[0].prompt_id);
-  assert.deepEqual(publicPostedBody(posts[0].body), {
-    prompts: [{ prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" }],
-    domSnapshot: "uid=1 body",
-    endSession: true,
-  });
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(chrome.element("chatInput").disabled, true);
-});
-
-test("chrome send and end with an empty composer nudges instead of ending", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      return { ok: true };
-    },
-  });
-  chrome.element("sendHint").hidden = true;
-
-  chrome.element("sendAndEnd").onclick();
-  await flushPromises();
-
-  assert.equal(posts.length, 0);
-  assert.equal(chrome.postedToFrame.length, 0);
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.match(chrome.element("sendHint").textContent, /End session/);
-  assert.equal(chrome.element("chatInput").focused, true);
-  assert.equal(chrome.element("chatInput").disabled, false);
-});
-
-test("an oversized terminal snapshot retries once without optional DOM context", async () => {
-  const posts = [];
-  const chrome = await createChromeHarness({
-    storedQueue: [{ uid: "", prompt: "Final answer", selector: "h1", tag: "element", text: "Heading" }],
-    fetchImpl: async (url, init = {}) => {
-      if (!String(url).endsWith("/prompts")) return { ok: true, json: async () => ({}) };
-      posts.push(JSON.parse(init.body));
-      if (posts.length === 1) return { ok: false, status: 413, json: async () => ({}) };
-      return { ok: true, status: 200, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("x".repeat(200));
-  await flushPromises();
-  await flushPromises();
-
-  assert.equal(posts.length, 2);
-  assert.equal(posts[0].domSnapshot.length, 200);
-  assert.equal(posts[1].domSnapshot, "");
-  assert.equal(posts[1].endSession, true);
-  assert.equal(chrome.queued().length, 0);
-});
-
-test("a terminal 413 without snapshot releases the review for editing", async () => {
-  const prompt = { uid: "", prompt: "Too much feedback", selector: "h1", tag: "element", text: "Heading" };
-  const chrome = await createChromeHarness({
-    storedQueue: [prompt],
-    fetchImpl: async (url) => {
-      if (!String(url).endsWith("/prompts")) return { ok: true, json: async () => ({}) };
-      return { ok: false, status: 413, json: async () => ({}) };
-    },
-  });
-
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("");
-  await flushPromises();
-  await flushPromises();
-
-  assert.deepEqual(publicQueued(chrome), [prompt]);
-  assert.equal(chrome.element("send").disabled, false);
-  assert.equal(chrome.element("sendAndEnd").disabled, false);
-  assert.equal(chrome.element("annotation").disabled, false);
-  assert.equal(chrome.element("chatInput").disabled, false);
-  assert.equal(chrome.element("end").disabled, false);
-  assert.match(chrome.element("sendHint").textContent, /too large/i);
 });
 
 test("chrome send with an empty composer shows a visible hint", async () => {
@@ -4254,54 +3680,6 @@ test("chrome send with an empty composer shows a visible hint", async () => {
   assert.equal(chrome.element("sendHint").hidden, true);
 });
 
-test("chrome send and end during an in-flight submit still ends after the submit drains the queue", async () => {
-  const posts = [];
-  let resolveFirstPost = () => {};
-  const firstPost = new Promise((resolve) => {
-    resolveFirstPost = () => resolve();
-  });
-  const chrome = await createChromeHarness({
-    fetchImpl: async (url, init = {}) => {
-      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
-      if (posts.length === 1) await firstPost;
-      return { ok: true };
-    },
-  });
-
-  chrome.sendFrameMessage({
-    type: "textcast:queuePrompt",
-    prompt: { prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" },
-  });
-  chrome.element("send").onclick();
-  chrome.sendSnapshot("uid=1 body");
-  await flushPromises();
-  assert.equal(posts.length, 1);
-
-  chrome.element("sendAndEnd").onclick();
-  chrome.sendSnapshot("uid=1 body");
-  await flushPromises();
-  assert.equal(posts.length, 1);
-
-  resolveFirstPost();
-  await flushPromises();
-  await flushPromises();
-
-  assert.deepEqual(
-    posts.map((post) => post.url),
-    ["/api/abc/prompts", "/api/abc/end"],
-  );
-  assertPromptIdentity(posts[0].body.prompts[0].prompt_id);
-  assert.deepEqual(publicPostedBody(posts[0].body), {
-    prompts: [{ prompt: "Ship this", selector: "button#ship", tag: "choice", text: "Ship" }],
-    domSnapshot: "uid=1 body",
-  });
-  assert.equal(posts[1].body, null);
-  assert.equal(chrome.queued().length, 0);
-  assert.equal(chrome.element("chatInput").disabled, true);
-});
-
-// #171: a page loaded (or reloaded) after the session already ended has no future `ended` SSE
-// event to wait for - it must start read-only, not wait for a Send to be silently refused.
 test("chrome boots read-only when the session already ended before this page load (#171)", async () => {
   const chrome = await createChromeHarness({
     sessionData: { ...defaultSessionData, initialEnded: true, initialEndedBy: "user" },
@@ -4309,12 +3687,12 @@ test("chrome boots read-only when the session already ended before this page loa
 
   assert.equal(chrome.element("chatInput").disabled, true);
   assert.equal(chrome.element("annotation").disabled, true);
-  assert.equal(chrome.element("moreButton").disabled, true);
+  assert.equal(chrome.element("moreButton").disabled, false, "video and reload stay reachable");
   assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, true);
-  assert.equal(chrome.element("panelScroll").inert, true);
+  assert.equal(chrome.element("panelScroll").inert, false, "the conversation stays readable");
   assert.equal(chrome.element("chatComposer").inert, true);
-  assert.equal(chrome.element("endedOverlay").hidden, false);
+  assert.equal(chrome.element("reconnectCard").hidden, false);
+  assert.equal(chrome.element("chatComposer").hidden, true);
 });
 
 // #171: a race between this tab's own in-flight Send and a session end elsewhere must not leave
@@ -4338,7 +3716,8 @@ test("a queued Send refused because the session already ended marks the chrome r
   await flushPromises();
 
   assert.equal(chrome.element("chatInput").disabled, true);
-  assert.equal(chrome.element("endedOverlay").hidden, false);
+  assert.equal(chrome.element("reconnectCard").hidden, false);
+  assert.equal(chrome.element("chatComposer").hidden, true);
   // The rejected batch is not silently lost - it stays queued rather than looking delivered.
   assert.equal(chrome.queued().length, 1);
 });
@@ -5109,12 +4488,10 @@ test("the status line reports an ended session", async () => {
     fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
   });
 
-  chrome.element("chatInput").value = "Ship it";
-  chrome.element("sendAndEnd").click();
-  chrome.sendSnapshot("uid=1 body");
+  chrome.element("end").onclick();
   await flushPromises();
   await flushPromises();
-  assert.equal(chrome.element("sendAndEnd").disabled, true, "the session ended");
+  assert.equal(chrome.element("end").disabled, true, "the session ended");
   assert.equal(sheetState(chrome).summary, "Session ended");
 });
 
@@ -6978,15 +6355,15 @@ test("chrome goes read-only when the server forwards an ended SSE event (#171)",
 
   assert.equal(chrome.element("chatInput").disabled, true);
   assert.equal(chrome.element("annotation").disabled, true);
-  assert.equal(chrome.element("moreButton").disabled, true);
+  assert.equal(chrome.element("moreButton").disabled, false, "video and reload stay reachable");
   assert.equal(chrome.element("send").disabled, true);
-  assert.equal(chrome.element("sendAndEnd").disabled, true);
-  assert.equal(chrome.element("panelScroll").inert, true);
+  assert.equal(chrome.element("panelScroll").inert, false, "the conversation stays readable");
   assert.equal(chrome.element("chatComposer").inert, true);
-  assert.equal(chrome.element("endedOverlay").hidden, false);
+  assert.equal(chrome.element("reconnectCard").hidden, false);
+  assert.equal(chrome.element("chatComposer").hidden, true);
 
   chrome.setMobile(false);
-  assert.equal(chrome.element("panelScroll").inert, true);
+  assert.equal(chrome.element("panelScroll").inert, false, "the conversation stays readable");
   assert.equal(chrome.element("chatComposer").inert, true);
 });
 
