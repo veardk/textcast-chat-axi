@@ -293,12 +293,12 @@ test("the chrome boot failsafe preserves the ended-session guard", () => {
   const boot = bootChromeFailsafe({}, { status: "ended", ended_by: "user" });
 
   assert.equal(boot.element("loadNotice").hidden, true);
-  assert.equal(boot.element("endedOverlay").hidden, false);
+  assert.equal(boot.element("reconnectCard").hidden, false);
   assert.deepEqual(boot.pendingDelays(), []);
 
   boot.context.window.__textcastChromeBootFailed();
   assert.equal(boot.element("loadNotice").hidden, true);
-  assert.equal(boot.element("endedOverlay").hidden, false);
+  assert.equal(boot.element("reconnectCard").hidden, false);
 });
 
 test("the chrome client cancels the boot failsafe once it has run", () => {
@@ -842,17 +842,17 @@ test("takeover banner explains draft ownership before offering takeover", () => 
   assert.match(banner, /id="handoffTakeover"[^>]*>Take over here/);
 });
 
-test("composer offers two always-visible top-level send actions", async () => {
+test("composer offers one always-visible send action", async () => {
   const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
   const css = await chromeCssSource();
 
   assert.match(html, /class="button button-primary" id="send" type="button">Send to Agent</);
-  assert.match(html, /class="button button-quiet" id="sendAndEnd"[^<]*>.*Send &amp; End</);
+  assert.doesNotMatch(html, /id="sendAndEnd"/);
   assert.match(
     html,
     /<div class="send-hint" id="sendHint" hidden>Nothing queued in this tab\. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along\.<\/div>/,
   );
-  assert.match(html, /<div class="actions" id="sendActions"><button class="button button-quiet" id="sendAndEnd"/);
+  assert.match(html, /<div class="actions" id="sendActions"><button class="button button-primary" id="send"/);
   assert.doesNotMatch(html, /id="sendCaret"/);
   assert.doesNotMatch(html, /id="sendMenu"/);
   assert.doesNotMatch(html, /id="sendFromMenu"/);
@@ -3287,6 +3287,39 @@ test("a user-initiated end via the keyed route blocks a plain reopen but honors 
   }
 });
 
+test("reopening a session whose tab is still on screen reports it, so no second tab opens", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "textcast-reconnect-"));
+  const artifact = path.join(dir, "artifact.html");
+  await writeFile(artifact, "<!doctype html><html><body></body></html>");
+  const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
+  let stream;
+  try {
+    const base = `http://127.0.0.1:${server.port}`;
+    const openSession = async (body) =>
+      (
+        await fetch(`${base}/api/sessions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      ).json();
+    const first = await openSession({ file: artifact });
+    assert.equal(first.browser_connected, false);
+
+    stream = await startEventStream(base, first.key, "reopened");
+    await fetch(`${base}/api/${first.key}/end`, { method: "POST" });
+
+    const reopened = await openSession({ file: artifact, reopen: true });
+    assert.equal(reopened.status, "opened");
+    assert.equal(reopened.browser_connected, true);
+    await stream.next();
+  } finally {
+    await stream?.close();
+    await server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("a blocked user-ended open returns the current listener URL", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "textcast-user-ended-current-url-"));
   const artifact = path.join(dir, "artifact.html");
@@ -5064,22 +5097,24 @@ test("server debug logger receives session and watcher lifecycle events", async 
   }
 });
 
-test("ended session shows an overlay card over the dimmed chrome", async () => {
-  const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
+test("an ended session keeps the page readable and offers text that reconnects an agent", async () => {
+  const html = createChromeHtml({ key: "abc", file: "/tmp/my page$.html" });
   const js = await chromeClientSource();
   const css = await chromeCssSource();
 
-  assert.match(html, /class="ended-overlay" id="endedOverlay" hidden/);
-  assert.match(html, /class="ended-card"/);
-  assert.match(html, /Session ended\./);
-  assert.match(html, /Return to your agent to continue\./);
-  assert.match(html, /class="ended-copy">\/tmp\/artifact\.html</);
-  assert.doesNotMatch(html, /The agent polling loop can stop\./);
-  assert.match(css, /\.ended-overlay\{[^}]*inset:0/);
-  assert.match(css, /\.ended-title\{[^}]*font-family:var\(--serif\)/);
-  assert.match(js, /endedOverlay\.hidden = false/);
+  assert.doesNotMatch(html, /endedOverlay|ended-overlay/);
+  assert.match(html, /<div class="reconnect" id="reconnectCard" hidden>/);
+  assert.match(html, /To talk here again, copy this and send it to any agent\./);
+  assert.match(
+    html,
+    /<pre class="reconnect-text" id="reconnectText">Talk with me in this Textcast window:\nnpx -y textcast-chat-axi@latest &quot;\/tmp\/my page\\\$\.html&quot; --reopen\nThen follow the next_step it prints\.<\/pre>/,
+  );
+  assert.match(html, /id="reconnectCopy" type="button">/);
+  assert.match(css, /\.reconnect\{/);
+  assert.match(js, /reconnectCard\.hidden = false/);
+  assert.match(js, /chatComposer\.hidden = true/);
   assert.match(js, /annotationSwitch\.disabled = true/);
-  assert.match(js, /moreButton\.disabled = true/);
+  assert.doesNotMatch(js, /moreButton\.disabled = true/);
 });
 
 test("nothing covers the page while it loads; failures float in a dismissable notice", async () => {

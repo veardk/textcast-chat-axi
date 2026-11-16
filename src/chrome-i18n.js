@@ -56,7 +56,9 @@ const CHROME_STRINGS = {
     "Send & End": "发送并结束",
     "Send to Agent": "发送",
     "Session ended.": "会话已结束。",
-    "Return to your agent to continue.": "回到智能体那边继续。",
+    "To talk here again, copy this and send it to any agent.": "想在这里继续对话，复制下面这段发给任意一个智能体。",
+    "Talk with me in this Textcast window:": "用这个 Textcast 窗口和我对话：",
+    "Then follow the next_step it prints.": "运行后按它输出的 next_step 继续。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "这个页面已在另一个标签页打开。未发送的内容只保存在输入它的标签页里，在这里接管不会带过来。",
     "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":

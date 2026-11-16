@@ -84,7 +84,6 @@ const GEOMETRY = `() => {
     },
     actions: rect(document.getElementById("sendActions")),
     send: rect(document.getElementById("send")),
-    sendAndEnd: rect(document.getElementById("sendAndEnd")),
     textarea: rect(document.getElementById("chatInput")),
     summary: document.getElementById("panelSummary").textContent,
     toggleLabel: document.getElementById("panelToggle").getAttribute("aria-label"),
@@ -153,7 +152,6 @@ test(
       assert.equal(g.composer.bottom, g.viewport.height, "composer ends at the viewport edge");
       for (const [name, r] of [
         ["send", g.send],
-        ["sendAndEnd", g.sendAndEnd],
         ["textarea", g.textarea],
       ]) {
         assert.ok(
@@ -192,7 +190,6 @@ test(
       for (const [name, rect] of [
         ["actions", g.actions],
         ["send", g.send],
-        ["sendAndEnd", g.sendAndEnd],
       ]) {
         assert.ok(
           rect.top >= g.panel.top && rect.bottom <= g.viewport.height,
@@ -284,10 +281,7 @@ test(
       assert.equal(g.panel.bottom, 240);
       assert.equal(g.composer.bottom, 240);
       assert.ok(g.chat.visible >= 0);
-      for (const [name, rect] of [
-        ["send", g.send],
-        ["sendAndEnd", g.sendAndEnd],
-      ]) {
+      for (const [name, rect] of [["send", g.send]]) {
         assert.ok(
           rect.top >= 0 && rect.bottom <= 240,
           `${name} stays inside the short visual viewport: ${JSON.stringify(rect)}`,
