@@ -52,8 +52,7 @@ export const EUROPEAN_STRINGS = {
     "Then follow the next_step it prints.": "Ensuite, suis le next_step qu'elle affiche.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Cette page est ouverte dans un autre onglet. Les réponses non envoyées restent dans l’onglet où vous les avez saisies ; reprendre ici ne les transfère pas.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "L'agent est hors ligne pour le moment. Vos messages sont conservés et lui parviendront à son retour.",
+    "The agent is offline.": "L'agent est hors ligne.",
     "Connecting to the agent\u2026": "Connexion à l'agent…",
     Agent: "Agent",
     You: "Vous",
@@ -215,8 +214,7 @@ export const EUROPEAN_STRINGS = {
     "Then follow the next_step it prints.": "Folge danach dem next_step, den der Befehl ausgibt.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Diese Seite ist in einem anderen Tab geöffnet. Nicht gesendete Antworten bleiben in dem Tab, in dem Sie sie eingegeben haben; das Übernehmen hier bringt sie nicht mit.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "Der Agent ist gerade offline. Deine Nachrichten werden gespeichert und erreichen ihn, sobald er zurück ist.",
+    "The agent is offline.": "Der Agent ist offline.",
     "Connecting to the agent\u2026": "Verbindung zum Agenten…",
     Agent: "Agent",
     You: "Sie",
@@ -377,8 +375,7 @@ export const EUROPEAN_STRINGS = {
     "Then follow the next_step it prints.": "Después, sigue el next_step que muestre.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Esta página está abierta en otra pestaña. Las respuestas sin enviar se quedan en la pestaña donde las escribiste; continuar aquí no las trae.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "El agente no está conectado por ahora. Tus mensajes se guardan y le llegarán cuando vuelva.",
+    "The agent is offline.": "El agente no está conectado.",
     "Connecting to the agent\u2026": "Conectando con el agente…",
     Agent: "Agente",
     You: "Tú",
@@ -539,8 +536,7 @@ export const EUROPEAN_STRINGS = {
     "Then follow the next_step it prints.": "Depois, siga o next_step que ele mostrar.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Esta página está aberta em outra aba. Respostas não enviadas ficam na aba onde foram digitadas; continuar aqui não as traz.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "O agente está offline no momento. Suas mensagens ficam guardadas e chegam a ele quando voltar.",
+    "The agent is offline.": "O agente está offline.",
     "Connecting to the agent\u2026": "Conectando ao agente…",
     Agent: "Agente",
     You: "Você",
@@ -701,8 +697,7 @@ export const EUROPEAN_STRINGS = {
     "Then follow the next_step it prints.": "Poi segui il next_step che stampa.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Questa pagina è aperta in un’altra scheda. Le risposte non inviate restano nella scheda in cui le hai scritte; continuare qui non le porta con sé.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "L'agente al momento non è in linea. I messaggi vengono conservati e gli arriveranno al suo ritorno.",
+    "The agent is offline.": "L'agente non è in linea.",
     "Connecting to the agent\u2026": "Connessione all'agente…",
     Agent: "Agente",
     You: "Tu",
@@ -864,8 +859,7 @@ export const EUROPEAN_STRINGS = {
     "Then follow the next_step it prints.": "Затем следуй next_step из его вывода.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Эта страница открыта в другой вкладке. Неотправленные ответы остаются во вкладке, где вы их ввели; если продолжить здесь, они не перенесутся.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "Агент сейчас не в сети. Ваши сообщения сохранятся и дойдут до него, когда он вернётся.",
+    "The agent is offline.": "Агент не в сети.",
     "Connecting to the agent\u2026": "Подключение к агенту…",
     Agent: "Агент",
     You: "Вы",

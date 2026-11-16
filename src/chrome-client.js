@@ -140,7 +140,7 @@ const endButton = /** @type {HTMLButtonElement} */ (document.getElementById("end
 const copyPathButton = /** @type {HTMLButtonElement} */ (document.getElementById("copyPath"));
 const copyHint = /** @type {HTMLSpanElement} */ (document.getElementById("copyHint"));
 const copyHintText = /** @type {HTMLSpanElement} */ (document.getElementById("copyHintText"));
-const presenceBanner = /** @type {HTMLDivElement} */ (document.getElementById("presenceBanner"));
+const composerBox = /** @type {HTMLDivElement} */ (document.getElementById("composerBox"));
 const handoffBanner = /** @type {HTMLDivElement} */ (document.getElementById("handoffBanner"));
 const handoffTakeoverButton = /** @type {HTMLButtonElement} */ (document.getElementById("handoffTakeover"));
 const outdatedBanner = /** @type {HTMLDivElement} */ (document.getElementById("outdatedBanner"));
@@ -148,6 +148,7 @@ const outdatedText = /** @type {HTMLSpanElement} */ (document.getElementById("ou
 const outdatedReloadButton = /** @type {HTMLButtonElement} */ (document.getElementById("outdatedReload"));
 const outdatedDismissButton = /** @type {HTMLButtonElement} */ (document.getElementById("outdatedDismiss"));
 const reconnectCard = /** @type {HTMLDivElement} */ (document.getElementById("reconnectCard"));
+const reconnectTitle = /** @type {HTMLElement} */ (document.getElementById("reconnectTitle"));
 const reconnectText = /** @type {HTMLPreElement} */ (document.getElementById("reconnectText"));
 const reconnectCopyButton = /** @type {HTMLButtonElement} */ (document.getElementById("reconnectCopy"));
 const reconnectCopyText = /** @type {HTMLSpanElement} */ (document.getElementById("reconnectCopyText"));
@@ -1127,7 +1128,7 @@ function setAgentPresence(state) {
   updateSendState();
   renderSheetSummary();
   refreshUnseenReceipts();
-  if (presenceBanner) presenceBanner.hidden = ended || connecting || agentPresence !== "waiting";
+  renderReconnectCard();
   if (sendWhenAgentReady && agentPresence === "listening" && !ended) {
     sendWhenAgentReady = false;
     if (queued.length) sendQueued(false);
@@ -3141,14 +3142,22 @@ function markSessionEnded() {
   chatInput.disabled = true;
   updateSendState();
   applySheetState();
-  if (presenceBanner) presenceBanner.hidden = true;
   if (handoffBanner) handoffBanner.hidden = true;
   if (outdatedBanner) outdatedBanner.hidden = true;
   hideLoadNotice();
   postToFrame({ type: "textcast:setAnnotationMode", enabled: false });
-  // The page stays readable; only the composer gives way to the text that reconnects an agent.
-  chatComposer.hidden = true;
-  reconnectCard.hidden = false;
+  renderReconnectCard();
+}
+
+// With no agent to talk to, the composer gives way to the text that brings one back. The page stays
+// readable either way. An ended session hides the whole composer; an offline agent hides only its
+// input, so the handoff and server notices above it can still show.
+function renderReconnectCard() {
+  const offline = !ended && !connecting && agentPresence === "waiting";
+  reconnectTitle.textContent = ended ? t("Session ended.") : t("The agent is offline.");
+  reconnectCard.hidden = !ended && !offline;
+  chatComposer.hidden = ended;
+  composerBox.hidden = offline;
 }
 
 function copyReconnectPrompt() {

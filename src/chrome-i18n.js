@@ -61,8 +61,7 @@ const CHROME_STRINGS = {
     "Then follow the next_step it prints.": "运行后按它输出的 next_step 继续。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "这个页面已在另一个标签页打开。未发送的内容只保存在输入它的标签页里，在这里接管不会带过来。",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "智能体暂时不在线。你发的消息会先保存，它回来后就能收到。",
+    "The agent is offline.": "智能体已离线。",
     "Connecting to the agent\u2026": "正在连接智能体…",
 
     // Bubbles and receipts

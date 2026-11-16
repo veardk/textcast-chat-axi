@@ -868,15 +868,17 @@ test("chrome only marks session ended after the end request succeeds", async () 
   assert.match(js, /if \(!response\.ok\) throw new Error\("failed to end session"\);\n {2}markSessionEnded\(\)/);
 });
 
-test("chrome shows a waiting banner when no agent has attached", async () => {
+test("chrome offers the reconnect text instead of a banner when no agent is listening", async () => {
   const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
   const js = await chromeClientSource();
   const css = await chromeCssSource();
 
-  assert.match(html, /id="presenceBanner"/);
-  assert.match(html, /The agent is offline for now\. Messages you send are kept/);
-  assert.match(js, /presenceBanner\.hidden = ended \|\| connecting \|\| agentPresence !== "waiting"/);
-  assert.match(css, /\.presence-banner,/);
+  assert.doesNotMatch(html, /id="presenceBanner"/);
+  assert.match(html, /<div class="composer-box" id="composerBox">/);
+  assert.match(html, /<strong id="reconnectTitle">Session ended\.<\/strong>/);
+  assert.match(js, /const offline = !ended && !connecting && agentPresence === "waiting";/);
+  assert.match(js, /composerBox\.hidden = offline;/);
+  assert.match(css, /\.composer-box\[hidden\],/);
 });
 
 test("chrome keeps queued notes at the tail of the one conversation, above the sticky composer", async () => {
@@ -5111,8 +5113,8 @@ test("an ended session keeps the page readable and offers text that reconnects a
   );
   assert.match(html, /id="reconnectCopy" type="button">/);
   assert.match(css, /\.reconnect\{/);
-  assert.match(js, /reconnectCard\.hidden = false/);
-  assert.match(js, /chatComposer\.hidden = true/);
+  assert.match(js, /reconnectCard\.hidden = !ended && !offline;/);
+  assert.match(js, /chatComposer\.hidden = ended;/);
   assert.match(js, /annotationSwitch\.disabled = true/);
   assert.doesNotMatch(js, /moreButton\.disabled = true/);
 });

@@ -680,23 +680,31 @@ test("chrome client carries live events over a WebSocket outside the HTTP connec
 
   assert.equal(chrome.webSocket().url, "ws://textcast.test/events/abc");
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
-  assert.equal(chrome.element("presenceBanner").hidden, true);
+  assert.equal(chrome.element("reconnectCard").hidden, true);
+  assert.equal(chrome.element("composerBox").hidden, false);
 });
 
-test("a fresh window says it is connecting, then offline only if no agent arrives", async () => {
+test("a fresh window says it is connecting, then offers the reconnect text only if no agent arrives", async () => {
   const chrome = await createChromeHarness();
 
   assert.equal(chrome.element("panelSummary").dataset.presence, "connecting");
-  assert.equal(chrome.element("presenceBanner").hidden, true, "no offline banner while connecting");
+  assert.equal(chrome.element("reconnectCard").hidden, true, "no reconnect text while connecting");
+  assert.equal(chrome.element("composerBox").hidden, false);
   chrome.runTimers(15_000);
   assert.equal(chrome.element("panelSummary").dataset.presence, "waiting");
-  assert.equal(chrome.element("presenceBanner").hidden, false);
+  assert.equal(chrome.element("reconnectCard").hidden, false);
+  assert.equal(chrome.element("reconnectTitle").textContent, "The agent is offline.");
+  assert.equal(chrome.element("composerBox").hidden, true, "the input gives way to the reconnect text");
+  assert.equal(chrome.element("chatComposer").hidden, false, "notices above the input can still show");
 
   const arrived = await createChromeHarness();
   arrived.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
   arrived.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "waiting" }) });
   assert.equal(arrived.element("panelSummary").dataset.presence, "waiting", "a listener seen ends connecting");
-  assert.equal(arrived.element("presenceBanner").hidden, false);
+  assert.equal(arrived.element("reconnectCard").hidden, false, "an agent that leaves shows the reconnect text");
+  arrived.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
+  assert.equal(arrived.element("reconnectCard").hidden, true, "an agent that comes back brings the input back");
+  assert.equal(arrived.element("composerBox").hidden, false);
 });
 
 test("chrome reconnects its live WebSocket and syncs missed chat", async () => {
