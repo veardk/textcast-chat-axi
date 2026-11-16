@@ -3580,7 +3580,7 @@ test("chrome client strips the internal queue key before posting prompts", async
   assert.equal(chrome.queued().length, 0);
 });
 
-test("chrome client sends queued prompts while the agent is working", async () => {
+test("Send while the agent is working keeps the notes queued and sends them once it listens", async () => {
   const posts = [];
   const chrome = await createChromeHarness({
     fetchImpl: async (url, init) => {
@@ -3594,17 +3594,29 @@ test("chrome client sends queued prompts while the agent is working", async () =
     type: "textcast:queuePrompt",
     prompt: { prompt: "Follow up", selector: "button#follow-up", tag: "choice", text: "Follow up" },
   });
+  chrome.element("chatInput").value = "And this too";
   chrome.element("send").onclick();
-  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:requestSnapshot");
+  assert.equal(chrome.queued().length, 2, "the composer message joins the queue");
+  assert.equal(chrome.element("chatInput").value, "");
+  assert.equal(chrome.element("sendHint").hidden, false);
+  assert.match(chrome.element("sendHint").textContent, /queued and sends when it is ready/);
+  assert.equal(
+    posts.filter((post) => post.url === "/api/abc/prompts").length,
+    0,
+    "nothing is submitted while the agent works",
+  );
 
+  chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
+  assert.equal(chrome.postedToFrame.at(-1).type, "textcast:requestSnapshot");
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
 
   const submitted = posts.filter((post) => post.url === "/api/abc/prompts");
   assert.equal(submitted.length, 1);
+  assert.equal(chrome.element("sendHint").hidden, true);
   assert.deepEqual(
     submitted[0].body.prompts.map((prompt) => prompt.prompt),
-    ["Follow up"],
+    ["Follow up", "And this too"],
   );
   assert.equal(chrome.queued().length, 0);
 });
@@ -3693,6 +3705,7 @@ test("chrome boots read-only when the session already ended before this page loa
   assert.equal(chrome.element("chatComposer").inert, true);
   assert.equal(chrome.element("reconnectCard").hidden, false);
   assert.equal(chrome.element("chatComposer").hidden, true);
+  assert.equal(chrome.element("artifact").inert, false, "the page stays scrollable and clickable");
 });
 
 // #171: a race between this tab's own in-flight Send and a session end elsewhere must not leave
@@ -3718,6 +3731,7 @@ test("a queued Send refused because the session already ended marks the chrome r
   assert.equal(chrome.element("chatInput").disabled, true);
   assert.equal(chrome.element("reconnectCard").hidden, false);
   assert.equal(chrome.element("chatComposer").hidden, true);
+  assert.equal(chrome.element("artifact").inert, false, "the page stays scrollable and clickable");
   // The rejected batch is not silently lost - it stays queued rather than looking delivered.
   assert.equal(chrome.queued().length, 1);
 });
@@ -4463,22 +4477,24 @@ test("the status line and launcher say what the user should know while the sheet
   });
   assert.equal(sheetState(chrome).summary, "2 queued");
 
-  // Raising the sheet shows the reply itself, so the preview is no longer owed; once the queue
-  // is sent the status line is back to reporting the agent.
+  // Raising the sheet shows the reply itself, so the preview is no longer owed; Send while the
+  // agent works keeps the queue until a poll listens, and then the status line reports the agent.
   toggleConversation(chrome);
   assert.equal(chrome.element("launcherPeek").hidden, true);
   chrome.element("send").click();
+  assert.equal(sheetState(chrome).summary, "2 queued");
+  chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
   chrome.sendSnapshot("uid=1 body");
   await flushPromises();
   await flushPromises();
   assert.equal(chrome.queued().length, 0);
-  assert.equal(sheetState(chrome).summary, "Agent is working…");
+  assert.equal(sheetState(chrome).summary, "Agent listening");
   assert.doesNotMatch(sheetState(chrome).summaryClass, /is-unread/);
 
   // A reply that arrives while the sheet is up was seen, so lowering it previews nothing.
   chrome.eventSource().listeners.get("agent-reply")({ data: JSON.stringify({ text: "Done." }) });
   toggleConversation(chrome);
-  assert.equal(sheetState(chrome).summary, "Agent is working…");
+  assert.equal(sheetState(chrome).summary, "Agent listening");
   assert.equal(chrome.element("launcherPeek").hidden, true);
 });
 
@@ -5976,8 +5992,10 @@ test("a keyed replacement of an untouched open edit leaves no unsent note", asyn
 // Delivery acks (docs/delivery-acks.md): each sent bubble carries a receipt row derived from the
 // entry's stamps and, before Seen, from the live presence the chrome already holds.
 
-function receiptSteps(html) {
-  return [...String(html).matchAll(/class="receipt-step( is-done)?"/g)].map((match) => Boolean(match[1]));
+// The furthest step a receipt shows ("seen", "working", "done"), or "" before Seen.
+function receiptState(html) {
+  const match = String(html).match(/class="receipt-state is-(\w+)"/);
+  return match ? match[1] : "";
 }
 
 function receiptNote(html) {
@@ -6013,21 +6031,25 @@ test("a sent bubble's receipt follows the entry's seen, working, and done stamps
   });
   const bubbles = chrome.element("chatLog").children;
   assert.equal(bubbles.length, 4);
-  assert.deepEqual(receiptSteps(bubbles[0].innerHTML), [false, false, false]);
+  assert.equal(receiptState(bubbles[0].innerHTML), "");
   assert.equal(receiptNote(bubbles[0].innerHTML), "No agent is listening");
-  assert.deepEqual(receiptSteps(bubbles[1].innerHTML), [true, true, false]);
+  assert.equal(receiptState(bubbles[1].innerHTML), "working");
   assert.equal(receiptNote(bubbles[1].innerHTML), "");
-  assert.deepEqual(receiptSteps(bubbles[2].innerHTML), [true, false, true]);
+  assert.equal(receiptState(bubbles[2].innerHTML), "done");
   assert.equal(receiptNote(bubbles[2].innerHTML), "");
-  assert.deepEqual(receiptSteps(bubbles[3].innerHTML), [], "agent bubbles carry no receipt");
+  assert.doesNotMatch(bubbles[3].innerHTML, /class="receipt"/, "agent bubbles carry no receipt");
   const seenAt = new Date("2026-10-04T10:00:00.000Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  assert.ok(bubbles[1].innerHTML.includes(`title="Seen ${seenAt}"`), "a lit step names its time");
-  assert.ok(bubbles[1].innerHTML.includes(`aria-label="Seen ${seenAt}"`), "and says it to screen readers");
-  assert.ok(bubbles[1].innerHTML.includes('aria-label="Done: not yet"'), "an unlit step still names itself");
-  // The glyphs are the Telegram ack protocol's: eyes, tools, check.
-  assert.match(bubbles[1].innerHTML, /<span class="receipt-step is-done"[^>]*>👀<\/span>/);
-  assert.match(bubbles[1].innerHTML, /<span class="receipt-step is-done"[^>]*>🛠️<\/span>/);
-  assert.match(bubbles[1].innerHTML, /<span class="receipt-step"[^>]*>✅<\/span>/);
+  const workingAt = new Date("2026-10-04T10:00:05.000Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const summary = `Seen ${seenAt} · Working ${workingAt} · Done: not yet`;
+  assert.ok(bubbles[1].innerHTML.includes(`title="${summary}"`), "hover names every step and its time");
+  assert.ok(bubbles[1].innerHTML.includes(`aria-label="${summary}"`), "and says it to screen readers");
+  // A line icon and the word of the furthest step, never an emoji.
+  assert.match(
+    bubbles[1].innerHTML,
+    /<svg viewBox="0 0 24 24"[^>]*>.*<\/svg><span class="receipt-label">Working<\/span>/,
+  );
+  assert.match(bubbles[2].innerHTML, /<span class="receipt-label">Done<\/span>/);
+  assert.doesNotMatch(bubbles[1].innerHTML + bubbles[2].innerHTML, /👀|🛠|✅/);
 });
 
 test("an unseen bubble's receipt names the live presence and re-renders when it changes", async () => {
@@ -6082,7 +6104,7 @@ test("a chat-sync that stamps a note re-renders its receipt", async () => {
   const chrome = await createChromeHarness({
     sessionData: { ...defaultSessionData, initialChat: [entry], initialChatRevision: 1 },
   });
-  assert.deepEqual(receiptSteps(chrome.element("chatLog").children[0].innerHTML), [false, false, false]);
+  assert.equal(receiptState(chrome.element("chatLog").children[0].innerHTML), "");
 
   chrome.eventSource().listeners.get("chat-sync")({
     data: JSON.stringify({
@@ -6091,7 +6113,7 @@ test("a chat-sync that stamps a note re-renders its receipt", async () => {
     }),
   });
   const seen = chrome.element("chatLog").children[0].innerHTML;
-  assert.deepEqual(receiptSteps(seen), [true, false, false]);
+  assert.equal(receiptState(seen), "seen");
   assert.equal(receiptNote(seen), "");
 });
 
@@ -6107,7 +6129,7 @@ test("a transcript entry from before receipts renders no receipt and ignores pre
   });
   const bubbles = chrome.element("chatLog").children;
   assert.equal(bubbles[0].innerHTML, '<small>You</small><div class="bubble-text">Old note</div>');
-  assert.deepEqual(receiptSteps(bubbles[1].innerHTML), [false, false, false]);
+  assert.equal(receiptState(bubbles[1].innerHTML), "");
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "working" }) });
   assert.equal(bubbles[0].innerHTML, '<small>You</small><div class="bubble-text">Old note</div>');
   assert.equal(receiptNote(bubbles[1].innerHTML), "Agent is busy; delivered on its next poll");
@@ -6361,6 +6383,7 @@ test("chrome goes read-only when the server forwards an ended SSE event (#171)",
   assert.equal(chrome.element("chatComposer").inert, true);
   assert.equal(chrome.element("reconnectCard").hidden, false);
   assert.equal(chrome.element("chatComposer").hidden, true);
+  assert.equal(chrome.element("artifact").inert, false, "the page stays scrollable and clickable");
 
   chrome.setMobile(false);
   assert.equal(chrome.element("panelScroll").inert, false, "the conversation stays readable");

@@ -87,6 +87,8 @@ const CHROME_STRINGS = {
     "No agent is listening": "智能体未在线",
     Delivering: "正在送达",
     "Agent is busy; delivered on its next poll": "智能体正忙，下次监听时送达",
+    "The agent is still working. Your message is queued and sends when it is ready.":
+      "智能体还在处理，消息已排队，等它处理完会自动发送。",
     "Unsent annotation": "未发送的批注",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "页面里这条批注对应的内容被删除或替换了，批注无法保留在原处。你写的内容保存在这里：",

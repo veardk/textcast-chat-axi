@@ -5517,6 +5517,49 @@ test("leftover non-HTML sessions are refused before any session.file content rea
 
 // ---- Moving the review between the pages of one site ----
 
+test("an ended review still follows links between the pages of its site", async () => {
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), "textcast-ended-site-")));
+  const site = path.join(dir, "output");
+  await mkdir(path.join(site, "talk"), { recursive: true });
+  await writeFile(path.join(site, "textcast.json"), "{}");
+  await writeFile(path.join(site, "index.html"), "<!doctype html><html><body>INDEX</body></html>");
+  const transcript = path.join(site, "talk", "transcript.html");
+  await writeFile(transcript, "<!doctype html><html><body>TRANSCRIPT</body></html>");
+  const keepAlive = path.join(site, "keep-alive.html");
+  await writeFile(keepAlive, "<!doctype html><html><body></body></html>");
+  const server = await serve({
+    port: 0,
+    stateFile: path.join(dir, "state.json"),
+    version: "9.9.9-test",
+    detectTailscale: async () => null,
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  const open = (file) =>
+    fetch(`${base}/api/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file }),
+    }).then((response) => response.json());
+  try {
+    // A second open session keeps the server up once this one ends with nothing connected.
+    await open(keepAlive);
+    const { key } = await open(transcript);
+    await fetch(`${base}/api/${key}/end`, { method: "POST" });
+
+    const toIndex = await fetch(`${base}/api/${key}/page`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: base },
+      body: JSON.stringify({ href: "../index.html" }),
+    });
+    assert.equal(toIndex.status, 200);
+    const load = await beginArtifactLoad(base, key);
+    assert.match(await fetch(artifactLoadUrl(base, key, load)).then((response) => response.text()), /INDEX/);
+  } finally {
+    await server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("a review follows links to other pages of its Textcast site, and only those", async () => {
   const dir = await realpath(await mkdtemp(path.join(tmpdir(), "textcast-site-")));
   const site = path.join(dir, "output");

@@ -1242,10 +1242,7 @@ export async function serve({
         res.status(404).json({ error: "session not found" });
         return;
       }
-      if (session.status === "ended") {
-        res.status(409).json({ error: "session ended" });
-        return;
-      }
+      // An ended session stops feedback, not reading: its links still move between site pages.
       const href = typeof req.body?.href === "string" ? req.body.href.slice(0, 2000) : "";
       let relative = "";
       try {
