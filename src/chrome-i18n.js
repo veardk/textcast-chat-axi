@@ -61,8 +61,9 @@ const CHROME_STRINGS = {
     "Then follow the next_step it prints.": "运行后按它输出的 next_step 继续。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "这个页面已在另一个标签页打开。未发送的内容只保存在输入它的标签页里，在这里接管不会带过来。",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "智能体当前没有在等待消息。如果一直这样，请让智能体重新开始监听（poll）。",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "智能体暂时不在线。你发的消息会先保存，它回来后就能收到。",
+    "Connecting to the agent\u2026": "正在连接智能体…",
 
     // Bubbles and receipts
     Agent: "智能体",
@@ -87,8 +88,6 @@ const CHROME_STRINGS = {
     "No agent is listening": "智能体未在线",
     Delivering: "正在送达",
     "Agent is busy; delivered on its next poll": "智能体正忙，下次监听时送达",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "智能体还在处理，消息已排队，等它处理完会自动发送。",
     "Unsent annotation": "未发送的批注",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "页面里这条批注对应的内容被删除或替换了，批注无法保留在原处。你写的内容保存在这里：",
