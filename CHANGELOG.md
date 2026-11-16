@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/veardk/textcast-chat-axi/compare/v0.1.5...v0.1.6) (2026-11-16)
+
+
+### Bug Fixes
+
+* show a connecting state in a fresh window and clearer offline copy ([#12](https://github.com/veardk/textcast-chat-axi/issues/12)) ([3c2aabc](https://github.com/veardk/textcast-chat-axi/commit/3c2aabc7f131e3d390f722e8a7393c5aa992e6db))
+
 ## [0.1.5](https://github.com/veardk/textcast-chat-axi/compare/v0.1.4...v0.1.5) (2026-11-16)
 
 
