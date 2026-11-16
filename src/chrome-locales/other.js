@@ -50,8 +50,9 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "ثم اتبع next_step الذي يطبعه.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "هذه الصفحة مفتوحة في علامة تبويب أخرى. تبقى الردود غير المرسلة في علامة التبويب التي كتبتها فيها، والمتابعة هنا لا تنقلها.",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "الوكيل لا ينتظر الرسائل حاليًا. إذا استمر ذلك، فاطلب منه العودة إلى الاستماع (poll).",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "الوكيل غير متصل حاليًا. تُحفظ رسائلك وستصله عند عودته.",
+    "Connecting to the agent\u2026": "جارٍ الاتصال بالوكيل…",
     Agent: "الوكيل",
     You: "أنت",
     Queued: "في الانتظار",
@@ -74,8 +75,6 @@ export const OTHER_STRINGS = {
     "No agent is listening": "لا يوجد وكيل متصل",
     Delivering: "جارٍ التسليم",
     "Agent is busy; delivered on its next poll": "الوكيل مشغول؛ ستصل الرسالة عند استماعه التالي",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "لا يزال الوكيل يعمل. رسالتك في قائمة الانتظار وستُرسل عندما يصبح جاهزًا.",
     "Unsent annotation": "ملاحظة غير مرسلة",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "حُذف الموضع الذي ارتبطت به هذه الملاحظة أو استُبدل في الصفحة، لذا تعذّر إبقاؤها مفتوحة. نصك محفوظ هنا:",
@@ -213,8 +212,9 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "फिर इसके आउटपुट में दिए next_step का पालन करो।",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "यह पेज दूसरे टैब में खुला है। न भेजे गए जवाब उसी टैब में रहते हैं जहाँ आपने उन्हें लिखा; यहाँ जारी रखने से वे साथ नहीं आते।",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "आपका एजेंट अभी संदेशों का इंतज़ार नहीं कर रहा। अगर ऐसा बना रहे, तो उसे फिर से सुनना (poll) शुरू करने को कहें।",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "एजेंट अभी ऑफ़लाइन है। आपके संदेश सहेजे रहेंगे और उसके लौटने पर उसे मिल जाएँगे।",
+    "Connecting to the agent\u2026": "एजेंट से कनेक्ट हो रहा है…",
     Agent: "एजेंट",
     You: "आप",
     Queued: "कतार में",
@@ -237,8 +237,6 @@ export const OTHER_STRINGS = {
     "No agent is listening": "कोई एजेंट ऑनलाइन नहीं",
     Delivering: "पहुँचाया जा रहा है",
     "Agent is busy; delivered on its next poll": "एजेंट व्यस्त है; अगली बार सुनने पर पहुँचेगा",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "एजेंट अभी काम कर रहा है। आपका संदेश कतार में है और तैयार होते ही भेजा जाएगा।",
     "Unsent annotation": "न भेजी गई टिप्पणी",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "जिस हिस्से से यह टिप्पणी जुड़ी थी, वह पेज से हटाया या बदला गया, इसलिए इसे वहीं खुला नहीं रखा जा सका। आपका लिखा यहाँ सुरक्षित है:",
@@ -376,8 +374,9 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "Sau đó làm theo next_step mà lệnh in ra.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Trang này đang mở ở một tab khác. Nội dung chưa gửi chỉ lưu ở tab bạn đã nhập; tiếp tục ở đây sẽ không mang chúng theo.",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "Agent hiện không chờ tin nhắn. Nếu tình trạng kéo dài, hãy nhờ agent nghe lại (poll).",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "Agent hiện đang ngoại tuyến. Tin nhắn bạn gửi sẽ được lưu và agent sẽ nhận được khi quay lại.",
+    "Connecting to the agent\u2026": "Đang kết nối với agent…",
     Agent: "Agent",
     You: "Bạn",
     Queued: "Đang chờ",
@@ -400,8 +399,6 @@ export const OTHER_STRINGS = {
     "No agent is listening": "Không có agent trực",
     Delivering: "Đang chuyển",
     "Agent is busy; delivered on its next poll": "Agent đang bận; sẽ nhận được ở lần nghe tiếp theo",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "Agent vẫn đang xử lý. Tin nhắn của bạn đã vào hàng chờ và sẽ được gửi khi agent sẵn sàng.",
     "Unsent annotation": "Ghi chú chưa gửi",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Phần nội dung gắn với ghi chú này đã bị xóa hoặc thay thế trên trang, nên không thể giữ ghi chú tại chỗ. Nội dung bạn viết được lưu ở đây:",
@@ -539,8 +536,9 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "จากนั้นทำตาม next_step ที่คำสั่งแสดงออกมา",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "หน้านี้เปิดอยู่ในแท็บอื่น ข้อความที่ยังไม่ส่งจะอยู่ในแท็บที่พิมพ์ไว้เท่านั้น การทำต่อที่นี่จะไม่นำมาด้วย",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "เอเจนต์ไม่ได้รอรับข้อความอยู่ หากยังเป็นเช่นนี้ ให้ขอให้เอเจนต์กลับมารับฟัง (poll) อีกครั้ง",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "ตอนนี้เอเจนต์ออฟไลน์อยู่ ข้อความที่คุณส่งจะถูกเก็บไว้ และเอเจนต์จะได้รับเมื่อกลับมา",
+    "Connecting to the agent\u2026": "กำลังเชื่อมต่อกับเอเจนต์…",
     Agent: "เอเจนต์",
     You: "คุณ",
     Queued: "รอส่ง",
@@ -563,8 +561,6 @@ export const OTHER_STRINGS = {
     "No agent is listening": "ไม่มีเอเจนต์ออนไลน์",
     Delivering: "กำลังส่งถึง",
     "Agent is busy; delivered on its next poll": "เอเจนต์ไม่ว่าง จะได้รับเมื่อรับฟังครั้งถัดไป",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "เอเจนต์ยังทำงานอยู่ ข้อความของคุณอยู่ในคิวและจะส่งเมื่อพร้อม",
     "Unsent annotation": "หมายเหตุที่ยังไม่ส่ง",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "ส่วนที่หมายเหตุนี้ผูกอยู่ถูกลบหรือแทนที่ในหน้า จึงเปิดค้างไว้ที่เดิมไม่ได้ ข้อความของคุณเก็บไว้ที่นี่:",
@@ -700,8 +696,9 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "Lalu ikuti next_step yang ditampilkannya.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Halaman ini terbuka di tab lain. Jawaban yang belum terkirim tetap di tab tempat Anda mengetiknya; melanjutkan di sini tidak membawanya.",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "Agen Anda sedang tidak menunggu pesan. Jika terus begini, minta agen untuk mendengarkan lagi (poll).",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "Agen sedang offline. Pesan yang kamu kirim tetap tersimpan dan akan diterima saat agen kembali.",
+    "Connecting to the agent\u2026": "Menghubungkan ke agen…",
     Agent: "Agen",
     You: "Anda",
     Queued: "Dalam antrean",
@@ -724,8 +721,6 @@ export const OTHER_STRINGS = {
     "No agent is listening": "Tidak ada agen yang siaga",
     Delivering: "Mengantarkan",
     "Agent is busy; delivered on its next poll": "Agen sedang sibuk; pesan diterima saat ia mendengarkan lagi",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "Agen masih bekerja. Pesanmu sudah masuk antrean dan akan terkirim saat agen siap.",
     "Unsent annotation": "Catatan belum terkirim",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Bagian yang terkait dengan catatan ini dihapus atau diganti di halaman, jadi catatan tidak bisa tetap di tempatnya. Teks Anda disimpan di sini:",
@@ -863,8 +858,9 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "Ardından çıktısındaki next_step'i izle.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Bu sayfa başka bir sekmede açık. Gönderilmemiş yanıtlar yazıldıkları sekmede kalır; burada devam etmek onları taşımaz.",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "Ajanınız şu an mesaj beklemiyor. Böyle sürerse ajandan yeniden dinlemesini (poll) isteyin.",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "Ajan şu anda çevrimdışı. Gönderdiğin mesajlar saklanır ve geri döndüğünde ona ulaşır.",
+    "Connecting to the agent\u2026": "Ajana bağlanılıyor…",
     Agent: "Ajan",
     You: "Siz",
     Queued: "Sırada",
@@ -887,8 +883,6 @@ export const OTHER_STRINGS = {
     "No agent is listening": "Bağlı ajan yok",
     Delivering: "İletiliyor",
     "Agent is busy; delivered on its next poll": "Ajan meşgul; bir sonraki dinlemede iletilecek",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "Ajan hâlâ çalışıyor. Mesajın sırada ve hazır olduğunda gönderilecek.",
     "Unsent annotation": "Gönderilmemiş not",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "Bu notun bağlı olduğu kısım sayfadan silindi ya da değiştirildi, bu yüzden not yerinde açık tutulamadı. Yazdıklarınız burada saklanıyor:",

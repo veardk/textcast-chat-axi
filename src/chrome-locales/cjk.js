@@ -50,8 +50,9 @@ export const CJK_STRINGS = {
     "Then follow the next_step it prints.": "執行後依照它輸出的 next_step 繼續。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "這個頁面已在另一個分頁開啟。未傳送的內容只保存在輸入它的分頁裡，在這裡接手不會帶過來。",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "智慧體目前沒有在等待訊息。如果一直這樣，請讓智慧體重新開始監聽（poll）。",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "智慧體暫時不在線。你傳的訊息會先保存，它回來後就能收到。",
+    "Connecting to the agent\u2026": "正在連接智慧體…",
     Agent: "智慧體",
     You: "我",
     Queued: "待傳送",
@@ -74,8 +75,6 @@ export const CJK_STRINGS = {
     "No agent is listening": "智慧體未在線",
     Delivering: "正在送達",
     "Agent is busy; delivered on its next poll": "智慧體正忙，下次監聽時送達",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "智慧體還在處理，訊息已排隊，等它處理完會自動傳送。",
     "Unsent annotation": "未傳送的註記",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "頁面裡這則註記對應的內容被刪除或替換了，註記無法保留在原處。你寫的內容保存在這裡：",
@@ -208,8 +207,9 @@ export const CJK_STRINGS = {
     "Then follow the next_step it prints.": "実行後は、出力される next_step に従ってください。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "このページは別のタブでも開かれています。未送信の内容は入力したタブにだけ保存され、ここで引き継いでも移りません。",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "エージェントがメッセージを待っていません。続く場合は、エージェントに再び待機（poll）するよう頼んでください。",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "エージェントは今オフラインです。送ったメッセージは保存され、戻ったときに届きます。",
+    "Connecting to the agent\u2026": "エージェントに接続中…",
     Agent: "エージェント",
     You: "あなた",
     Queued: "送信待ち",
@@ -232,8 +232,6 @@ export const CJK_STRINGS = {
     "No agent is listening": "エージェント未接続",
     Delivering: "送信中",
     "Agent is busy; delivered on its next poll": "エージェントが処理中です。次の待機時に届きます",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "エージェントはまだ処理中です。メッセージは待機列に入り、準備ができ次第送信されます。",
     "Unsent annotation": "未送信の注釈",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "この注釈を付けた箇所がページから削除または置き換えられたため、元の位置に残せませんでした。入力した内容はここに保存されています：",
@@ -371,8 +369,9 @@ export const CJK_STRINGS = {
     "Then follow the next_step it prints.": "실행한 뒤 출력되는 next_step을 따르세요.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "이 페이지가 다른 탭에서도 열려 있습니다. 보내지 않은 내용은 입력한 탭에만 저장되며, 여기서 이어받아도 옮겨지지 않습니다.",
-    "Your agent is not listening. If this persists, ask your agent to poll for updates from textcast.":
-      "에이전트가 메시지를 기다리고 있지 않습니다. 계속되면 에이전트에게 다시 대기(poll)하라고 요청하세요.",
+    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
+      "에이전트가 지금 오프라인입니다. 보낸 메시지는 저장되며 돌아오면 전달됩니다.",
+    "Connecting to the agent\u2026": "에이전트에 연결 중…",
     Agent: "에이전트",
     You: "나",
     Queued: "전송 대기",
@@ -395,8 +394,6 @@ export const CJK_STRINGS = {
     "No agent is listening": "에이전트 연결 안 됨",
     Delivering: "전달 중",
     "Agent is busy; delivered on its next poll": "에이전트가 바쁩니다. 다음 대기 때 전달됩니다",
-    "The agent is still working. Your message is queued and sends when it is ready.":
-      "에이전트가 아직 처리 중입니다. 메시지는 대기열에 들어가며 준비되면 자동으로 전송됩니다.",
     "Unsent annotation": "보내지 않은 메모",
     "The artifact removed or replaced what this note was attached to, so Textcast Chat could not keep it open. Your text is kept here:":
       "이 메모가 달린 내용이 페이지에서 삭제되거나 바뀌어 원래 자리에 둘 수 없었습니다. 작성한 내용은 여기에 보관됩니다:",

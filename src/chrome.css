@@ -644,6 +644,20 @@ body.is-float-dragging .player-grip {
 .panel-summary[data-presence="external"]::before {
   background: var(--ok);
 }
+.panel-summary[data-presence="connecting"]::before {
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--brand-2);
+  background: transparent;
+  animation: presence-spin 0.9s linear infinite;
+}
+@keyframes presence-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .panel-summary[data-presence="working"]::before {
   background: var(--brand-2);
   animation: presence-blink 1.2s ease-in-out infinite;

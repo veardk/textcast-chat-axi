@@ -683,6 +683,22 @@ test("chrome client carries live events over a WebSocket outside the HTTP connec
   assert.equal(chrome.element("presenceBanner").hidden, true);
 });
 
+test("a fresh window says it is connecting, then offline only if no agent arrives", async () => {
+  const chrome = await createChromeHarness();
+
+  assert.equal(chrome.element("panelSummary").dataset.presence, "connecting");
+  assert.equal(chrome.element("presenceBanner").hidden, true, "no offline banner while connecting");
+  chrome.runTimers(15_000);
+  assert.equal(chrome.element("panelSummary").dataset.presence, "waiting");
+  assert.equal(chrome.element("presenceBanner").hidden, false);
+
+  const arrived = await createChromeHarness();
+  arrived.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });
+  arrived.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "waiting" }) });
+  assert.equal(arrived.element("panelSummary").dataset.presence, "waiting", "a listener seen ends connecting");
+  assert.equal(arrived.element("presenceBanner").hidden, false);
+});
+
 test("chrome reconnects its live WebSocket and syncs missed chat", async () => {
   const chrome = await createChromeHarness();
   const firstSocket = chrome.webSocket();
@@ -3598,8 +3614,11 @@ test("Send while the agent is working keeps the notes queued and sends them once
   chrome.element("send").onclick();
   assert.equal(chrome.queued().length, 2, "the composer message joins the queue");
   assert.equal(chrome.element("chatInput").value, "");
-  assert.equal(chrome.element("sendHint").hidden, false);
-  assert.match(chrome.element("sendHint").textContent, /queued and sends when it is ready/);
+  assert.doesNotMatch(
+    String(chrome.element("sendHint").textContent || ""),
+    /sends when/,
+    "the dashed queued note says it all",
+  );
   assert.equal(
     posts.filter((post) => post.url === "/api/abc/prompts").length,
     0,
@@ -3613,7 +3632,6 @@ test("Send while the agent is working keeps the notes queued and sends them once
 
   const submitted = posts.filter((post) => post.url === "/api/abc/prompts");
   assert.equal(submitted.length, 1);
-  assert.equal(chrome.element("sendHint").hidden, true);
   assert.deepEqual(
     submitted[0].body.prompts.map((prompt) => prompt.prompt),
     ["Follow up", "And this too"],
@@ -4438,6 +4456,8 @@ test("the status line and launcher say what the user should know while the sheet
     fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
   });
 
+  assert.equal(sheetState(chrome).summary, "Connecting to the agent…");
+  chrome.runTimers(15_000);
   assert.equal(sheetState(chrome).summary, "Agent not listening");
 
   chrome.eventSource().listeners.get("agent-presence")({ data: JSON.stringify({ state: "listening" }) });

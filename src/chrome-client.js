@@ -172,6 +172,11 @@ let annotationOverridden = false;
 let annotationDefaultReceived = false;
 let ended = false;
 let agentPresence = "waiting";
+// A freshly opened window usually has an agent a few seconds from starting its poll, so "not
+// listening" is not news yet: until the first listener (or CONNECT_GRACE_MS) the status line says
+// it is connecting and the offline banner stays down.
+const CONNECT_GRACE_MS = 15_000;
+let connecting = true;
 let chromeOutdatedReason = "";
 let chromeOutdatedGeneration = 0;
 let outdatedReloadInFlight = false;
@@ -759,7 +764,6 @@ const DEFAULT_SEND_HINT = t(
   "Nothing queued in this tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.",
 );
 const EMPTY_SEND_HINT_HOLD_MS = 9000;
-const QUEUED_UNTIL_READY_HINT = t("The agent is still working. Your message is queued and sends when it is ready.");
 const EMPTY_END_HINT = t("Nothing to send. To end without feedback, use End session in the More menu (⋮).");
 
 function showSendHint(message = DEFAULT_SEND_HINT, holdMs = 2600, focusInput = true) {
@@ -1119,13 +1123,13 @@ function syncChat(chat, revision) {
 
 function setAgentPresence(state) {
   agentPresence = state === "listening" || state === "external" || state === "working" ? state : "waiting";
+  if (agentPresence !== "waiting") connecting = false;
   updateSendState();
   renderSheetSummary();
   refreshUnseenReceipts();
-  if (presenceBanner) presenceBanner.hidden = ended || agentPresence !== "waiting";
+  if (presenceBanner) presenceBanner.hidden = ended || connecting || agentPresence !== "waiting";
   if (sendWhenAgentReady && agentPresence === "listening" && !ended) {
     sendWhenAgentReady = false;
-    if (sendHint.textContent === QUEUED_UNTIL_READY_HINT) hideSendHint(true);
     if (queued.length) sendQueued(false);
   }
 
@@ -1356,6 +1360,7 @@ function sheetSummary() {
   if (agentPresence === "working") return { text: t("Agent is working…"), accent: false, unread: false };
   if (agentPresence === "external") return { text: t("External listener active"), accent: false, unread: false };
   if (agentPresence === "listening") return { text: t("Agent listening"), accent: false, unread: false };
+  if (connecting) return { text: t("Connecting to the agent…"), accent: false, unread: false };
   return { text: t("Agent not listening"), accent: false, unread: false };
 }
 
@@ -1364,7 +1369,11 @@ function renderSheetSummary() {
   panelSummary.textContent = summary.text;
   panelSummary.classList.toggle("is-accent", summary.accent);
   panelSummary.classList.toggle("is-unread", summary.unread);
-  panelSummary.dataset.presence = ended ? "ended" : agentPresence;
+  panelSummary.dataset.presence = ended
+    ? "ended"
+    : connecting && agentPresence === "waiting"
+      ? "connecting"
+      : agentPresence;
   renderSidebarToggle();
 }
 
@@ -2456,7 +2465,6 @@ function sendQueued(endAfter) {
   }
   if (!shouldEnd && (agentPresence === "working" || agentPresence === "external")) {
     sendWhenAgentReady = true;
-    showSendHint(QUEUED_UNTIL_READY_HINT, null, false);
     render();
     return;
   }
@@ -3991,6 +3999,10 @@ setChromeOutdated(false);
 initialChat.forEach((item) => addChat(item));
 retiredDrafts.forEach((text) => renderRetiredDraft(text));
 setAgentPresence("waiting");
+setTimeout(() => {
+  connecting = false;
+  setAgentPresence(agentPresence);
+}, CONNECT_GRACE_MS);
 // The session already ended before this page (re)loaded, so there is no future live `ended` event
 // to wait for - start read-only instead of looking live until a Send gets silently refused.
 if (sessionData.initialEnded) markSessionEnded();
