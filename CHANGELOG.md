@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/veardk/textcast-chat-axi/compare/v0.1.3...v0.1.4) (2026-11-16)
+
+
+### Features
+
+* keep the page readable after ending a session and offer copyable reconnect text ([#7](https://github.com/veardk/textcast-chat-axi/issues/7)) ([14ee3bd](https://github.com/veardk/textcast-chat-axi/commit/14ee3bdc644b5e8ba8af50a7c7e02512556a607a))
+
 ## [0.1.3](https://github.com/veardk/textcast-chat-axi/compare/v0.1.2...v0.1.3) (2026-11-15)
 
 
