@@ -1140,7 +1140,7 @@ function setAgentPresence(state) {
   if (!workingBubble) {
     workingBubble = document.createElement("div");
     workingBubble.className = "bubble agent agent-working";
-    workingBubble.innerHTML = '<span class="spinner"></span><span>Working...</span>';
+    workingBubble.innerHTML = '<span class="spinner"></span><span>' + escapeHtml(t("Agent is working…")) + "</span>";
     chatLog.appendChild(workingBubble);
   }
   scrollElementIntoView(workingBubble);
