@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/veardk/textcast-chat-axi/compare/v0.1.4...v0.1.5) (2026-11-16)
+
+
+### Bug Fixes
+
+* keep an ended page usable, queue messages while the agent works, and show receipts as icons ([#9](https://github.com/veardk/textcast-chat-axi/issues/9)) ([26cdac8](https://github.com/veardk/textcast-chat-axi/commit/26cdac86615c6d46530e4f5032d7ba04c590619b))
+
 ## [0.1.4](https://github.com/veardk/textcast-chat-axi/compare/v0.1.3...v0.1.4) (2026-11-16)
 
 
