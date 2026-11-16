@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/veardk/textcast-chat-axi/compare/v0.1.6...v0.1.7) (2026-11-16)
+
+
+### Bug Fixes
+
+* **chrome:** offer the reconnect text when the agent is offline ([#14](https://github.com/veardk/textcast-chat-axi/issues/14)) ([ba6595a](https://github.com/veardk/textcast-chat-axi/commit/ba6595ade85d9bc23a66f71e8ac900fc5537e3b0))
+
 ## [0.1.6](https://github.com/veardk/textcast-chat-axi/compare/v0.1.5...v0.1.6) (2026-11-16)
 
 
