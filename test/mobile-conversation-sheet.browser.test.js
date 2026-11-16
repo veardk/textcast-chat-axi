@@ -168,7 +168,7 @@ test(
 
     function populateComposer() {
       evaluate(`() => {
-        document.getElementById("presenceBanner").hidden = false;
+        document.getElementById("handoffBanner").hidden = false;
         document.getElementById("chatAttachments").innerHTML = ${JSON.stringify(
           Array.from(
             { length: 4 },

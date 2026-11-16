@@ -50,8 +50,7 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "ثم اتبع next_step الذي يطبعه.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "هذه الصفحة مفتوحة في علامة تبويب أخرى. تبقى الردود غير المرسلة في علامة التبويب التي كتبتها فيها، والمتابعة هنا لا تنقلها.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "الوكيل غير متصل حاليًا. تُحفظ رسائلك وستصله عند عودته.",
+    "The agent is offline.": "الوكيل غير متصل.",
     "Connecting to the agent\u2026": "جارٍ الاتصال بالوكيل…",
     Agent: "الوكيل",
     You: "أنت",
@@ -212,8 +211,7 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "फिर इसके आउटपुट में दिए next_step का पालन करो।",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "यह पेज दूसरे टैब में खुला है। न भेजे गए जवाब उसी टैब में रहते हैं जहाँ आपने उन्हें लिखा; यहाँ जारी रखने से वे साथ नहीं आते।",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "एजेंट अभी ऑफ़लाइन है। आपके संदेश सहेजे रहेंगे और उसके लौटने पर उसे मिल जाएँगे।",
+    "The agent is offline.": "एजेंट ऑफ़लाइन है।",
     "Connecting to the agent\u2026": "एजेंट से कनेक्ट हो रहा है…",
     Agent: "एजेंट",
     You: "आप",
@@ -374,8 +372,7 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "Sau đó làm theo next_step mà lệnh in ra.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Trang này đang mở ở một tab khác. Nội dung chưa gửi chỉ lưu ở tab bạn đã nhập; tiếp tục ở đây sẽ không mang chúng theo.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "Agent hiện đang ngoại tuyến. Tin nhắn bạn gửi sẽ được lưu và agent sẽ nhận được khi quay lại.",
+    "The agent is offline.": "Agent đang ngoại tuyến.",
     "Connecting to the agent\u2026": "Đang kết nối với agent…",
     Agent: "Agent",
     You: "Bạn",
@@ -536,8 +533,7 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "จากนั้นทำตาม next_step ที่คำสั่งแสดงออกมา",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "หน้านี้เปิดอยู่ในแท็บอื่น ข้อความที่ยังไม่ส่งจะอยู่ในแท็บที่พิมพ์ไว้เท่านั้น การทำต่อที่นี่จะไม่นำมาด้วย",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "ตอนนี้เอเจนต์ออฟไลน์อยู่ ข้อความที่คุณส่งจะถูกเก็บไว้ และเอเจนต์จะได้รับเมื่อกลับมา",
+    "The agent is offline.": "เอเจนต์ออฟไลน์อยู่",
     "Connecting to the agent\u2026": "กำลังเชื่อมต่อกับเอเจนต์…",
     Agent: "เอเจนต์",
     You: "คุณ",
@@ -696,8 +692,7 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "Lalu ikuti next_step yang ditampilkannya.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Halaman ini terbuka di tab lain. Jawaban yang belum terkirim tetap di tab tempat Anda mengetiknya; melanjutkan di sini tidak membawanya.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "Agen sedang offline. Pesan yang kamu kirim tetap tersimpan dan akan diterima saat agen kembali.",
+    "The agent is offline.": "Agen sedang offline.",
     "Connecting to the agent\u2026": "Menghubungkan ke agen…",
     Agent: "Agen",
     You: "Anda",
@@ -858,8 +853,7 @@ export const OTHER_STRINGS = {
     "Then follow the next_step it prints.": "Ardından çıktısındaki next_step'i izle.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "Bu sayfa başka bir sekmede açık. Gönderilmemiş yanıtlar yazıldıkları sekmede kalır; burada devam etmek onları taşımaz.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "Ajan şu anda çevrimdışı. Gönderdiğin mesajlar saklanır ve geri döndüğünde ona ulaşır.",
+    "The agent is offline.": "Ajan çevrimdışı.",
     "Connecting to the agent\u2026": "Ajana bağlanılıyor…",
     Agent: "Ajan",
     You: "Siz",

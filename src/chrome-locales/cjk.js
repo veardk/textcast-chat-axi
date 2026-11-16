@@ -50,8 +50,7 @@ export const CJK_STRINGS = {
     "Then follow the next_step it prints.": "執行後依照它輸出的 next_step 繼續。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "這個頁面已在另一個分頁開啟。未傳送的內容只保存在輸入它的分頁裡，在這裡接手不會帶過來。",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "智慧體暫時不在線。你傳的訊息會先保存，它回來後就能收到。",
+    "The agent is offline.": "智慧體已離線。",
     "Connecting to the agent\u2026": "正在連接智慧體…",
     Agent: "智慧體",
     You: "我",
@@ -207,8 +206,7 @@ export const CJK_STRINGS = {
     "Then follow the next_step it prints.": "実行後は、出力される next_step に従ってください。",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "このページは別のタブでも開かれています。未送信の内容は入力したタブにだけ保存され、ここで引き継いでも移りません。",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "エージェントは今オフラインです。送ったメッセージは保存され、戻ったときに届きます。",
+    "The agent is offline.": "エージェントはオフラインです。",
     "Connecting to the agent\u2026": "エージェントに接続中…",
     Agent: "エージェント",
     You: "あなた",
@@ -369,8 +367,7 @@ export const CJK_STRINGS = {
     "Then follow the next_step it prints.": "실행한 뒤 출력되는 next_step을 따르세요.",
     "This review is open in another Textcast Chat tab. Unsent answers stay in the tab or window where you entered them; taking over in another window does not bring them along.":
       "이 페이지가 다른 탭에서도 열려 있습니다. 보내지 않은 내용은 입력한 탭에만 저장되며, 여기서 이어받아도 옮겨지지 않습니다.",
-    "The agent is offline for now. Messages you send are kept, and it gets them when it is back.":
-      "에이전트가 지금 오프라인입니다. 보낸 메시지는 저장되며 돌아오면 전달됩니다.",
+    "The agent is offline.": "에이전트가 오프라인입니다.",
     "Connecting to the agent\u2026": "에이전트에 연결 중…",
     Agent: "에이전트",
     You: "나",
